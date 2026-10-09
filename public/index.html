@@ -1,0 +1,843 @@
+﻿<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard Â· MÃ©tricas Review</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0f1117;
+      --surface:  #1a1d27;
+      --surface2: #22263a;
+      --border:   #2e3349;
+      --text:     #e2e8f0;
+      --muted:    #7c8aaa;
+      --indigo:   #6366f1;
+      --cyan:     #22d3ee;
+      --green:    #10b981;
+      --amber:    #f59e0b;
+      --rose:     #f43f5e;
+      --orange:   #f97316;
+      --violet:   #a78bfa;
+      --sky:      #38bdf8;
+      --r: 12px;
+    }
+
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    /* â”€â”€ Header â”€â”€ */
+    header {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 16px 28px; display: flex; align-items: center; gap: 14px;
+      position: sticky; top: 0; z-index: 100;
+    }
+    .logo {
+      width: 34px; height: 34px; border-radius: 8px;
+      background: linear-gradient(135deg, var(--indigo), var(--cyan));
+      display: flex; align-items: center; justify-content: center; font-size: 17px;
+    }
+    header h1 { font-size: 1rem; font-weight: 600; }
+    header .sub { font-size: .75rem; color: var(--muted); }
+    .spacer { flex: 1; }
+    #ts { font-size: .72rem; color: var(--muted); }
+    .btn {
+      background: var(--surface2); border: 1px solid var(--border);
+      color: var(--text); padding: 6px 14px; border-radius: 6px;
+      cursor: pointer; font-size: .8rem; transition: background .15s;
+    }
+    .btn:hover { background: var(--indigo); border-color: var(--indigo); }
+    .btn-primary { background: var(--indigo); border-color: var(--indigo); }
+
+    /* â”€â”€ Tabs â”€â”€ */
+    .tabs {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      display: flex; gap: 2px; padding: 0 28px; overflow-x: auto;
+    }
+    .tab {
+      padding: 11px 18px; font-size: .82rem; cursor: pointer; color: var(--muted);
+      border-bottom: 2px solid transparent; white-space: nowrap; transition: all .15s;
+    }
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--indigo); border-bottom-color: var(--indigo); font-weight: 600; }
+
+    /* â”€â”€ Loading / Error â”€â”€ */
+    #loading {
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; height: 60vh; gap: 14px; color: var(--muted);
+    }
+    .spinner { width: 36px; height: 36px; border: 3px solid var(--border); border-top-color: var(--indigo); border-radius: 50%; animation: spin .7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #error-box {
+      display: none; margin: 28px auto; max-width: 640px; padding: 20px 24px;
+      background: rgba(244,63,94,.1); border: 1px solid var(--rose); border-radius: var(--r); color: #fda4af;
+    }
+
+    /* â”€â”€ Main â”€â”€ */
+    #main { display: none; }
+    .page { display: none; padding: 24px 28px; max-width: 1600px; margin: 0 auto; }
+    .page.active { display: block; }
+
+    /* â”€â”€ Filters bar â”€â”€ */
+    .filters {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--r); padding: 14px 18px; margin-bottom: 20px;
+      display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+    }
+    .filters label { font-size: .75rem; color: var(--muted); }
+    .filters select, .filters input {
+      background: var(--surface2); border: 1px solid var(--border);
+      color: var(--text); padding: 5px 10px; border-radius: 6px; font-size: .8rem;
+    }
+    .filters select:focus, .filters input:focus { outline: none; border-color: var(--indigo); }
+
+    /* â”€â”€ Section title â”€â”€ */
+    .stitle {
+      font-size: .68rem; font-weight: 700; letter-spacing: .12em;
+      text-transform: uppercase; color: var(--muted); margin: 24px 0 12px;
+    }
+    .stitle:first-child { margin-top: 0; }
+
+    /* â”€â”€ KPI grid â”€â”€ */
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px,1fr)); gap: 14px; margin-bottom: 6px; }
+    .kpi {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--r); padding: 18px 20px; position: relative; overflow: hidden;
+    }
+    .kpi::before { content:''; position:absolute; top:0;left:0;right:0; height:3px; background: var(--ac, var(--indigo)); }
+    .kpi-label { font-size: .7rem; color: var(--muted); margin-bottom: 6px; }
+    .kpi-val { font-size: 1.9rem; font-weight: 700; line-height: 1; }
+    .kpi-sub { font-size: .72rem; color: var(--muted); margin-top: 5px; }
+
+    /* â”€â”€ Chart grid â”€â”€ */
+    .cgrid { display: grid; gap: 18px; }
+    .cgrid.c2 { grid-template-columns: repeat(auto-fill, minmax(440px,1fr)); }
+    .cgrid.c3 { grid-template-columns: repeat(auto-fill, minmax(320px,1fr)); }
+    .cgrid.c1 { grid-template-columns: 1fr; }
+
+    .ccard {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--r); padding: 20px 22px;
+    }
+    .ccard h3 { font-size: .82rem; font-weight: 600; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+    .badge { font-size: .62rem; background: var(--surface2); border: 1px solid var(--border); padding: 2px 8px; border-radius: 20px; color: var(--muted); }
+    .cwrap { position: relative; height: 240px; }
+    .cwrap.tall { height: 320px; }
+    .cwrap.xtall { height: 420px; }
+
+    /* â”€â”€ Table â”€â”€ */
+    .twrap { overflow-x: auto; max-height: 480px; overflow-y: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: .78rem; }
+    thead th {
+      background: var(--surface2); padding: 9px 13px; text-align: left;
+      font-weight: 600; color: var(--muted); border-bottom: 1px solid var(--border);
+      white-space: nowrap; position: sticky; top: 0; z-index: 2;
+    }
+    tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+    tbody tr:hover { background: var(--surface2); }
+    tbody td { padding: 8px 13px; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mono { font-family: monospace; font-size: .72rem; color: var(--cyan); }
+
+    /* â”€â”€ Badges â”€â”€ */
+    .bs { display: inline-block; padding: 2px 9px; border-radius: 20px; font-size: .68rem; font-weight: 600; }
+    .bs-done  { background: rgba(16,185,129,.15); color: #34d399; }
+    .bs-prog  { background: rgba(99,102,241,.15);  color: #a5b4fc; }
+    .bs-todo  { background: rgba(124,138,170,.1);  color: var(--muted); }
+    .bs-risk  { background: rgba(249,115,22,.15);  color: #fb923c; }
+    .bs-block { background: rgba(244,63,94,.15);   color: #fda4af; }
+
+    /* â”€â”€ Progress â”€â”€ */
+    .pbar { background: var(--surface2); border-radius: 4px; height: 5px; overflow: hidden; min-width: 60px; }
+    .pfill { height: 100%; border-radius: 4px; transition: width .3s; }
+
+    /* â”€â”€ Responsive â”€â”€ */
+    @media (max-width: 768px) {
+      header, .page { padding: 14px 14px; }
+      .tabs { padding: 0 14px; }
+      .cgrid.c2, .cgrid.c3 { grid-template-columns: 1fr; }
+      .kpi-grid { grid-template-columns: repeat(2,1fr); }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">ðŸ“Š</div>
+  <div>
+    <h1>MÃ©tricas Review</h1>
+    <div class="sub">Jornada Secretaria &amp; Gestor de Unidades</div>
+  </div>
+  <div class="spacer"></div>
+  <span id="ts"></span>
+  <button class="btn" onclick="refreshData(true)">â†º Reextrair Jira</button>
+  <button class="btn btn-primary" onclick="refreshData(false)">âŸ³ Atualizar</button>
+</header>
+
+<nav class="tabs">
+  <div class="tab active" data-page="overview">VisÃ£o Geral</div>
+  <div class="tab" data-page="velocity">Velocity</div>
+  <div class="tab" data-page="flow">Fluxo & Ciclos</div>
+  <div class="tab" data-page="sustentacao">SustentaÃ§Ã£o</div>
+  <div class="tab" data-page="items">Itens</div>
+</nav>
+
+<div id="loading"><div class="spinner"></div><span>Carregando dados do Jira...</span></div>
+<div id="error-box"></div>
+
+<div id="main">
+
+  <!-- â•â• VISÃƒO GERAL â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
+  <div class="page active" id="page-overview">
+    <div class="filters" id="filter-overview">
+      <label>Sprint
+        <select id="flt-sprint-ov" onchange="renderAll()">
+          <option value="">Todas</option>
+        </select>
+      </label>
+      <label>Tipo de Item
+        <select id="flt-tipo-ov" onchange="renderAll()">
+          <option value="">Todos</option>
+        </select>
+      </label>
+      <label>Projeto
+        <select id="flt-proj-ov" onchange="renderAll()">
+          <option value="">Todos</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="stitle">KPIs</div>
+    <div class="kpi-grid" id="kpis"></div>
+
+    <div class="stitle" style="margin-top:20px">DistribuiÃ§Ãµes</div>
+    <div class="cgrid c2">
+      <div class="ccard">
+        <h3>Status dos Itens <span class="badge">por quantidade</span></h3>
+        <div class="cwrap"><canvas id="ch-status"></canvas></div>
+      </div>
+      <div class="ccard">
+        <h3>Tipo de Item <span class="badge">por SP</span></h3>
+        <div class="cwrap"><canvas id="ch-tipo"></canvas></div>
+      </div>
+      <div class="ccard">
+        <h3>Itens por Projeto <span class="badge">quantidade</span></h3>
+        <div class="cwrap tall"><canvas id="ch-proj"></canvas></div>
+      </div>
+      <div class="ccard">
+        <h3>AlteraÃ§Ã£o de Escopo <span class="badge">% de itens</span></h3>
+        <div class="cwrap"><canvas id="ch-escopo"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- â•â• VELOCITY â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
+  <div class="page" id="page-velocity">
+    <div class="filters">
+      <label>Projeto
+        <select id="flt-proj-vel" onchange="renderAll()">
+          <option value="">Todos</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="stitle">Story Points por Sprint</div>
+    <div class="cgrid c1">
+      <div class="ccard">
+        <h3>Velocity (SP entregues) <span class="badge">por sprint</span></h3>
+        <div class="cwrap tall"><canvas id="ch-velocity"></canvas></div>
+      </div>
+    </div>
+
+    <div class="stitle">DistribuiÃ§Ã£o por Tipo</div>
+    <div class="cgrid c2">
+      <div class="ccard">
+        <h3>SP por Tipo de Item <span class="badge">por sprint</span></h3>
+        <div class="cwrap tall"><canvas id="ch-sp-tipo"></canvas></div>
+      </div>
+      <div class="ccard">
+        <h3>ResoluÃ§Ã£o dos Itens <span class="badge">por sprint</span></h3>
+        <div class="cwrap tall"><canvas id="ch-resolucao"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- â•â• FLUXO & CICLOS â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
+  <div class="page" id="page-flow">
+    <div class="filters">
+      <label>Sprint
+        <select id="flt-sprint-fl" onchange="renderAll()">
+          <option value="">Todas</option>
+        </select>
+      </label>
+      <label>Tipo
+        <select id="flt-tipo-fl" onchange="renderAll()">
+          <option value="">Todos</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="stitle">Ciclos (dias)</div>
+    <div class="cgrid c2">
+      <div class="ccard">
+        <h3>Ciclo de Desenvolvimento <span class="badge">por projeto Â· mediana</span></h3>
+        <div class="cwrap"><canvas id="ch-ciclo-dev"></canvas></div>
+      </div>
+      <div class="ccard">
+        <h3>Ciclo de HomologaÃ§Ã£o <span class="badge">por projeto Â· mediana</span></h3>
+        <div class="cwrap"><canvas id="ch-ciclo-hom"></canvas></div>
+      </div>
+      <div class="ccard">
+        <h3>Lead Time <span class="badge">mediana por tipo de item</span></h3>
+        <div class="cwrap"><canvas id="ch-lt"></canvas></div>
+      </div>
+      <div class="ccard">
+        <h3>Customer Lead Time <span class="badge">mediana por tipo</span></h3>
+        <div class="cwrap"><canvas id="ch-clt"></canvas></div>
+      </div>
+    </div>
+
+    <div class="stitle">Tempo Bloqueado</div>
+    <div class="cgrid c1">
+      <div class="ccard">
+        <h3>Itens com Tempo Bloqueado <span class="badge">top 20</span></h3>
+        <div class="twrap" id="tbl-bloqueado"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- â•â• SUSTENTAÃ‡ÃƒO â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
+  <div class="page" id="page-sustentacao">
+    <div class="stitle">Itens de SustentaÃ§Ã£o</div>
+    <div class="cgrid c2">
+      <div class="ccard">
+        <h3>SP de SustentaÃ§Ã£o por Sprint <span class="badge">vs Entrega de Valor</span></h3>
+        <div class="cwrap tall"><canvas id="ch-sust-sprint"></canvas></div>
+      </div>
+      <div class="ccard">
+        <h3>Tipo de SustentaÃ§Ã£o <span class="badge">quantidade de itens</span></h3>
+        <div class="cwrap"><canvas id="ch-sust-tipo"></canvas></div>
+      </div>
+    </div>
+    <div class="stitle">AntecipaÃ§Ãµes</div>
+    <div class="cgrid c2">
+      <div class="ccard">
+        <h3>Itens com AntecipaÃ§Ã£o de Sprint <span class="badge">por sprint</span></h3>
+        <div class="cwrap"><canvas id="ch-antecip"></canvas></div>
+      </div>
+      <div class="ccard">
+        <h3>Ambiente de Entrega <span class="badge">quantidade</span></h3>
+        <div class="cwrap"><canvas id="ch-ambiente"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- â•â• ITENS â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
+  <div class="page" id="page-items">
+    <div class="filters">
+      <label>Sprint
+        <select id="flt-sprint-it" onchange="renderItems()">
+          <option value="">Todas</option>
+        </select>
+      </label>
+      <label>Tipo
+        <select id="flt-tipo-it" onchange="renderItems()">
+          <option value="">Todos</option>
+        </select>
+      </label>
+      <label>Status
+        <select id="flt-status-it" onchange="renderItems()">
+          <option value="">Todos</option>
+        </select>
+      </label>
+      <label>Projeto
+        <select id="flt-proj-it" onchange="renderItems()">
+          <option value="">Todos</option>
+        </select>
+      </label>
+      <label>Buscar
+        <input type="text" id="flt-search-it" placeholder="chave ou resumo..." oninput="renderItems()" style="width:200px" />
+      </label>
+    </div>
+    <div id="items-count" style="font-size:.75rem;color:var(--muted);margin-bottom:10px"></div>
+    <div class="twrap" id="tbl-items"></div>
+  </div>
+
+</div><!-- #main -->
+
+<script>
+// â”€â”€â”€ Estado global â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+let RAW = [];       // todos os itens carregados
+let META = {};      // extracted_at, jql, etc.
+const charts = {};  // instÃ¢ncias Chart.js
+
+// â”€â”€â”€ Paleta â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const P = ['#6366f1','#22d3ee','#10b981','#f59e0b','#f43f5e','#a78bfa','#f97316','#38bdf8','#84cc16','#ec4899'];
+const s = i => P[i % P.length];
+const f = (i, a=.18) => P[i % P.length] + Math.round(a*255).toString(16).padStart(2,'0');
+
+Chart.defaults.color         = '#7c8aaa';
+Chart.defaults.borderColor   = '#2e3349';
+Chart.defaults.font.family   = "'Segoe UI',system-ui,sans-serif";
+Chart.defaults.font.size     = 12;
+Chart.defaults.plugins.legend.labels.boxWidth = 11;
+Chart.defaults.plugins.legend.labels.padding  = 14;
+Chart.defaults.plugins.tooltip.backgroundColor = '#1a1d27';
+Chart.defaults.plugins.tooltip.borderColor     = '#2e3349';
+Chart.defaults.plugins.tooltip.borderWidth     = 1;
+Chart.defaults.plugins.tooltip.padding         = 10;
+
+function mkChart(id, cfg) {
+  if (charts[id]) { charts[id].destroy(); }
+  const el = document.getElementById(id);
+  if (!el) return;
+  charts[id] = new Chart(el, cfg);
+}
+
+// â”€â”€â”€ UtilitÃ¡rios â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const median = arr => {
+  const s = arr.filter(v => v != null && !isNaN(v)).map(Number).sort((a,b)=>a-b);
+  if (!s.length) return null;
+  const m = Math.floor(s.length/2);
+  return s.length % 2 ? s[m] : (s[m-1]+s[m])/2;
+};
+
+const avg = arr => {
+  const s = arr.filter(v => v != null && !isNaN(v)).map(Number);
+  return s.length ? s.reduce((a,b)=>a+b,0)/s.length : null;
+};
+
+const groupBy = (arr, key) => arr.reduce((acc, item) => {
+  const k = item[key] ?? '(vazio)';
+  (acc[k] = acc[k] || []).push(item);
+  return acc;
+}, {});
+
+const sum = (arr, key) => arr.reduce((a,b) => a + (Number(b[key])||0), 0);
+
+function shortSprint(s) {
+  if (!s) return 'â€”';
+  // "[BPLE] SP 26.3.1" â†’ "SP 26.3.1"
+  return s.split(';')[0].replace(/\[.*?\]\s*/g,'').trim();
+}
+
+function shortProject(p) {
+  if (!p) return 'â€”';
+  // "[Jornada X] Squad Y" â†’ "Squad Y"
+  return p.replace(/\[.*?\]\s*/g,'').trim() || p;
+}
+
+function statusBadge(s) {
+  const m = {
+    'Em produÃ§Ã£o':'bs-done','Aceito':'bs-done','ConcluÃ­do':'bs-done',
+    'Em Andamento':'bs-prog','Em desenvolvimento':'bs-prog',
+    'Bloqueado':'bs-block',
+    'Backlog':'bs-todo','Funil':'bs-todo','Refinamento':'bs-todo',
+  };
+  const cls = m[s] || 'bs-todo';
+  return `<span class="bs ${cls}">${s||'â€”'}</span>`;
+}
+
+// â”€â”€â”€ Filtros â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function getFiltered(page) {
+  let data = [...RAW];
+
+  const get = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+
+  if (page === 'overview') {
+    const sp = get('flt-sprint-ov'), tp = get('flt-tipo-ov'), pr = get('flt-proj-ov');
+    if (sp) data = data.filter(i => (i.sprint||'').includes(sp));
+    if (tp) data = data.filter(i => i.tipo_item === tp);
+    if (pr) data = data.filter(i => (i.projeto||'').includes(pr));
+  } else if (page === 'velocity') {
+    const pr = get('flt-proj-vel');
+    if (pr) data = data.filter(i => (i.projeto||'').includes(pr));
+  } else if (page === 'flow') {
+    const sp = get('flt-sprint-fl'), tp = get('flt-tipo-fl');
+    if (sp) data = data.filter(i => (i.sprint||'').includes(sp));
+    if (tp) data = data.filter(i => i.tipo_item === tp);
+  }
+  return data;
+}
+
+function populateFilters() {
+  const sprints  = [...new Set(RAW.map(i => shortSprint(i.sprint)).filter(Boolean))].sort();
+  const tipos    = [...new Set(RAW.map(i => i.tipo_item).filter(Boolean))].sort();
+  const projetos = [...new Set(RAW.map(i => shortProject(i.projeto)).filter(Boolean))].sort();
+  const statuses = [...new Set(RAW.map(i => i.status).filter(Boolean))].sort();
+
+  const fill = (id, opts) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const cur = el.value;
+    el.innerHTML = '<option value="">Todos</option>' + opts.map(o=>`<option value="${o}">${o}</option>`).join('');
+    if (cur) el.value = cur;
+  };
+
+  fill('flt-sprint-ov', sprints);   fill('flt-tipo-ov', tipos);   fill('flt-proj-ov', projetos);
+  fill('flt-proj-vel', projetos);
+  fill('flt-sprint-fl', sprints);   fill('flt-tipo-fl', tipos);
+  fill('flt-sprint-it', sprints);   fill('flt-tipo-it', tipos);
+  fill('flt-status-it', statuses);  fill('flt-proj-it', projetos);
+}
+
+// â”€â”€â”€ KPIs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function renderKpis(data) {
+  const done  = data.filter(i => ['Em produÃ§Ã£o','Aceito','ConcluÃ­do','Itens concluÃ­dos'].some(s => (i.status||'').includes(s) || (i.categoria_status||'').includes(s)));
+  const totalSP = sum(data, 'story_points');
+  const doneSP  = sum(done, 'story_points');
+  const pct     = totalSP ? Math.round(doneSP/totalSP*100) : 0;
+  const avgLT   = avg(data.map(i=>i.lead_time).filter(v=>v!=null));
+  const avgDev  = avg(data.map(i=>i.ciclo_desenvolvimento).filter(v=>v!=null));
+  const bloq    = data.filter(i => i.tempo_total_bloqueado).length;
+  const sust    = data.filter(i => i.tipo_sustentacao).length;
+
+  const kpis = [
+    { label:'Total de Itens',          val: data.length,              sub:'na seleÃ§Ã£o atual',                  ac:'#6366f1' },
+    { label:'Story Points Entregues',  val: doneSP + ' / ' + totalSP, sub:`${pct}% do planejado`,              ac:'#10b981' },
+    { label:'Lead Time MÃ©dio',         val: avgLT ? avgLT.toFixed(1)+'d' : 'â€”', sub:'todos os tipos',         ac:'#f59e0b' },
+    { label:'Ciclo Desenv. MÃ©dio',     val: avgDev ? avgDev.toFixed(1)+'d' : 'â€”', sub:'dias em dev',          ac:'#22d3ee' },
+    { label:'Itens com Bloqueio',      val: bloq,                     sub:`${data.length ? Math.round(bloq/data.length*100) : 0}% do total`, ac:'#f43f5e' },
+    { label:'Itens de SustentaÃ§Ã£o',    val: sust,                     sub:'incidentes, SS, suporte',           ac:'#f97316' },
+  ];
+
+  document.getElementById('kpis').innerHTML = kpis.map(k => `
+    <div class="kpi" style="--ac:${k.ac}">
+      <div class="kpi-label">${k.label}</div>
+      <div class="kpi-val">${k.val}</div>
+      <div class="kpi-sub">${k.sub}</div>
+    </div>`).join('');
+}
+
+// â”€â”€â”€ Overview charts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function renderOverview(data) {
+  renderKpis(data);
+
+  // Status
+  const byStatus = groupBy(data, 'status');
+  const sKeys = Object.keys(byStatus).sort((a,b) => byStatus[b].length - byStatus[a].length);
+  mkChart('ch-status', {
+    type: 'doughnut',
+    data: { labels: sKeys, datasets: [{ data: sKeys.map(k=>byStatus[k].length), backgroundColor: sKeys.map((_,i)=>s(i)), borderColor:'#1a1d27', borderWidth:3, hoverOffset:6 }] },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'right' } }, cutout:'58%' }
+  });
+
+  // Tipo por SP
+  const byTipo = groupBy(data, 'tipo_item');
+  const tKeys  = Object.keys(byTipo).sort((a,b) => sum(byTipo[b],'story_points') - sum(byTipo[a],'story_points'));
+  mkChart('ch-tipo', {
+    type: 'bar',
+    data: { labels: tKeys, datasets: [{ label:'SP', data: tKeys.map(k=>sum(byTipo[k],'story_points')), backgroundColor: tKeys.map((_,i)=>f(i,.8)), borderColor: tKeys.map((_,i)=>s(i)), borderWidth:1.5, borderRadius:4 }] },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false} }, scales:{ y:{ beginAtZero:true } } }
+  });
+
+  // Por projeto (quantidade)
+  const byProj  = groupBy(data, 'projeto');
+  const projKeys= Object.keys(byProj).map(k=>shortProject(k));
+  const projFull= Object.keys(byProj);
+  mkChart('ch-proj', {
+    type: 'bar',
+    data: { labels: projKeys, datasets: [{ label:'Itens', data: projFull.map(k=>byProj[k].length), backgroundColor: projKeys.map((_,i)=>f(i,.8)), borderRadius:4 }] },
+    options: { responsive:true, maintainAspectRatio:false, indexAxis:'y', plugins:{ legend:{display:false} }, scales:{ x:{ beginAtZero:true } } }
+  });
+
+  // Escopo
+  const comEscopo  = data.filter(i => i.alteracao_escopo && i.alteracao_escopo !== '').length;
+  const semEscopo  = data.length - comEscopo;
+  mkChart('ch-escopo', {
+    type: 'doughnut',
+    data: { labels:['Com AlteraÃ§Ã£o','Sem AlteraÃ§Ã£o'], datasets:[{ data:[comEscopo, semEscopo], backgroundColor:['#f97316','#6366f1'], borderColor:'#1a1d27', borderWidth:3, hoverOffset:6 }] },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom' } }, cutout:'55%' }
+  });
+}
+
+// â”€â”€â”€ Velocity â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function renderVelocity(data) {
+  // Ordena sprints
+  const sprintMap = {};
+  data.forEach(i => {
+    const sp = shortSprint(i.sprint);
+    if (!sp || sp === 'â€”') return;
+    if (!sprintMap[sp]) sprintMap[sp] = { total: 0, byTipo: {}, byResolucao: {} };
+    const sp_val = Number(i.story_points) || 0;
+    sprintMap[sp].total += sp_val;
+
+    const tipo = i.tipo_item || 'Outros';
+    sprintMap[sp].byTipo[tipo] = (sprintMap[sp].byTipo[tipo] || 0) + sp_val;
+
+    const res = i.resolucao || i.categoria_status || 'Sem resoluÃ§Ã£o';
+    sprintMap[sp].byResolucao[res] = (sprintMap[sp].byResolucao[res] || 0) + 1;
+  });
+
+  const spLabels = Object.keys(sprintMap).sort();
+
+  mkChart('ch-velocity', {
+    type: 'bar',
+    data: {
+      labels: spLabels,
+      datasets: [{
+        label: 'Story Points',
+        data: spLabels.map(sp => sprintMap[sp].total),
+        backgroundColor: spLabels.map((_,i) => f(i,.85)),
+        borderColor: spLabels.map((_,i) => s(i)),
+        borderWidth: 1.5, borderRadius: 5,
+      }]
+    },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false} }, scales:{ y:{ beginAtZero:true, title:{ display:true, text:'Story Points' } } } }
+  });
+
+  // SP por tipo por sprint
+  const allTipos = [...new Set(data.map(i=>i.tipo_item).filter(Boolean))];
+  mkChart('ch-sp-tipo', {
+    type: 'bar',
+    data: {
+      labels: spLabels,
+      datasets: allTipos.map((tipo,i) => ({
+        label: tipo,
+        data: spLabels.map(sp => sprintMap[sp].byTipo[tipo] || 0),
+        backgroundColor: f(i,.8), borderColor: s(i), borderWidth:1, borderRadius:3, stack:'s',
+      }))
+    },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom' } }, scales:{ x:{stacked:true}, y:{stacked:true, beginAtZero:true} } }
+  });
+
+  // ResoluÃ§Ã£o por sprint
+  const allRes = [...new Set(data.map(i => i.resolucao || i.categoria_status).filter(Boolean))];
+  mkChart('ch-resolucao', {
+    type: 'bar',
+    data: {
+      labels: spLabels,
+      datasets: allRes.map((r,i) => ({
+        label: r,
+        data: spLabels.map(sp => sprintMap[sp].byResolucao[r] || 0),
+        backgroundColor: f(i,.8), borderColor: s(i), borderWidth:1, borderRadius:3, stack:'s',
+      }))
+    },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom' } }, scales:{ x:{stacked:true}, y:{stacked:true, beginAtZero:true, title:{ display:true, text:'Itens' } } } }
+  });
+}
+
+// â”€â”€â”€ Fluxo & Ciclos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function renderFlow(data) {
+  // Ciclo dev por projeto (mediana)
+  const withDev  = data.filter(i => i.ciclo_desenvolvimento != null);
+  const withHom  = data.filter(i => i.ciclo_homologacao != null);
+  const byProjDev = groupBy(withDev, 'projeto');
+  const byProjHom = groupBy(withHom, 'projeto');
+
+  const projKeys = [...new Set([...Object.keys(byProjDev),...Object.keys(byProjHom)])].map(shortProject);
+  const projFull = [...new Set([...Object.keys(byProjDev),...Object.keys(byProjHom)])];
+
+  mkChart('ch-ciclo-dev', {
+    type: 'bar',
+    data: { labels: projKeys, datasets: [{ label:'Mediana (dias)', data: projFull.map(k=>median((byProjDev[k]||[]).map(i=>i.ciclo_desenvolvimento))), backgroundColor: projKeys.map((_,i)=>f(i,.8)), borderRadius:4 }] },
+    options: { responsive:true, maintainAspectRatio:false, indexAxis:'y', plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true, title:{display:true,text:'dias'}}} }
+  });
+
+  mkChart('ch-ciclo-hom', {
+    type: 'bar',
+    data: { labels: projKeys, datasets: [{ label:'Mediana (dias)', data: projFull.map(k=>median((byProjHom[k]||[]).map(i=>i.ciclo_homologacao))), backgroundColor: projKeys.map((_,i)=>f(i+2,.8)), borderRadius:4 }] },
+    options: { responsive:true, maintainAspectRatio:false, indexAxis:'y', plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true, title:{display:true,text:'dias'}}} }
+  });
+
+  // Lead Time por tipo
+  const byTipoLT  = groupBy(data.filter(i=>i.lead_time!=null), 'tipo_item');
+  const byTipoCLT = groupBy(data.filter(i=>i.customer_lead_time!=null), 'tipo_item');
+  const tipoKeys  = [...new Set([...Object.keys(byTipoLT),...Object.keys(byTipoCLT)])];
+
+  mkChart('ch-lt', {
+    type: 'bar',
+    data: { labels: tipoKeys, datasets: [{ label:'Mediana LT (dias)', data: tipoKeys.map(k=>median((byTipoLT[k]||[]).map(i=>i.lead_time))), backgroundColor: tipoKeys.map((_,i)=>f(i,.8)), borderRadius:4 }] },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true, title:{display:true,text:'dias'}}} }
+  });
+
+  mkChart('ch-clt', {
+    type: 'bar',
+    data: { labels: tipoKeys, datasets: [{ label:'Mediana CLT (dias)', data: tipoKeys.map(k=>median((byTipoCLT[k]||[]).map(i=>i.customer_lead_time))), backgroundColor: tipoKeys.map((_,i)=>f(i+3,.8)), borderRadius:4 }] },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true, title:{display:true,text:'dias'}}} }
+  });
+
+  // Tabela bloqueados
+  const bloq = data.filter(i=>i.tempo_total_bloqueado)
+    .sort((a,b) => String(b.tempo_total_bloqueado).localeCompare(String(a.tempo_total_bloqueado)))
+    .slice(0,20);
+
+  document.getElementById('tbl-bloqueado').innerHTML = bloq.length === 0
+    ? '<p style="color:var(--muted);padding:12px">Nenhum item bloqueado na seleÃ§Ã£o.</p>'
+    : `<table><thead><tr><th>Chave</th><th>Resumo</th><th>Tipo</th><th>Status</th><th>Tempo Bloqueado</th></tr></thead><tbody>
+        ${bloq.map(i=>`<tr>
+          <td><span class="mono">${i.chave}</span></td>
+          <td title="${i.resumo}">${(i.resumo||'').substring(0,60)}â€¦</td>
+          <td>${i.tipo_item||'â€”'}</td>
+          <td>${statusBadge(i.status)}</td>
+          <td style="color:var(--amber);font-weight:600">${i.tempo_total_bloqueado}</td>
+        </tr>`).join('')}
+      </tbody></table>`;
+}
+
+// â”€â”€â”€ SustentaÃ§Ã£o â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function renderSustentacao() {
+  const data = RAW;
+
+  // SP de sustentaÃ§Ã£o vs entrega de valor por sprint
+  const sprintMap = {};
+  data.forEach(i => {
+    const sp = shortSprint(i.sprint);
+    if (!sp || sp === 'â€”') return;
+    if (!sprintMap[sp]) sprintMap[sp] = { sust: 0, valor: 0 };
+    const pts = Number(i.story_points) || 0;
+    if (i.tipo_sustentacao || ['Incidente','SustentaÃ§Ã£o','Suporte','SolicitaÃ§Ã£o de ServiÃ§o'].includes(i.tipo_item)) {
+      sprintMap[sp].sust += pts;
+    } else {
+      sprintMap[sp].valor += pts;
+    }
+  });
+  const spLabels = Object.keys(sprintMap).sort();
+
+  mkChart('ch-sust-sprint', {
+    type: 'bar',
+    data: {
+      labels: spLabels,
+      datasets: [
+        { label:'Entrega de Valor', data: spLabels.map(sp=>sprintMap[sp].valor), backgroundColor:'#6366f180', borderColor:'#6366f1', borderWidth:1.5, borderRadius:3, stack:'s' },
+        { label:'SustentaÃ§Ã£o',      data: spLabels.map(sp=>sprintMap[sp].sust),  backgroundColor:'#f9731680', borderColor:'#f97316', borderWidth:1.5, borderRadius:3, stack:'s' },
+      ]
+    },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}}, scales:{ x:{stacked:true}, y:{stacked:true, beginAtZero:true, title:{display:true,text:'Story Points'}} } }
+  });
+
+  // Tipo de sustentaÃ§Ã£o
+  const sustItems = data.filter(i => i.tipo_sustentacao);
+  const byTipoSust = groupBy(sustItems, 'tipo_sustentacao');
+  const stKeys = Object.keys(byTipoSust);
+  mkChart('ch-sust-tipo', {
+    type: 'doughnut',
+    data: { labels: stKeys, datasets: [{ data: stKeys.map(k=>byTipoSust[k].length), backgroundColor: stKeys.map((_,i)=>s(i)), borderColor:'#1a1d27', borderWidth:3, hoverOffset:6 }] },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'right'}}, cutout:'55%' }
+  });
+
+  // AntecipaÃ§Ãµes por sprint
+  const antecipMap = {};
+  data.filter(i=>i.antecipacao).forEach(i => {
+    const sp = shortSprint(i.sprint) || 'â€”';
+    antecipMap[sp] = (antecipMap[sp]||0)+1;
+  });
+  const antLabels = Object.keys(antecipMap).sort();
+  mkChart('ch-antecip', {
+    type: 'bar',
+    data: { labels: antLabels, datasets: [{ label:'AntecipaÃ§Ãµes', data: antLabels.map(k=>antecipMap[k]), backgroundColor:'#a78bfa80', borderColor:'#a78bfa', borderWidth:1.5, borderRadius:4 }] },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ y:{beginAtZero:true, title:{display:true,text:'Itens'}} } }
+  });
+
+  // Ambiente
+  const ambItems = data.filter(i=>i.ambiente);
+  const byAmb = groupBy(ambItems, 'ambiente');
+  const ambKeys = Object.keys(byAmb);
+  mkChart('ch-ambiente', {
+    type: 'bar',
+    data: { labels: ambKeys, datasets: [{ label:'Itens', data: ambKeys.map(k=>byAmb[k].length), backgroundColor: ambKeys.map((_,i)=>f(i+2,.8)), borderRadius:4 }] },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ y:{beginAtZero:true} } }
+  });
+}
+
+// â”€â”€â”€ Tabela de itens â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function renderItems() {
+  let data = [...RAW];
+  const get = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+
+  const sp = get('flt-sprint-it'), tp = get('flt-tipo-it'), st = get('flt-status-it');
+  const pr = get('flt-proj-it'),   q  = get('flt-search-it').toLowerCase();
+
+  if (sp) data = data.filter(i => (i.sprint||'').includes(sp));
+  if (tp) data = data.filter(i => i.tipo_item === tp);
+  if (st) data = data.filter(i => i.status === st);
+  if (pr) data = data.filter(i => shortProject(i.projeto||'') === pr);
+  if (q)  data = data.filter(i => (i.chave||'').toLowerCase().includes(q) || (i.resumo||'').toLowerCase().includes(q));
+
+  document.getElementById('items-count').textContent = `${data.length} itens`;
+
+  const cols = ['Chave','Tipo','Resumo','Projeto','Sprint','Status','SP','Lead Time','Ciclo Dev','AlteraÃ§Ã£o Escopo'];
+
+  document.getElementById('tbl-items').innerHTML = `
+    <table>
+      <thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead>
+      <tbody>
+        ${data.slice(0,500).map(i => `<tr>
+          <td><span class="mono">${i.chave}</span></td>
+          <td><span style="font-size:.72rem;color:var(--muted)">${i.tipo_item||'â€”'}</span></td>
+          <td title="${i.resumo||''}">${(i.resumo||'').substring(0,55)}${(i.resumo||'').length>55?'â€¦':''}</td>
+          <td title="${i.projeto||''}">${shortProject(i.projeto||'')}</td>
+          <td style="white-space:nowrap;font-size:.72rem">${shortSprint(i.sprint)}</td>
+          <td>${statusBadge(i.status)}</td>
+          <td style="text-align:center">${i.story_points??'â€”'}</td>
+          <td style="text-align:center">${i.lead_time!=null?i.lead_time+'d':'â€”'}</td>
+          <td style="text-align:center">${i.ciclo_desenvolvimento!=null?i.ciclo_desenvolvimento+'d':'â€”'}</td>
+          <td style="font-size:.72rem;color:${i.alteracao_escopo?'var(--amber)':'var(--muted)'}">${i.alteracao_escopo||'â€”'}</td>
+        </tr>`).join('')}
+        ${data.length>500?`<tr><td colspan="${cols.length}" style="text-align:center;color:var(--muted);padding:12px">+ ${data.length-500} itens ocultos â€” use os filtros</td></tr>`:''}
+      </tbody>
+    </table>`;
+}
+
+// â”€â”€â”€ Render tudo â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function renderAll() {
+  const ovData  = getFiltered('overview');
+  const velData = getFiltered('velocity');
+  const flData  = getFiltered('flow');
+
+  renderOverview(ovData);
+  renderVelocity(velData);
+  renderFlow(flData);
+  renderSustentacao();
+  renderItems();
+}
+
+// â”€â”€â”€ Tabs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('page-' + tab.dataset.page)?.classList.add('active');
+  });
+});
+
+// â”€â”€â”€ Carga de dados â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+async function refreshData(force = false) {
+  document.getElementById('loading').style.display = 'flex';
+  document.getElementById('main').style.display    = 'none';
+  document.getElementById('error-box').style.display = 'none';
+
+  try {
+    const url = force ? 'extract?force=1' : 'extract';
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    if (json.error) throw new Error(json.error);
+
+    RAW  = json.items || [];
+    META = { extracted_at: json.extracted_at, jql: json.jql, total: json.total_items, pages: json.pages };
+
+    document.getElementById('ts').textContent = `ExtraÃ­do: ${META.extracted_at} Â· ${META.total} itens`;
+
+    populateFilters();
+    renderAll();
+
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('main').style.display    = 'block';
+
+  } catch (err) {
+    document.getElementById('loading').style.display = 'none';
+    const box = document.getElementById('error-box');
+    box.style.display = 'block';
+    box.innerHTML = `<strong>Erro ao carregar dados</strong><br>${err.message}<br><br>
+      Verifique: <code>http://localhost/dashboard/extract</code>`;
+  }
+}
+
+refreshData(false);
+</script>
+</body>
+</html>
+

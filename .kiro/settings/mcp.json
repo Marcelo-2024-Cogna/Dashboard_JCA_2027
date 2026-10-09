@@ -1,0 +1,35 @@
+{
+    "mcpServers": {
+        "mcp-atlassian": {
+            "command": "uvx",
+            //"command": "C:\\Users\\marcelo.doliveira\\.local\\bin\\uvx.exe",
+
+            "args": [
+                "mcp-atlassian"
+            ],
+            "env": {
+                "JIRA_URL": "https://cogna.atlassian.net",
+                "JIRA_USERNAME": "marcelo.doliveira@cogna.com.br",
+                "JIRA_API_TOKEN": "ATATT3xFfGF0rk7econkkvKg1PpqrxudnjzGXn1R9lZ-7rc4zE8mKXIBtaYeCWbVz2BwOH2X1yYhclVH4gt5jwdj5hIry1ExsRo4Qv_-Tn0liiq_8cH0hxpltI5eeZsEe51Vl31gErP0HZOsjbQ_a-8U2FLWXmKCVKsmjgwnDrF3zFz69sv0Kt8=E36B9456",
+                "CONFLUENCE_URL": "https://cogna.atlassian.net/wiki",
+                "CONFLUENCE_USERNAME": "marcelo.doliveira@cogna.com.br",
+                "CONFLUENCE_API_TOKEN": "ATATT3xFfGF0LjE_L1wGH8DRuQKws5RUU1u2amRL6NSqWUQPlVOez2FrClw33-Ir2mjwYYqFUDUNdgoSR_DCmWUDc6qA7_VWshw8MVMfIgqrnguOscogsn6mg8ZjSRHnPUy4LHPjvFilGo5RMiSuJzc_hA24ywPutyDjR0SRJbRZ45nRXk54GeU=0B914C77"
+            },
+            "disabled": false,
+            "autoApprove": [
+                "jira_search",
+                "jira_get_issue",
+                "jira_get_agile_boards",
+                "jira_get_sprints_from_board",
+                "jira_get_sprint_issues",
+                "confluence_search"
+            ],
+            "disabledTools": [
+                "jira_delete_issue",
+                "jira_batch_create_issues",
+                "jira_create_issue",
+                "confluence_delete_page"
+            ]
+        }
+    }
+}
