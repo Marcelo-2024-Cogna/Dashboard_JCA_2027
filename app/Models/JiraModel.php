@@ -12,11 +12,13 @@ namespace App\Models;
  */
 class JiraModel
 {
-    private string $host;
-    private string $email;
-    private string $token;
-    private array  $cf;         // custom_fields
-    private array  $fieldList;  // field_list
+    private string  $host;
+    private string  $email;
+    private string  $token;
+    private array   $cf;         // custom_fields
+    private array   $fieldList;  // field_list
+    private bool    $sslVerify;  // verificar certificado SSL
+    private ?string $caBundle;   // caminho para CA bundle customizado
 
     public function __construct(array $config)
     {
@@ -25,6 +27,8 @@ class JiraModel
         $this->token     = $config['token'];
         $this->cf        = $config['custom_fields'];
         $this->fieldList = $config['field_list'];
+        $this->sslVerify = $config['ssl_verify'] ?? true;
+        $this->caBundle  = $config['ca_bundle']  ?? null;
     }
 
     // ── Busca paginada completa ───────────────────────────────────────────
@@ -93,8 +97,14 @@ class JiraModel
                 'Accept: application/json',
             ],
             CURLOPT_TIMEOUT        => 30,
-            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYPEER => $this->sslVerify,
+            CURLOPT_SSL_VERIFYHOST => $this->sslVerify ? 2 : 0,
         ]);
+
+        // CA bundle customizado (certificado do proxy corporativo)
+        if ($this->sslVerify && $this->caBundle !== null) {
+            curl_setopt($ch, CURLOPT_CAINFO, $this->caBundle);
+        }
 
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);

@@ -13,6 +13,13 @@ return [
     // Tempo de cache do arquivo data/items.json em segundos (padrão: 30 min)
     'cache_ttl' => (int)(getenv('JIRA_CACHE_TTL') ?: 1800),
 
+    // Verificação de certificado SSL. Em redes com proxy corporativo que
+    // injeta certificado próprio (ex: "self-signed certificate in chain"),
+    // defina JIRA_SSL_VERIFY=0 para desabilitar, OU aponte JIRA_CA_BUNDLE
+    // para o .pem do certificado corporativo (mais seguro).
+    'ssl_verify' => getenv('JIRA_SSL_VERIFY') !== '0',
+    'ca_bundle'  => getenv('JIRA_CA_BUNDLE') ?: null,
+
     // JQL padrão usada pela extração (sprints PI 3/26)
     'default_jql' =>
         'project in (ADKB,ADMD,ADPL,ADR6,ADTH,ADTP,ADGP,ADSE,ASEC,ATEN,ASPL,SGGU,SGTB,SDIA)'
