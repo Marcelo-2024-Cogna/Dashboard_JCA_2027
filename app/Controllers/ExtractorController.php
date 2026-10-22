@@ -3,6 +3,7 @@
 namespace App\Controllers;
 
 use App\Models\JiraModel;
+use App\Services\JqlBuilder;
 
 /**
  * ExtractorController
@@ -10,21 +11,26 @@ use App\Models\JiraModel;
  * Trata as requisições HTTP de extração de dados do Jira.
  * Gerencia o cache em data/items.json e devolve JSON ao cliente.
  *
+ * A JQL padrão vem do JqlBuilder (fonte única: config/baseline.php),
+ * garantindo que /extract consulte o MESMO universo de itens da baseline.
+ *
  * Parâmetros GET aceitos:
  *   force=1        Ignora cache e reextrai do Jira
- *   jql=...        JQL customizada
+ *   jql=...        JQL customizada (sobrepõe a padrão)
  *   sprints=a,b,c  Atalho: monta JQL filtrando pelas sprints informadas
  *   max=100        Itens por página (máx 500)
  */
 class ExtractorController
 {
-    private array  $config;
-    private string $cacheFile;
+    private array      $config;
+    private string     $cacheFile;
+    private JqlBuilder $jqlBuilder;
 
-    public function __construct(array $config, string $dataDir)
+    public function __construct(array $config, string $dataDir, JqlBuilder $jqlBuilder)
     {
-        $this->config    = $config;
-        $this->cacheFile = rtrim($dataDir, '/\\') . '/items.json';
+        $this->config     = $config;
+        $this->cacheFile  = rtrim($dataDir, '/\\') . '/items.json';
+        $this->jqlBuilder = $jqlBuilder;
     }
 
     // ── Ponto de entrada ─────────────────────────────────────────────────
@@ -73,21 +79,20 @@ class ExtractorController
 
     private function resolveJql(): string
     {
+        // JQL customizada explícita tem prioridade
         if (!empty($_GET['jql'])) {
             return trim($_GET['jql']);
         }
 
+        // Atalho por sprints: usa a MESMA base (projetos/tipos) da fonte
+        // única, variando só as sprints informadas.
         if (!empty($_GET['sprints'])) {
-            $sprints    = array_map('trim', explode(',', $_GET['sprints']));
-            $sprintList = implode('","', $sprints);
-            return 'project in (ADKB,ADMD,ADPL,ADR6,ADTH,ADTP,ADGP,ADSE,ASEC,ATEN,ASPL,SGGU,SGTB,SDIA)'
-                . ' AND issuetype in ("Débito Técnico", Enabler, Story, Spike, Teste, Incidente,'
-                . ' "Solicitação de Serviço", bug, Sustentação, Suporte)'
-                . ' AND sprint in ("' . $sprintList . '")'
-                . ' ORDER BY project ASC, created DESC';
+            $sprints = array_map('trim', explode(',', $_GET['sprints']));
+            return $this->jqlBuilder->build($sprints);
         }
 
-        return $this->config['default_jql'];
+        // Padrão: PI corrente, idêntica à da baseline (fonte única).
+        return $this->jqlBuilder->forCurrentPi();
     }
 
     // ── Cache ─────────────────────────────────────────────────────────────

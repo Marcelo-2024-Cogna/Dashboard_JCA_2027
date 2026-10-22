@@ -1,0 +1,23 @@
+# ============================================================
+#  .htaccess raiz do projeto dashboard
+#  Redireciona todas as requisicoes para a pasta public/,
+#  que e o unico diretorio exposto (padrao front-controller).
+# ============================================================
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Base = caminho do projeto a partir do DocumentRoot do XAMPP
+    RewriteBase /dashboard/
+
+    # Nao reescrever requisicoes que ja apontam para dentro de public/
+    RewriteCond %{REQUEST_URI} !^/dashboard/public/
+
+    # Encaminha tudo para public/, preservando o restante do caminho
+    RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>
+
+# Protege arquivos sensiveis caso alguem acesse a raiz diretamente
+<FilesMatch "\.(xlsx|json|md|bat|cmd)$">
+    Require all denied
+</FilesMatch>

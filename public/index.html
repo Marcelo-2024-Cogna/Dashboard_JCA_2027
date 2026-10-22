@@ -1,9 +1,9 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Dashboard Â· MÃ©tricas Review</title>
+  <title>Dashboard · Métricas Review</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -28,7 +28,7 @@
 
     body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
 
-    /* â”€â”€ Header â”€â”€ */
+    /* ── Header ── */
     header {
       background: var(--surface); border-bottom: 1px solid var(--border);
       padding: 16px 28px; display: flex; align-items: center; gap: 14px;
@@ -51,7 +51,7 @@
     .btn:hover { background: var(--indigo); border-color: var(--indigo); }
     .btn-primary { background: var(--indigo); border-color: var(--indigo); }
 
-    /* â”€â”€ Tabs â”€â”€ */
+    /* ── Tabs ── */
     .tabs {
       background: var(--surface); border-bottom: 1px solid var(--border);
       display: flex; gap: 2px; padding: 0 28px; overflow-x: auto;
@@ -63,7 +63,7 @@
     .tab:hover { color: var(--text); }
     .tab.active { color: var(--indigo); border-bottom-color: var(--indigo); font-weight: 600; }
 
-    /* â”€â”€ Loading / Error â”€â”€ */
+    /* ── Loading / Error ── */
     #loading {
       display: flex; flex-direction: column; align-items: center;
       justify-content: center; height: 60vh; gap: 14px; color: var(--muted);
@@ -75,12 +75,12 @@
       background: rgba(244,63,94,.1); border: 1px solid var(--rose); border-radius: var(--r); color: #fda4af;
     }
 
-    /* â”€â”€ Main â”€â”€ */
+    /* ── Main ── */
     #main { display: none; }
     .page { display: none; padding: 24px 28px; max-width: 1600px; margin: 0 auto; }
     .page.active { display: block; }
 
-    /* â”€â”€ Filters bar â”€â”€ */
+    /* ── Filters bar ── */
     .filters {
       background: var(--surface); border: 1px solid var(--border);
       border-radius: var(--r); padding: 14px 18px; margin-bottom: 20px;
@@ -93,14 +93,14 @@
     }
     .filters select:focus, .filters input:focus { outline: none; border-color: var(--indigo); }
 
-    /* â”€â”€ Section title â”€â”€ */
+    /* ── Section title ── */
     .stitle {
       font-size: .68rem; font-weight: 700; letter-spacing: .12em;
       text-transform: uppercase; color: var(--muted); margin: 24px 0 12px;
     }
     .stitle:first-child { margin-top: 0; }
 
-    /* â”€â”€ KPI grid â”€â”€ */
+    /* ── KPI grid ── */
     .kpi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px,1fr)); gap: 14px; margin-bottom: 6px; }
     .kpi {
       background: var(--surface); border: 1px solid var(--border);
@@ -111,7 +111,7 @@
     .kpi-val { font-size: 1.9rem; font-weight: 700; line-height: 1; }
     .kpi-sub { font-size: .72rem; color: var(--muted); margin-top: 5px; }
 
-    /* â”€â”€ Chart grid â”€â”€ */
+    /* ── Chart grid ── */
     .cgrid { display: grid; gap: 18px; }
     .cgrid.c2 { grid-template-columns: repeat(auto-fill, minmax(440px,1fr)); }
     .cgrid.c3 { grid-template-columns: repeat(auto-fill, minmax(320px,1fr)); }
@@ -127,7 +127,7 @@
     .cwrap.tall { height: 320px; }
     .cwrap.xtall { height: 420px; }
 
-    /* â”€â”€ Table â”€â”€ */
+    /* ── Table ── */
     .twrap { overflow-x: auto; max-height: 480px; overflow-y: auto; }
     table { width: 100%; border-collapse: collapse; font-size: .78rem; }
     thead th {
@@ -140,7 +140,7 @@
     tbody td { padding: 8px 13px; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .mono { font-family: monospace; font-size: .72rem; color: var(--cyan); }
 
-    /* â”€â”€ Badges â”€â”€ */
+    /* ── Badges ── */
     .bs { display: inline-block; padding: 2px 9px; border-radius: 20px; font-size: .68rem; font-weight: 600; }
     .bs-done  { background: rgba(16,185,129,.15); color: #34d399; }
     .bs-prog  { background: rgba(99,102,241,.15);  color: #a5b4fc; }
@@ -148,11 +148,11 @@
     .bs-risk  { background: rgba(249,115,22,.15);  color: #fb923c; }
     .bs-block { background: rgba(244,63,94,.15);   color: #fda4af; }
 
-    /* â”€â”€ Progress â”€â”€ */
+    /* ── Progress ── */
     .pbar { background: var(--surface2); border-radius: 4px; height: 5px; overflow: hidden; min-width: 60px; }
     .pfill { height: 100%; border-radius: 4px; transition: width .3s; }
 
-    /* â”€â”€ Responsive â”€â”€ */
+    /* ── Responsive ── */
     @media (max-width: 768px) {
       header, .page { padding: 14px 14px; }
       .tabs { padding: 0 14px; }
@@ -164,22 +164,22 @@
 <body>
 
 <header>
-  <div class="logo">ðŸ“Š</div>
+  <div class="logo">📊</div>
   <div>
-    <h1>MÃ©tricas Review</h1>
+    <h1>Métricas Review</h1>
     <div class="sub">Jornada Secretaria &amp; Gestor de Unidades</div>
   </div>
   <div class="spacer"></div>
   <span id="ts"></span>
-  <button class="btn" onclick="refreshData(true)">â†º Reextrair Jira</button>
-  <button class="btn btn-primary" onclick="refreshData(false)">âŸ³ Atualizar</button>
+  <button class="btn" onclick="refreshData(true)">↺ Reextrair Jira</button>
+  <button class="btn btn-primary" onclick="refreshData(false)">⟳ Atualizar</button>
 </header>
 
 <nav class="tabs">
-  <div class="tab active" data-page="overview">VisÃ£o Geral</div>
+  <div class="tab active" data-page="overview">Visão Geral</div>
   <div class="tab" data-page="velocity">Velocity</div>
   <div class="tab" data-page="flow">Fluxo & Ciclos</div>
-  <div class="tab" data-page="sustentacao">SustentaÃ§Ã£o</div>
+  <div class="tab" data-page="sustentacao">Sustentação</div>
   <div class="tab" data-page="items">Itens</div>
 </nav>
 
@@ -188,7 +188,7 @@
 
 <div id="main">
 
-  <!-- â•â• VISÃƒO GERAL â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
+  <!-- ══ VISÃO GERAL ═══════════════════════════════════════════════════ -->
   <div class="page active" id="page-overview">
     <div class="filters" id="filter-overview">
       <label>Sprint
@@ -211,7 +211,7 @@
     <div class="stitle">KPIs</div>
     <div class="kpi-grid" id="kpis"></div>
 
-    <div class="stitle" style="margin-top:20px">DistribuiÃ§Ãµes</div>
+    <div class="stitle" style="margin-top:20px">Distribuições</div>
     <div class="cgrid c2">
       <div class="ccard">
         <h3>Status dos Itens <span class="badge">por quantidade</span></h3>
@@ -226,13 +226,13 @@
         <div class="cwrap tall"><canvas id="ch-proj"></canvas></div>
       </div>
       <div class="ccard">
-        <h3>AlteraÃ§Ã£o de Escopo <span class="badge">% de itens</span></h3>
+        <h3>Alteração de Escopo <span class="badge">% de itens</span></h3>
         <div class="cwrap"><canvas id="ch-escopo"></canvas></div>
       </div>
     </div>
   </div>
 
-  <!-- â•â• VELOCITY â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
+  <!-- ══ VELOCITY ══════════════════════════════════════════════════════ -->
   <div class="page" id="page-velocity">
     <div class="filters">
       <label>Projeto
@@ -250,20 +250,20 @@
       </div>
     </div>
 
-    <div class="stitle">DistribuiÃ§Ã£o por Tipo</div>
+    <div class="stitle">Distribuição por Tipo</div>
     <div class="cgrid c2">
       <div class="ccard">
         <h3>SP por Tipo de Item <span class="badge">por sprint</span></h3>
         <div class="cwrap tall"><canvas id="ch-sp-tipo"></canvas></div>
       </div>
       <div class="ccard">
-        <h3>ResoluÃ§Ã£o dos Itens <span class="badge">por sprint</span></h3>
+        <h3>Resolução dos Itens <span class="badge">por sprint</span></h3>
         <div class="cwrap tall"><canvas id="ch-resolucao"></canvas></div>
       </div>
     </div>
   </div>
 
-  <!-- â•â• FLUXO & CICLOS â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
+  <!-- ══ FLUXO & CICLOS ════════════════════════════════════════════════ -->
   <div class="page" id="page-flow">
     <div class="filters">
       <label>Sprint
@@ -281,11 +281,11 @@
     <div class="stitle">Ciclos (dias)</div>
     <div class="cgrid c2">
       <div class="ccard">
-        <h3>Ciclo de Desenvolvimento <span class="badge">por projeto Â· mediana</span></h3>
+        <h3>Ciclo de Desenvolvimento <span class="badge">por projeto · mediana</span></h3>
         <div class="cwrap"><canvas id="ch-ciclo-dev"></canvas></div>
       </div>
       <div class="ccard">
-        <h3>Ciclo de HomologaÃ§Ã£o <span class="badge">por projeto Â· mediana</span></h3>
+        <h3>Ciclo de Homologação <span class="badge">por projeto · mediana</span></h3>
         <div class="cwrap"><canvas id="ch-ciclo-hom"></canvas></div>
       </div>
       <div class="ccard">
@@ -307,23 +307,23 @@
     </div>
   </div>
 
-  <!-- â•â• SUSTENTAÃ‡ÃƒO â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
+  <!-- ══ SUSTENTAÇÃO ═══════════════════════════════════════════════════ -->
   <div class="page" id="page-sustentacao">
-    <div class="stitle">Itens de SustentaÃ§Ã£o</div>
+    <div class="stitle">Itens de Sustentação</div>
     <div class="cgrid c2">
       <div class="ccard">
-        <h3>SP de SustentaÃ§Ã£o por Sprint <span class="badge">vs Entrega de Valor</span></h3>
+        <h3>SP de Sustentação por Sprint <span class="badge">vs Entrega de Valor</span></h3>
         <div class="cwrap tall"><canvas id="ch-sust-sprint"></canvas></div>
       </div>
       <div class="ccard">
-        <h3>Tipo de SustentaÃ§Ã£o <span class="badge">quantidade de itens</span></h3>
+        <h3>Tipo de Sustentação <span class="badge">quantidade de itens</span></h3>
         <div class="cwrap"><canvas id="ch-sust-tipo"></canvas></div>
       </div>
     </div>
-    <div class="stitle">AntecipaÃ§Ãµes</div>
+    <div class="stitle">Antecipações</div>
     <div class="cgrid c2">
       <div class="ccard">
-        <h3>Itens com AntecipaÃ§Ã£o de Sprint <span class="badge">por sprint</span></h3>
+        <h3>Itens com Antecipação de Sprint <span class="badge">por sprint</span></h3>
         <div class="cwrap"><canvas id="ch-antecip"></canvas></div>
       </div>
       <div class="ccard">
@@ -333,7 +333,7 @@
     </div>
   </div>
 
-  <!-- â•â• ITENS â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
+  <!-- ══ ITENS ══════════════════════════════════════════════════════════ -->
   <div class="page" id="page-items">
     <div class="filters">
       <label>Sprint
@@ -367,12 +367,12 @@
 </div><!-- #main -->
 
 <script>
-// â”€â”€â”€ Estado global â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Estado global ────────────────────────────────────────────────────────
 let RAW = [];       // todos os itens carregados
 let META = {};      // extracted_at, jql, etc.
-const charts = {};  // instÃ¢ncias Chart.js
+const charts = {};  // instâncias Chart.js
 
-// â”€â”€â”€ Paleta â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Paleta ───────────────────────────────────────────────────────────────
 const P = ['#6366f1','#22d3ee','#10b981','#f59e0b','#f43f5e','#a78bfa','#f97316','#38bdf8','#84cc16','#ec4899'];
 const s = i => P[i % P.length];
 const f = (i, a=.18) => P[i % P.length] + Math.round(a*255).toString(16).padStart(2,'0');
@@ -395,7 +395,7 @@ function mkChart(id, cfg) {
   charts[id] = new Chart(el, cfg);
 }
 
-// â”€â”€â”€ UtilitÃ¡rios â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Utilitários ─────────────────────────────────────────────────────────
 const median = arr => {
   const s = arr.filter(v => v != null && !isNaN(v)).map(Number).sort((a,b)=>a-b);
   if (!s.length) return null;
@@ -417,29 +417,29 @@ const groupBy = (arr, key) => arr.reduce((acc, item) => {
 const sum = (arr, key) => arr.reduce((a,b) => a + (Number(b[key])||0), 0);
 
 function shortSprint(s) {
-  if (!s) return 'â€”';
-  // "[BPLE] SP 26.3.1" â†’ "SP 26.3.1"
+  if (!s) return '—';
+  // "[BPLE] SP 26.3.1" → "SP 26.3.1"
   return s.split(';')[0].replace(/\[.*?\]\s*/g,'').trim();
 }
 
 function shortProject(p) {
-  if (!p) return 'â€”';
-  // "[Jornada X] Squad Y" â†’ "Squad Y"
+  if (!p) return '—';
+  // "[Jornada X] Squad Y" → "Squad Y"
   return p.replace(/\[.*?\]\s*/g,'').trim() || p;
 }
 
 function statusBadge(s) {
   const m = {
-    'Em produÃ§Ã£o':'bs-done','Aceito':'bs-done','ConcluÃ­do':'bs-done',
+    'Em produção':'bs-done','Aceito':'bs-done','Concluído':'bs-done',
     'Em Andamento':'bs-prog','Em desenvolvimento':'bs-prog',
     'Bloqueado':'bs-block',
     'Backlog':'bs-todo','Funil':'bs-todo','Refinamento':'bs-todo',
   };
   const cls = m[s] || 'bs-todo';
-  return `<span class="bs ${cls}">${s||'â€”'}</span>`;
+  return `<span class="bs ${cls}">${s||'—'}</span>`;
 }
 
-// â”€â”€â”€ Filtros â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Filtros ──────────────────────────────────────────────────────────────
 function getFiltered(page) {
   let data = [...RAW];
 
@@ -482,9 +482,9 @@ function populateFilters() {
   fill('flt-status-it', statuses);  fill('flt-proj-it', projetos);
 }
 
-// â”€â”€â”€ KPIs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── KPIs ─────────────────────────────────────────────────────────────────
 function renderKpis(data) {
-  const done  = data.filter(i => ['Em produÃ§Ã£o','Aceito','ConcluÃ­do','Itens concluÃ­dos'].some(s => (i.status||'').includes(s) || (i.categoria_status||'').includes(s)));
+  const done  = data.filter(i => ['Em produção','Aceito','Concluído','Itens concluídos'].some(s => (i.status||'').includes(s) || (i.categoria_status||'').includes(s)));
   const totalSP = sum(data, 'story_points');
   const doneSP  = sum(done, 'story_points');
   const pct     = totalSP ? Math.round(doneSP/totalSP*100) : 0;
@@ -494,12 +494,12 @@ function renderKpis(data) {
   const sust    = data.filter(i => i.tipo_sustentacao).length;
 
   const kpis = [
-    { label:'Total de Itens',          val: data.length,              sub:'na seleÃ§Ã£o atual',                  ac:'#6366f1' },
+    { label:'Total de Itens',          val: data.length,              sub:'na seleção atual',                  ac:'#6366f1' },
     { label:'Story Points Entregues',  val: doneSP + ' / ' + totalSP, sub:`${pct}% do planejado`,              ac:'#10b981' },
-    { label:'Lead Time MÃ©dio',         val: avgLT ? avgLT.toFixed(1)+'d' : 'â€”', sub:'todos os tipos',         ac:'#f59e0b' },
-    { label:'Ciclo Desenv. MÃ©dio',     val: avgDev ? avgDev.toFixed(1)+'d' : 'â€”', sub:'dias em dev',          ac:'#22d3ee' },
+    { label:'Lead Time Médio',         val: avgLT ? avgLT.toFixed(1)+'d' : '—', sub:'todos os tipos',         ac:'#f59e0b' },
+    { label:'Ciclo Desenv. Médio',     val: avgDev ? avgDev.toFixed(1)+'d' : '—', sub:'dias em dev',          ac:'#22d3ee' },
     { label:'Itens com Bloqueio',      val: bloq,                     sub:`${data.length ? Math.round(bloq/data.length*100) : 0}% do total`, ac:'#f43f5e' },
-    { label:'Itens de SustentaÃ§Ã£o',    val: sust,                     sub:'incidentes, SS, suporte',           ac:'#f97316' },
+    { label:'Itens de Sustentação',    val: sust,                     sub:'incidentes, SS, suporte',           ac:'#f97316' },
   ];
 
   document.getElementById('kpis').innerHTML = kpis.map(k => `
@@ -510,7 +510,7 @@ function renderKpis(data) {
     </div>`).join('');
 }
 
-// â”€â”€â”€ Overview charts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Overview charts ──────────────────────────────────────────────────────
 function renderOverview(data) {
   renderKpis(data);
 
@@ -547,18 +547,18 @@ function renderOverview(data) {
   const semEscopo  = data.length - comEscopo;
   mkChart('ch-escopo', {
     type: 'doughnut',
-    data: { labels:['Com AlteraÃ§Ã£o','Sem AlteraÃ§Ã£o'], datasets:[{ data:[comEscopo, semEscopo], backgroundColor:['#f97316','#6366f1'], borderColor:'#1a1d27', borderWidth:3, hoverOffset:6 }] },
+    data: { labels:['Com Alteração','Sem Alteração'], datasets:[{ data:[comEscopo, semEscopo], backgroundColor:['#f97316','#6366f1'], borderColor:'#1a1d27', borderWidth:3, hoverOffset:6 }] },
     options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom' } }, cutout:'55%' }
   });
 }
 
-// â”€â”€â”€ Velocity â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Velocity ─────────────────────────────────────────────────────────────
 function renderVelocity(data) {
   // Ordena sprints
   const sprintMap = {};
   data.forEach(i => {
     const sp = shortSprint(i.sprint);
-    if (!sp || sp === 'â€”') return;
+    if (!sp || sp === '—') return;
     if (!sprintMap[sp]) sprintMap[sp] = { total: 0, byTipo: {}, byResolucao: {} };
     const sp_val = Number(i.story_points) || 0;
     sprintMap[sp].total += sp_val;
@@ -566,7 +566,7 @@ function renderVelocity(data) {
     const tipo = i.tipo_item || 'Outros';
     sprintMap[sp].byTipo[tipo] = (sprintMap[sp].byTipo[tipo] || 0) + sp_val;
 
-    const res = i.resolucao || i.categoria_status || 'Sem resoluÃ§Ã£o';
+    const res = i.resolucao || i.categoria_status || 'Sem resolução';
     sprintMap[sp].byResolucao[res] = (sprintMap[sp].byResolucao[res] || 0) + 1;
   });
 
@@ -602,7 +602,7 @@ function renderVelocity(data) {
     options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom' } }, scales:{ x:{stacked:true}, y:{stacked:true, beginAtZero:true} } }
   });
 
-  // ResoluÃ§Ã£o por sprint
+  // Resolução por sprint
   const allRes = [...new Set(data.map(i => i.resolucao || i.categoria_status).filter(Boolean))];
   mkChart('ch-resolucao', {
     type: 'bar',
@@ -618,7 +618,7 @@ function renderVelocity(data) {
   });
 }
 
-// â”€â”€â”€ Fluxo & Ciclos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Fluxo & Ciclos ───────────────────────────────────────────────────────
 function renderFlow(data) {
   // Ciclo dev por projeto (mediana)
   const withDev  = data.filter(i => i.ciclo_desenvolvimento != null);
@@ -664,30 +664,30 @@ function renderFlow(data) {
     .slice(0,20);
 
   document.getElementById('tbl-bloqueado').innerHTML = bloq.length === 0
-    ? '<p style="color:var(--muted);padding:12px">Nenhum item bloqueado na seleÃ§Ã£o.</p>'
+    ? '<p style="color:var(--muted);padding:12px">Nenhum item bloqueado na seleção.</p>'
     : `<table><thead><tr><th>Chave</th><th>Resumo</th><th>Tipo</th><th>Status</th><th>Tempo Bloqueado</th></tr></thead><tbody>
         ${bloq.map(i=>`<tr>
           <td><span class="mono">${i.chave}</span></td>
-          <td title="${i.resumo}">${(i.resumo||'').substring(0,60)}â€¦</td>
-          <td>${i.tipo_item||'â€”'}</td>
+          <td title="${i.resumo}">${(i.resumo||'').substring(0,60)}…</td>
+          <td>${i.tipo_item||'—'}</td>
           <td>${statusBadge(i.status)}</td>
           <td style="color:var(--amber);font-weight:600">${i.tempo_total_bloqueado}</td>
         </tr>`).join('')}
       </tbody></table>`;
 }
 
-// â”€â”€â”€ SustentaÃ§Ã£o â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Sustentação ─────────────────────────────────────────────────────────
 function renderSustentacao() {
   const data = RAW;
 
-  // SP de sustentaÃ§Ã£o vs entrega de valor por sprint
+  // SP de sustentação vs entrega de valor por sprint
   const sprintMap = {};
   data.forEach(i => {
     const sp = shortSprint(i.sprint);
-    if (!sp || sp === 'â€”') return;
+    if (!sp || sp === '—') return;
     if (!sprintMap[sp]) sprintMap[sp] = { sust: 0, valor: 0 };
     const pts = Number(i.story_points) || 0;
-    if (i.tipo_sustentacao || ['Incidente','SustentaÃ§Ã£o','Suporte','SolicitaÃ§Ã£o de ServiÃ§o'].includes(i.tipo_item)) {
+    if (i.tipo_sustentacao || ['Incidente','Sustentação','Suporte','Solicitação de Serviço'].includes(i.tipo_item)) {
       sprintMap[sp].sust += pts;
     } else {
       sprintMap[sp].valor += pts;
@@ -701,13 +701,13 @@ function renderSustentacao() {
       labels: spLabels,
       datasets: [
         { label:'Entrega de Valor', data: spLabels.map(sp=>sprintMap[sp].valor), backgroundColor:'#6366f180', borderColor:'#6366f1', borderWidth:1.5, borderRadius:3, stack:'s' },
-        { label:'SustentaÃ§Ã£o',      data: spLabels.map(sp=>sprintMap[sp].sust),  backgroundColor:'#f9731680', borderColor:'#f97316', borderWidth:1.5, borderRadius:3, stack:'s' },
+        { label:'Sustentação',      data: spLabels.map(sp=>sprintMap[sp].sust),  backgroundColor:'#f9731680', borderColor:'#f97316', borderWidth:1.5, borderRadius:3, stack:'s' },
       ]
     },
     options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}}, scales:{ x:{stacked:true}, y:{stacked:true, beginAtZero:true, title:{display:true,text:'Story Points'}} } }
   });
 
-  // Tipo de sustentaÃ§Ã£o
+  // Tipo de sustentação
   const sustItems = data.filter(i => i.tipo_sustentacao);
   const byTipoSust = groupBy(sustItems, 'tipo_sustentacao');
   const stKeys = Object.keys(byTipoSust);
@@ -717,16 +717,16 @@ function renderSustentacao() {
     options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'right'}}, cutout:'55%' }
   });
 
-  // AntecipaÃ§Ãµes por sprint
+  // Antecipações por sprint
   const antecipMap = {};
   data.filter(i=>i.antecipacao).forEach(i => {
-    const sp = shortSprint(i.sprint) || 'â€”';
+    const sp = shortSprint(i.sprint) || '—';
     antecipMap[sp] = (antecipMap[sp]||0)+1;
   });
   const antLabels = Object.keys(antecipMap).sort();
   mkChart('ch-antecip', {
     type: 'bar',
-    data: { labels: antLabels, datasets: [{ label:'AntecipaÃ§Ãµes', data: antLabels.map(k=>antecipMap[k]), backgroundColor:'#a78bfa80', borderColor:'#a78bfa', borderWidth:1.5, borderRadius:4 }] },
+    data: { labels: antLabels, datasets: [{ label:'Antecipações', data: antLabels.map(k=>antecipMap[k]), backgroundColor:'#a78bfa80', borderColor:'#a78bfa', borderWidth:1.5, borderRadius:4 }] },
     options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ y:{beginAtZero:true, title:{display:true,text:'Itens'}} } }
   });
 
@@ -741,7 +741,7 @@ function renderSustentacao() {
   });
 }
 
-// â”€â”€â”€ Tabela de itens â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Tabela de itens ──────────────────────────────────────────────────────
 function renderItems() {
   let data = [...RAW];
   const get = id => { const el = document.getElementById(id); return el ? el.value : ''; };
@@ -757,7 +757,7 @@ function renderItems() {
 
   document.getElementById('items-count').textContent = `${data.length} itens`;
 
-  const cols = ['Chave','Tipo','Resumo','Projeto','Sprint','Status','SP','Lead Time','Ciclo Dev','AlteraÃ§Ã£o Escopo'];
+  const cols = ['Chave','Tipo','Resumo','Projeto','Sprint','Status','SP','Lead Time','Ciclo Dev','Alteração Escopo'];
 
   document.getElementById('tbl-items').innerHTML = `
     <table>
@@ -765,22 +765,22 @@ function renderItems() {
       <tbody>
         ${data.slice(0,500).map(i => `<tr>
           <td><span class="mono">${i.chave}</span></td>
-          <td><span style="font-size:.72rem;color:var(--muted)">${i.tipo_item||'â€”'}</span></td>
-          <td title="${i.resumo||''}">${(i.resumo||'').substring(0,55)}${(i.resumo||'').length>55?'â€¦':''}</td>
+          <td><span style="font-size:.72rem;color:var(--muted)">${i.tipo_item||'—'}</span></td>
+          <td title="${i.resumo||''}">${(i.resumo||'').substring(0,55)}${(i.resumo||'').length>55?'…':''}</td>
           <td title="${i.projeto||''}">${shortProject(i.projeto||'')}</td>
           <td style="white-space:nowrap;font-size:.72rem">${shortSprint(i.sprint)}</td>
           <td>${statusBadge(i.status)}</td>
-          <td style="text-align:center">${i.story_points??'â€”'}</td>
-          <td style="text-align:center">${i.lead_time!=null?i.lead_time+'d':'â€”'}</td>
-          <td style="text-align:center">${i.ciclo_desenvolvimento!=null?i.ciclo_desenvolvimento+'d':'â€”'}</td>
-          <td style="font-size:.72rem;color:${i.alteracao_escopo?'var(--amber)':'var(--muted)'}">${i.alteracao_escopo||'â€”'}</td>
+          <td style="text-align:center">${i.story_points??'—'}</td>
+          <td style="text-align:center">${i.lead_time!=null?i.lead_time+'d':'—'}</td>
+          <td style="text-align:center">${i.ciclo_desenvolvimento!=null?i.ciclo_desenvolvimento+'d':'—'}</td>
+          <td style="font-size:.72rem;color:${i.alteracao_escopo?'var(--amber)':'var(--muted)'}">${i.alteracao_escopo||'—'}</td>
         </tr>`).join('')}
-        ${data.length>500?`<tr><td colspan="${cols.length}" style="text-align:center;color:var(--muted);padding:12px">+ ${data.length-500} itens ocultos â€” use os filtros</td></tr>`:''}
+        ${data.length>500?`<tr><td colspan="${cols.length}" style="text-align:center;color:var(--muted);padding:12px">+ ${data.length-500} itens ocultos — use os filtros</td></tr>`:''}
       </tbody>
     </table>`;
 }
 
-// â”€â”€â”€ Render tudo â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Render tudo ──────────────────────────────────────────────────────────
 function renderAll() {
   const ovData  = getFiltered('overview');
   const velData = getFiltered('velocity');
@@ -793,7 +793,7 @@ function renderAll() {
   renderItems();
 }
 
-// â”€â”€â”€ Tabs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Tabs ─────────────────────────────────────────────────────────────────
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => {
     document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
@@ -803,14 +803,17 @@ document.querySelectorAll('.tab').forEach(tab => {
   });
 });
 
-// â”€â”€â”€ Carga de dados â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Carga de dados ────────────────────────────────────────────────────────
 async function refreshData(force = false) {
   document.getElementById('loading').style.display = 'flex';
   document.getElementById('main').style.display    = 'none';
   document.getElementById('error-box').style.display = 'none';
 
   try {
-    const url = force ? 'extract?force=1' : 'extract';
+    // Base do projeto derivada do próprio caminho da página,
+    // funciona tanto em /dashboard/ quanto em /dashboard/public/.
+    const base = window.location.pathname.replace(/\/(public\/)?(index\.html)?$/, '/');
+    const url = base + 'extract' + (force ? '?force=1' : '');
     const res = await fetch(url);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = await res.json();
@@ -819,7 +822,7 @@ async function refreshData(force = false) {
     RAW  = json.items || [];
     META = { extracted_at: json.extracted_at, jql: json.jql, total: json.total_items, pages: json.pages };
 
-    document.getElementById('ts').textContent = `ExtraÃ­do: ${META.extracted_at} Â· ${META.total} itens`;
+    document.getElementById('ts').textContent = `Extraído: ${META.extracted_at} · ${META.total} itens`;
 
     populateFilters();
     renderAll();
@@ -832,7 +835,7 @@ async function refreshData(force = false) {
     const box = document.getElementById('error-box');
     box.style.display = 'block';
     box.innerHTML = `<strong>Erro ao carregar dados</strong><br>${err.message}<br><br>
-      Verifique: <code>http://localhost/dashboard/extract</code>`;
+      Verifique: <code>http://localhost:8080/dashboard/extract</code>`;
   }
 }
 

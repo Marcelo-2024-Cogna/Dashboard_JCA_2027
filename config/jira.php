@@ -20,13 +20,10 @@ return [
     'ssl_verify' => getenv('JIRA_SSL_VERIFY') !== '0',
     'ca_bundle'  => getenv('JIRA_CA_BUNDLE') ?: null,
 
-    // JQL padrão usada pela extração (sprints PI 3/26)
-    'default_jql' =>
-        'project in (ADKB,ADMD,ADPL,ADR6,ADTH,ADTP,ADGP,ADSE,ASEC,ATEN,ASPL,SGGU,SGTB,SDIA)'
-        . ' AND issuetype in ("Débito Técnico", Enabler, Story, Spike, Teste, Incidente,'
-        . ' "Solicitação de Serviço", bug, Sustentação, Suporte)'
-        . ' AND sprint in ("26.3.1","26.3.2","26.3.3","26.3.4","26.3.5")'
-        . ' ORDER BY project ASC, created DESC',
+    // NOTA: a JQL de extração NÃO fica mais aqui. Ela é montada pelo
+    // App\Services\JqlBuilder a partir de config/baseline.php (fonte única
+    // de projetos, sprints e tipos), garantindo que /extract e a baseline
+    // consultem exatamente o mesmo universo de itens.
 
     // IDs dos campos customizados da instância Cogna (validados em 09/10/2026)
     'custom_fields' => [

@@ -26,24 +26,94 @@ spl_autoload_register(function (string $class): void {
     }
 });
 
-// ── Carrega config ──────────────────────────────────────────────────────────
-$config = require BASE_DIR . '/config/jira.php';
+// ── Carrega configs ───────────────────────────────────────────────────────
+$config         = require BASE_DIR . '/config/jira.php';
+$baselineConfig = require BASE_DIR . '/config/baseline.php';
+$capacityConfig = require BASE_DIR . '/config/capacity.php';
+
+// ── Factory do repositório de baseline ──────────────────────────────────────
+// Hoje: JSON. Futuro: trocar por PdoBaselineRepository (MySQL/PostgreSQL)
+// implementando a mesma interface — nenhuma outra linha muda.
+$makeBaselineRepo = function () use ($baselineConfig) {
+    return new \App\Repositories\JsonBaselineRepository($baselineConfig['storage_dir']);
+};
+
+// ── JqlBuilder: fonte única de montagem de JQL (lê config/baseline.php) ──────
+// Usado por /extract, /baseline/capture e /metrics, garantindo que todos
+// consultem o MESMO universo de itens (projetos + sprints + tipos).
+$jqlBuilder = new \App\Services\JqlBuilder($baselineConfig);
+
+// ── Factory do controller de capacidade (histórico + cálculo) ────────────────
+$makeCapacityController = function () use ($baselineConfig, $capacityConfig, $makeBaselineRepo) {
+    $repo = new \App\Repositories\CapacityRepository($baselineConfig['capacity_dir']);
+    $calc = new \App\Services\CapacityCalculator();
+    // Injeta: repo de baseline (p/ sync ler progressos), config de regras/PI
+    // e config de capacidade (calendário de dias úteis + devs por time).
+    return new \App\Controllers\CapacityController(
+        $repo, $calc, $makeBaselineRepo(), $baselineConfig, $capacityConfig
+    );
+};
 
 // ── Roteamento ───────────────────────────────────────────────────────────────
+// A URL chega como /dashboard/extract, /dashboard/public/extract, /dashboard/ etc.
+// Normalizamos removendo o prefixo do projeto (/dashboard e /dashboard/public)
+// para obter a rota "limpa" (ex: /extract, /).
 $uri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
-// Remove prefixo do subdiretório (ex: /dashboard/public → /)
-$scriptDir = rtrim(dirname($_SERVER['SCRIPT_NAME']), '/');
-if ($scriptDir && str_starts_with($uri, $scriptDir)) {
-    $uri = substr($uri, strlen($scriptDir));
+
+// Remove prefixos conhecidos do subdiretório, na ordem mais específica primeiro
+foreach (['/dashboard/public', '/dashboard'] as $prefix) {
+    if (str_starts_with($uri, $prefix)) {
+        $uri = substr($uri, strlen($prefix));
+        break;
+    }
 }
-$uri = '/' . ltrim($uri ?: '/', '/');
+
+// Normaliza: garante uma barra inicial e remove barra final redundante
+$uri = '/' . trim($uri, '/');
 
 switch (true) {
 
     // ── Extração Jira → JSON ─────────────────────────────────────────────
     case $uri === '/extract':
-        $controller = new \App\Controllers\ExtractorController($config, DATA_DIR);
+        $controller = new \App\Controllers\ExtractorController($config, DATA_DIR, $jqlBuilder);
         $controller->handle();
+        break;
+
+    // ── Captura da baseline (snapshot imutável da PI) ────────────────────
+    case $uri === '/baseline/capture':
+        (new \App\Controllers\BaselineController($config, $baselineConfig, $makeBaselineRepo(), $jqlBuilder))->capture();
+        break;
+
+    // ── Snapshot de progresso (evolução/burn-up — acumula) ───────────────
+    case $uri === '/baseline/progress':
+        (new \App\Controllers\BaselineController($config, $baselineConfig, $makeBaselineRepo(), $jqlBuilder))->progress();
+        break;
+
+    // ── Lista de snapshots armazenados ───────────────────────────────────
+    case $uri === '/baseline/list':
+        (new \App\Controllers\BaselineController($config, $baselineConfig, $makeBaselineRepo(), $jqlBuilder))->list();
+        break;
+
+    // ── Métricas consolidadas (Velocidade, Previsibilidade, Scope Creep) ─
+    case $uri === '/metrics':
+        (new \App\Controllers\BaselineController($config, $baselineConfig, $makeBaselineRepo(), $jqlBuilder))->metrics();
+        break;
+
+    // ── Capacidade e Velocidade dos times (PI Planning) ──────────────────
+    case $uri === '/capacity/plan':
+        $makeCapacityController()->plan();
+        break;
+
+    case $uri === '/capacity/sprint':
+        $makeCapacityController()->addSprint();
+        break;
+
+    case $uri === '/capacity/sync':
+        $makeCapacityController()->sync();
+        break;
+
+    case $uri === '/capacity/history':
+        $makeCapacityController()->history();
         break;
 
     // ── Raiz → SPA ───────────────────────────────────────────────────────

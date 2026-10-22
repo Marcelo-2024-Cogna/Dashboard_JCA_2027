@@ -1,0 +1,27 @@
+# ============================================================
+#  .htaccess da pasta public/ (document root efetivo)
+#  Front Controller: envia todas as rotas virtuais para index.php,
+#  exceto arquivos/pastas que existem fisicamente (assets).
+# ============================================================
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /dashboard/public/
+
+    # Se o caminho for um arquivo real (ex: index.html, .css, .js), serve direto
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    # Caso contrario, roteia tudo para o front controller
+    RewriteRule ^ index.php [L]
+</IfModule>
+
+# Garante charset UTF-8 para HTML servido diretamente
+<IfModule mod_headers.c>
+    <FilesMatch "\.html$">
+        Header set Content-Type "text/html; charset=utf-8"
+    </FilesMatch>
+</IfModule>
+
+AddDefaultCharset UTF-8
