@@ -1,0 +1,27 @@
+{
+    "snapshot": {
+        "pi_id": "4\/26",
+        "team": "PGEX",
+        "captured_at": "2026-10-23 18:43:33",
+        "source_jql": "project in (APAP, APAV, APSF, APCO, APPL, APIN, ADPL, ADR6, ADKB, SGGU, SGGS, SGSE, SGTB, ATEN, JIEC, JICA, JIBK, JIMF, JIAE, JICE, JICS, JACO, JAMO, JAAM, JFHM, JFSP, JFTR, JFEA, APDO, PGCM, PGEX, PGIA, PGAL, SAJO, SATT, SADV) AND issuetype in standardIssueTypes() AND Sprint in (\"26.4.1\", \"26.4.2\", \"26.4.3\", \"26.4.4\", \"26.4.5\", \"26.4.6\") ORDER BY project",
+        "total_items": 1,
+        "total_sp": 1,
+        "is_frozen": true
+    },
+    "items": [
+        {
+            "issue_key": "PGEX-6446",
+            "issue_type": "Segurança",
+            "summary": "[SEC][CYBER][Pós] - Front Catalog - Revisão\/Implementação de Logs",
+            "status": "Em produção",
+            "story_points": 1,
+            "tempo_gasto_horas": null,
+            "sprint": "[PGEX] SP 26.4.1; [PGEX] SP 26.3.6",
+            "epic_key": "PGEX-6526",
+            "project": "[Jornada Pós Graduação] Externo",
+            "fix_version": "[PGEX] PI 3\/26",
+            "pi_id": "3\/26",
+            "team": "PGEX"
+        }
+    ]
+}

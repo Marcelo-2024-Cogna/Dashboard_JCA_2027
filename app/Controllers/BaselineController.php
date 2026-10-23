@@ -8,6 +8,7 @@ use App\Models\ProgressSnapshot;
 use App\Repositories\BaselineRepositoryInterface;
 use App\Services\MetricsService;
 use App\Services\JqlBuilder;
+use App\Services\SprintWindowService;
 
 /**
  * BaselineController
@@ -27,17 +28,20 @@ class BaselineController
     private array $baselineConfig;
     private BaselineRepositoryInterface $repo;
     private JqlBuilder $jqlBuilder;
+    private array $capacityConfig = [];
 
     public function __construct(
         array $jiraConfig,
         array $baselineConfig,
         BaselineRepositoryInterface $repo,
-        JqlBuilder $jqlBuilder
+        JqlBuilder $jqlBuilder,
+        array $capacityConfig = []
     ) {
         $this->jiraConfig     = $jiraConfig;
         $this->baselineConfig = $baselineConfig;
         $this->repo           = $repo;
         $this->jqlBuilder     = $jqlBuilder;
+        $this->capacityConfig = $capacityConfig;
     }
 
     // ── GET /baseline/capture ─────────────────────────────────────────────
@@ -221,27 +225,77 @@ class BaselineController
                 return;
             }
 
-            // Estado atual (fechamento): até a última sprint encerrada.
+            // ── Determina a JANELA de sprints fechadas ──────────────────────
+            // Prioridade: filtro da tela (?sprint=) > closing_sprint (config)
+            //           > automático por data (última sprint com fim < hoje).
+            $allSprints  = $this->baselineConfig['sprints'] ?? [];
+            $sprintDates = $this->capacityConfig['sprint_dates'] ?? [];
+            $configClosing = $this->baselineConfig['closing_sprint'] ?? null;
+            $screenSprint  = $_GET['sprint'] ?? null;
+
+            $windowSvc = new SprintWindowService($allSprints, $sprintDates, $configClosing);
+            $closing   = $windowSvc->resolveClosingSprint($screenSprint);
+            $window    = $windowSvc->windowSprints($screenSprint);
+
+            if (empty($window)) {
+                $this->respond([
+                    'success'       => true,
+                    'pi_id'         => $piId,
+                    'warning'       => 'Nenhuma sprint encerrada ainda para esta PI. '
+                        . 'O Planejado x Realizado passa a exibir dados conforme as sprints fecham.',
+                    'closing_sprint'=> $closing,
+                    'window'        => [],
+                    'data'          => null,
+                ]);
+                return;
+            }
+
+            // Estado atual do Jira (mesma JQL da baseline).
             $jql     = $this->jqlBuilder->forClosing();
             $current = $this->extractGroupedByTeam($jql);
+
+            // Filtro opcional por jornada (?jornada=) — recorta os times.
+            $jornadaFilter = trim($_GET['jornada'] ?? '');
 
             $svc  = new MetricsService($this->baselineConfig);
             $rows = [];
             foreach ($baselines as $baseline) {
+                // Se há filtro de jornada, considera só times daquela jornada.
+                if ($jornadaFilter !== '' && !$this->teamInJornada($baseline, $jornadaFilter)) {
+                    continue;
+                }
                 $teamCurrent = $current[$baseline->team] ?? [];
-                $rows[] = $svc->consolidate($baseline, $teamCurrent);
+                $rows[] = $svc->consolidateWindowed($baseline, $teamCurrent, $window);
             }
 
             $this->respond([
-                'success'   => true,
-                'pi_id'     => $piId,
-                'data'      => $this->shapeForCharts($rows),
-                'evolution' => $this->buildEvolution($piId),
+                'success'        => true,
+                'pi_id'          => $piId,
+                'closing_sprint' => $closing,
+                'window'         => $window,
+                'data'           => $this->shapeForCharts($rows),
+                'evolution'      => $this->buildEvolution($piId),
             ]);
 
         } catch (\RuntimeException $e) {
             $this->respondError($e->getMessage());
         }
+    }
+
+    /**
+     * Verifica se a baseline de um time pertence a uma jornada (pelo campo
+     * projeto "[Jornada] Time" do primeiro item com projeto preenchido).
+     */
+    private function teamInJornada(BaselineSnapshot $baseline, string $jornada): bool
+    {
+        foreach ($baseline->items as $it) {
+            $proj = $it['project'] ?? '';
+            if (preg_match('/^\[([^\]]+)\]/', (string)$proj, $m)) {
+                return stripos(trim($m[1]), $jornada) !== false
+                    || stripos($jornada, trim($m[1])) !== false;
+            }
+        }
+        return false;
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -254,8 +308,7 @@ class BaselineController
      */
     private function extractGroupedByTeam(string $jql): array
     {
-        $model = new JiraModel($this->jiraConfig);
-        $items = BaselineSnapshot::normalizeItems($model->fetchAll($jql, 100)['items']);
+        $items = $this->currentItems($jql);
 
         $byTeam = [];
         foreach ($items as $it) {
@@ -265,6 +318,31 @@ class BaselineController
             }
         }
         return $byTeam;
+    }
+
+    /**
+     * Itens do estado atual, normalizados. Reusa o cache de data/items.json
+     * (gerado por /extract) quando existe e está dentro do TTL — evitando
+     * reextrair os 36 projetos do Jira (lento) a cada chamada de métricas.
+     * Cai para extração ao vivo se não houver cache válido.
+     */
+    private function currentItems(string $jql = ''): array
+    {
+        $cacheFile = ($this->baselineConfig['data_dir'] ?? (dirname(__DIR__, 2) . '/data')) . '/items.json';
+        $ttl = (int)($this->jiraConfig['cache_ttl'] ?? 1800);
+
+        if (is_file($cacheFile) && (time() - filemtime($cacheFile)) < $ttl) {
+            $cached = json_decode(file_get_contents($cacheFile), true);
+            if (isset($cached['items']) && is_array($cached['items'])) {
+                // items.json guarda no formato do JiraModel (chave/tipo_item/…);
+                // normaliza para o formato de snapshot (issue_key/team/…).
+                return BaselineSnapshot::normalizeItems($cached['items']);
+            }
+        }
+
+        // Sem cache válido: extrai ao vivo.
+        $model = new JiraModel($this->jiraConfig);
+        return BaselineSnapshot::normalizeItems($model->fetchAll($jql ?? '', 100)['items'] ?? []);
     }
 
     /**

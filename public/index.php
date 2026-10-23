@@ -26,10 +26,24 @@ spl_autoload_register(function (string $class): void {
     }
 });
 
-// ── Carrega configs ───────────────────────────────────────────────────────
+// ── Carrega configs PHP (seed + partes não-editáveis) ───────────────────────
 $config         = require BASE_DIR . '/config/jira.php';
-$baselineConfig = require BASE_DIR . '/config/baseline.php';
-$capacityConfig = require BASE_DIR . '/config/capacity.php';
+$phpBaseline    = require BASE_DIR . '/config/baseline.php';
+$phpCapacity    = require BASE_DIR . '/config/capacity.php';
+$phpPi          = require BASE_DIR . '/config/pi.php';
+
+// ── ConfigRepository: parâmetros EDITÁVEIS (JSON em data/config/ com
+//    fallback para os config/*.php). É a fonte de verdade operacional. ───────
+$configRepo = new \App\Repositories\ConfigRepository(
+    DATA_DIR . '/config', $phpPi, $phpCapacity
+);
+
+// Parâmetros EFETIVOS (JSON se salvo pelo Painel; senão, seed dos PHP).
+// baselineConfig = regras de negócio (PHP) + PI efetiva (JSON/seed).
+$effectivePi    = $configRepo->getPi();
+$baselineConfig = array_merge($phpBaseline, $effectivePi);
+// capacityConfig no formato legado que os Services já consomem.
+$capacityConfig = $configRepo->capacityAsLegacyMaps();
 
 // ── Factory do repositório de baseline ──────────────────────────────────────
 // Hoje: JSON. Futuro: trocar por PdoBaselineRepository (MySQL/PostgreSQL)
@@ -38,17 +52,22 @@ $makeBaselineRepo = function () use ($baselineConfig) {
     return new \App\Repositories\JsonBaselineRepository($baselineConfig['storage_dir']);
 };
 
-// ── JqlBuilder: fonte única de montagem de JQL (lê config/baseline.php) ──────
-// Usado por /extract, /baseline/capture e /metrics, garantindo que todos
-// consultem o MESMO universo de itens (projetos + sprints + tipos).
+// ── JqlBuilder: fonte única de montagem de JQL ──────────────────────────────
+// Usa a PI EFETIVA (pode ter sido editada pelo Painel).
 $jqlBuilder = new \App\Services\JqlBuilder($baselineConfig);
+
+// ── Factory do controller de baseline/métricas ──────────────────────────────
+// Recebe o capacityConfig (sprint_dates) para a janela de sprints fechadas.
+$makeBaselineController = function () use ($config, $baselineConfig, $capacityConfig, $makeBaselineRepo, $jqlBuilder) {
+    return new \App\Controllers\BaselineController(
+        $config, $baselineConfig, $makeBaselineRepo(), $jqlBuilder, $capacityConfig
+    );
+};
 
 // ── Factory do controller de capacidade (histórico + cálculo) ────────────────
 $makeCapacityController = function () use ($baselineConfig, $capacityConfig, $makeBaselineRepo) {
     $repo = new \App\Repositories\CapacityRepository($baselineConfig['capacity_dir']);
     $calc = new \App\Services\CapacityCalculator();
-    // Injeta: repo de baseline (p/ sync ler progressos), config de regras/PI
-    // e config de capacidade (calendário de dias úteis + devs por time).
     return new \App\Controllers\CapacityController(
         $repo, $calc, $makeBaselineRepo(), $baselineConfig, $capacityConfig
     );
@@ -71,6 +90,20 @@ foreach (['/dashboard/public', '/dashboard'] as $prefix) {
 // Normaliza: garante uma barra inicial e remove barra final redundante
 $uri = '/' . trim($uri, '/');
 
+// Prefixo da app no servidor (ex: "/dashboard"), para montar URLs nas views.
+$scriptName = $_SERVER['SCRIPT_NAME'] ?? '';
+$basePath = '/dashboard';
+if (preg_match('#^(/.*?)/public/index\.php$#', $scriptName, $m)) {
+    $basePath = $m[1];
+} elseif (preg_match('#^(/.*?)/index\.php$#', $scriptName, $m)) {
+    $basePath = $m[1];
+}
+
+// Factory do controller de views (páginas PHP tradicionais)
+$makeViewController = function () use ($basePath) {
+    return new \App\Controllers\ViewController(__DIR__ . '/views', $basePath);
+};
+
 switch (true) {
 
     // ── Extração Jira → JSON ─────────────────────────────────────────────
@@ -81,22 +114,22 @@ switch (true) {
 
     // ── Captura da baseline (snapshot imutável da PI) ────────────────────
     case $uri === '/baseline/capture':
-        (new \App\Controllers\BaselineController($config, $baselineConfig, $makeBaselineRepo(), $jqlBuilder))->capture();
+        $makeBaselineController()->capture();
         break;
 
     // ── Snapshot de progresso (evolução/burn-up — acumula) ───────────────
     case $uri === '/baseline/progress':
-        (new \App\Controllers\BaselineController($config, $baselineConfig, $makeBaselineRepo(), $jqlBuilder))->progress();
+        $makeBaselineController()->progress();
         break;
 
     // ── Lista de snapshots armazenados ───────────────────────────────────
     case $uri === '/baseline/list':
-        (new \App\Controllers\BaselineController($config, $baselineConfig, $makeBaselineRepo(), $jqlBuilder))->list();
+        $makeBaselineController()->list();
         break;
 
     // ── Métricas consolidadas (Velocidade, Previsibilidade, Scope Creep) ─
     case $uri === '/metrics':
-        (new \App\Controllers\BaselineController($config, $baselineConfig, $makeBaselineRepo(), $jqlBuilder))->metrics();
+        $makeBaselineController()->metrics();
         break;
 
     // ── Capacidade e Velocidade dos times (PI Planning) ──────────────────
@@ -116,16 +149,34 @@ switch (true) {
         $makeCapacityController()->history();
         break;
 
-    // ── Raiz → SPA ───────────────────────────────────────────────────────
+    // ── Painel de Controle: parâmetros editáveis (PI + Capacidade) ───────
+    // Rota /settings (não /config) para não colidir com a pasta física
+    // config/ na raiz do projeto, que faz o Apache redirecionar (301).
+    case $uri === '/settings':
+        (new \App\Controllers\ConfigController($configRepo))->show();
+        break;
+
+    case $uri === '/settings/pi':
+        (new \App\Controllers\ConfigController($configRepo))->savePi();
+        break;
+
+    case $uri === '/settings/capacity':
+        (new \App\Controllers\ConfigController($configRepo))->saveCapacity();
+        break;
+
+    // ── Home → Visão Geral ───────────────────────────────────────────────
     case $uri === '/' || $uri === '/index.html':
-        $html = __DIR__ . '/index.html';
-        if (file_exists($html)) {
-            header('Content-Type: text/html; charset=utf-8');
-            readfile($html);
-        } else {
-            http_response_code(404);
-            echo 'index.html não encontrado.';
-        }
+        $makeViewController()->render('overview');
+        break;
+
+    // ── Páginas de métricas: /metricas/{secao} ───────────────────────────
+    case preg_match('#^/metricas/([a-z0-9\-]+)$#', $uri, $mv) === 1:
+        $makeViewController()->render($mv[1]);
+        break;
+
+    // ── Painel de Controle ────────────────────────────────────────────────
+    case $uri === '/painel':
+        $makeViewController()->render('painel');
         break;
 
     // ── 404 ──────────────────────────────────────────────────────────────

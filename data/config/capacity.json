@@ -1,0 +1,162 @@
+{
+    "working_days_by_sprint": {
+        "26.4.1": 8,
+        "26.4.2": 7,
+        "26.4.3": 7,
+        "26.4.4": 7,
+        "26.4.5": 8,
+        "26.4.6": 8
+    },
+    "teams": {
+        "APAP": {
+            "dev_count": 4,
+            "productivity": 4.1,
+            "productive_hours": 7
+        },
+        "APAV": {
+            "dev_count": 5.5,
+            "productivity": 4.5,
+            "productive_hours": 7
+        },
+        "APCO": {
+            "dev_count": 3,
+            "productivity": 4,
+            "productive_hours": 7
+        },
+        "APIN": {
+            "dev_count": 6.2,
+            "productivity": 5.2,
+            "productive_hours": 7
+        },
+        "APPL": {
+            "dev_count": 6.2,
+            "productivity": 4.8,
+            "productive_hours": 7
+        },
+        "APSF": {
+            "dev_count": 5,
+            "productivity": 5.2,
+            "productive_hours": 7
+        },
+        "ASAT": {
+            "dev_count": 8.8,
+            "productivity": 4.7,
+            "productive_hours": 6
+        },
+        "ASKB": {
+            "dev_count": 4,
+            "productivity": 5.2,
+            "productive_hours": 7
+        },
+        "ASPL": {
+            "dev_count": 6,
+            "productivity": 5.1,
+            "productive_hours": 7
+        },
+        "ASR6": {
+            "dev_count": 5,
+            "productivity": 5,
+            "productive_hours": 7
+        },
+        "INAP": {
+            "dev_count": 9,
+            "productivity": 6.5,
+            "productive_hours": 7
+        },
+        "INBI": {
+            "dev_count": 5,
+            "productivity": 7,
+            "productive_hours": 7
+        },
+        "INBO": {
+            "dev_count": 5.5,
+            "productivity": 5.2,
+            "productive_hours": 7
+        },
+        "INCA": {
+            "dev_count": 8,
+            "productivity": 8.4,
+            "productive_hours": 7
+        },
+        "INFU": {
+            "dev_count": 5,
+            "productivity": 4.8,
+            "productive_hours": 7
+        },
+        "INPV": {
+            "dev_count": 3,
+            "productivity": 5.8,
+            "productive_hours": 7
+        },
+        "JACM": {
+            "dev_count": 2,
+            "productivity": 5,
+            "productive_hours": 7
+        },
+        "JACO": {
+            "dev_count": 2,
+            "productivity": 4,
+            "productive_hours": 7
+        },
+        "JADO": {
+            "dev_count": 6.1,
+            "productivity": 4.7,
+            "productive_hours": 7
+        },
+        "JAES": {
+            "dev_count": 6,
+            "productivity": 5.4,
+            "productive_hours": 7
+        },
+        "JAMO": {
+            "dev_count": 2,
+            "productivity": 4.8,
+            "productive_hours": 7
+        },
+        "JASA": {
+            "dev_count": 5,
+            "productivity": 5.7,
+            "productive_hours": 7
+        },
+        "SADV": {
+            "dev_count": 7,
+            "productivity": 4.8,
+            "productive_hours": 7
+        },
+        "SAJO": {
+            "dev_count": 6.5,
+            "productivity": 5,
+            "productive_hours": 7
+        },
+        "SATT": {
+            "dev_count": 10,
+            "productivity": 5.9,
+            "productive_hours": 8
+        },
+        "SGGS": {
+            "dev_count": 11,
+            "productivity": 7,
+            "productive_hours": 6
+        },
+        "SGGU": {
+            "dev_count": 9,
+            "productivity": 6,
+            "productive_hours": 6
+        },
+        "SGSE": {
+            "dev_count": 6,
+            "productivity": 7,
+            "productive_hours": 6
+        },
+        "SGTB": {
+            "dev_count": 7,
+            "productivity": 7,
+            "productive_hours": 6
+        }
+    },
+    "defaults": {
+        "dev_count": 4,
+        "productive_hours": 7,
+        "working_days": 8
+    }
+}

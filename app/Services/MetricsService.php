@@ -16,6 +16,11 @@ use App\Models\BaselineSnapshot;
  *   3. Previsibilidade (%)  — entregue do escopo planejado / planejado
  *   4. Scope Creep          — itens adicionados (add) e removidos (drop)
  *
+ * JANELA DE SPRINTS FECHADAS: a comparação Planejado x Realizado só cruza
+ * itens cuja sprint já ENCERROU. Item de sprint futura — mesmo entregue —
+ * fica de fora até a sprint dele fechar. A janela é informada ao
+ * consolidateWindowed() e cresce gradativamente conforme a PI avança.
+ *
  * Regra de "Done" (decisão de negócio): configurável em config/baseline.php.
  * Padrão atual: Aceito, Em produção, Pendente de Produção.
  */
@@ -183,29 +188,82 @@ class MetricsService
         return round($scope['scope_add_sp'] / $committed * 100, 1);
     }
 
+    // ── Filtro por janela de sprints fechadas ─────────────────────────────
+
+    /**
+     * Filtra uma lista de itens, mantendo só os cuja sprint ∈ janela.
+     * Janela vazia → retorna vazio (nenhuma sprint fechou ainda).
+     *
+     * @param array<int,array<string,mixed>> $items
+     * @param string[] $window  sprints fechadas (ex: ['26.4.1','26.4.2'])
+     */
+    public function filterByWindow(array $items, array $window): array
+    {
+        if (empty($window)) {
+            return [];
+        }
+        return array_values(array_filter(
+            $items,
+            fn($it) => SprintWindowService::itemInWindow($it['sprint'] ?? null, $window)
+        ));
+    }
+
     // ── Consolidação completa de uma PI/Time ──────────────────────────────
 
     /**
-     * Gera o bloco completo de métricas de um snapshot vs estado atual.
+     * Gera o bloco completo de métricas (baseline INTEIRA vs atual).
+     * Mantido para compatibilidade; o dashboard usa consolidateWindowed().
      */
     public function consolidate(BaselineSnapshot $baseline, array $currentItems): array
     {
-        $cvd   = $this->committedVsDelivered($baseline, $currentItems);
-        $scope = $this->scopeCreep($baseline, $currentItems);
+        return $this->buildRow(
+            $baseline->piId, $baseline->team,
+            $baseline->items, $currentItems
+        );
+    }
+
+    /**
+     * Consolida considerando SÓ as sprints fechadas (janela). Tanto o
+     * committed (baseline) quanto o delivered/scope (atual) são filtrados
+     * pela janela. Itens de sprints futuras ficam de fora.
+     *
+     * @param string[] $window sprints fechadas
+     */
+    public function consolidateWindowed(BaselineSnapshot $baseline, array $currentItems, array $window): array
+    {
+        $baselineWin = $this->filterByWindow($baseline->items, $window);
+        $currentWin  = $this->filterByWindow($currentItems, $window);
+
+        $row = $this->buildRow($baseline->piId, $baseline->team, $baselineWin, $currentWin);
+        $row['window']       = $window;
+        $row['window_size']  = count($window);
+        return $row;
+    }
+
+    /**
+     * Núcleo do cálculo de uma linha de métricas sobre dois conjuntos de
+     * itens já preparados (baseline e atual).
+     */
+    private function buildRow(string $piId, string $team, array $baselineItems, array $currentItems): array
+    {
+        // Monta um snapshot "leve" só para reusar os métodos existentes.
+        $b = new BaselineSnapshot($piId, $team, $baselineItems);
+
+        $cvd       = $this->committedVsDelivered($b, $currentItems);
+        $scope     = $this->scopeCreep($b, $currentItems);
         $committed = $cvd['committed'];
 
         return [
-            'pi_id'                  => $baseline->piId,
-            'team'                   => $baseline->team,
+            'pi_id'                  => $piId,
+            'team'                   => $team,
             'committed_sp'           => $committed,
             'delivered_sp'           => $cvd['delivered'],
-            'predictability_pct'     => $this->predictability($baseline, $currentItems),
+            'predictability_pct'     => $committed > 0 ? round($cvd['delivered'] / $committed * 100, 1) : 0.0,
             'predictability_target'  => $this->predictabilityTarget,
             'scope_add_sp'           => $scope['scope_add_sp'],
             'scope_drop_sp'          => $scope['scope_drop_sp'],
             'scope_add_count'        => $scope['scope_add_count'],
             'scope_drop_count'       => $scope['scope_drop_count'],
-            // Variação de Escopo (%) = add / committed × 100
             'scope_variation_pct'    => $committed > 0
                 ? round($scope['scope_add_sp'] / $committed * 100, 1)
                 : 0.0,

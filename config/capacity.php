@@ -34,6 +34,19 @@ return [
         '26.4.6' => 8,
     ],
 
+    // ── Datas de início/fim por sprint ────────────────────────────────────
+    // Fonte: aba "Apoio" (Velocity 26-4). Usado para DETECTAR
+    // automaticamente a última sprint ENCERRADA (fim < hoje), base do
+    // filtro Planejado x Realizado. Atualize a cada PI.
+    'sprint_dates' => [
+        '26.4.1' => ['start' => '2026-09-28', 'end' => '2026-10-09'],
+        '26.4.2' => ['start' => '2026-10-12', 'end' => '2026-10-23'],
+        '26.4.3' => ['start' => '2026-10-26', 'end' => '2026-11-06'],
+        '26.4.4' => ['start' => '2026-11-09', 'end' => '2026-11-20'],
+        '26.4.5' => ['start' => '2026-11-23', 'end' => '2026-12-04'],
+        '26.4.6' => ['start' => '2026-12-07', 'end' => '2026-12-18'],
+    ],
+
     // ── Quantidade de devs por time ───────────────────────────────────────
     // CHAVE = ID do time em "Versões corrigidas" do Jira.
     // Times sem entrada usam 'dev_count_default' de config/baseline.php (4).
