@@ -31,6 +31,7 @@ $config         = require BASE_DIR . '/config/jira.php';
 $phpBaseline    = require BASE_DIR . '/config/baseline.php';
 $phpCapacity    = require BASE_DIR . '/config/capacity.php';
 $phpPi          = require BASE_DIR . '/config/pi.php';
+$phpVersion     = require BASE_DIR . '/config/version.php';
 
 // ── ConfigRepository: parâmetros EDITÁVEIS (JSON em data/config/ com
 //    fallback para os config/*.php). É a fonte de verdade operacional. ───────
@@ -100,9 +101,10 @@ if (preg_match('#^(/.*?)/public/index\.php$#', $scriptName, $m)) {
 }
 
 // Factory do controller de views (páginas PHP tradicionais)
-$makeViewController = function () use ($basePath, $baselineConfig) {
+$makeViewController = function () use ($basePath, $baselineConfig, $phpVersion) {
     return new \App\Controllers\ViewController(__DIR__ . '/views', $basePath, [
         'value_types' => $baselineConfig['value_delivery_types'] ?? [],
+        'version'     => $phpVersion['label'] ?? '',
     ]);
 };
 

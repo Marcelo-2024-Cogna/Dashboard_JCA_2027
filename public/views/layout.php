@@ -76,7 +76,12 @@ $menuMain = ['overview','velocidade','cycle-time','plan-real','produtividade','e
 
   <!-- ── Header + filtros globais ── -->
   <header class="header">
-    <h2><?= htmlspecialchars($pageTitle) ?></h2>
+    <div class="header-title">
+      <h2><?= htmlspecialchars($pageTitle) ?></h2>
+      <span class="app-brand">Métricas Jeito Cogna Ágil
+        <?php if (!empty($appVersion)): ?><span class="app-version"><?= htmlspecialchars($appVersion) ?></span><?php endif; ?>
+      </span>
+    </div>
     <?php if ($activeSection !== 'painel'): ?>
     <div class="filters" id="global-filters">
       <label>Jornada

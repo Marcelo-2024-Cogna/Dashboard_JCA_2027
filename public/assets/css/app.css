@@ -99,7 +99,18 @@ body {
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
   position: sticky; top: 0; z-index: 50;
 }
-.header h2 { font-size: 1.05rem; font-weight: 600; margin-right: auto; }
+.header h2 { font-size: 1.05rem; font-weight: 600; }
+.header-title { display: flex; align-items: baseline; gap: 12px; margin-right: auto; }
+.app-brand {
+  font-size: .72rem; color: var(--muted); font-weight: 600;
+  display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+}
+.app-version {
+  font-size: .64rem; font-weight: 700; letter-spacing: .03em;
+  background: rgba(99,102,241,.15); color: #a5b4fc;
+  border: 1px solid rgba(99,102,241,.35);
+  padding: 1px 8px; border-radius: 20px;
+}
 
 .filters { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .filters label { font-size: .72rem; color: var(--muted); display: flex; flex-direction: column; gap: 3px; }

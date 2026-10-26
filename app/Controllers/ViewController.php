@@ -73,6 +73,7 @@ class ViewController
         $contentView   = $viewPath;
         // Dados extras (ex: valueTypes) disponíveis no layout.
         $valueTypes    = $this->viewData['value_types'] ?? [];
+        $appVersion    = $this->viewData['version'] ?? '';
 
         // O layout inclui $contentView na área de conteúdo.
         if (is_file($this->layout)) {
