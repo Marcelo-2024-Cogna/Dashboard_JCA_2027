@@ -1,0 +1,25 @@
+<?php
+/**
+ * config/db.php.example — MODELO DE CREDENCIAIS DE CONEXÃO (VERSIONÁVEL)
+ * ──────────────────────────────────────────────────────────────────────
+ * Modelo de configuração de conexão ao MySQL. PODE ir para o repositório.
+ *
+ * COMO USAR:
+ *   1. Copie este arquivo para config/db.php (que está no .gitignore).
+ *   2. Substitua os placeholders pelos valores reais do ambiente.
+ *
+ * AMBIENTES:
+ *   - Desenvolvimento (Windows/XAMPP): host=localhost, port=3306.
+ *   - Produção (Linux/CentOS): host, usuário e senha do servidor real.
+ *
+ * Consumido por App\Database::pdo().
+ */
+
+return [
+    'host'    => 'localhost',
+    'port'    => 3306,
+    'dbname'  => 'metricas_agil',
+    'user'    => 'SEU_USUARIO',
+    'pass'    => 'SUA_SENHA',
+    'charset' => 'utf8mb4',
+];
