@@ -45,7 +45,12 @@
   const Filters = {
     read() {
       const u = new URLSearchParams(location.search);
-      return { jornada: u.get('jornada') || '', versao: u.get('versao') || '', sprint: u.get('sprint') || '' };
+      return {
+        jornada: u.get('jornada') || '',
+        time:    u.get('time')    || '',
+        versao:  u.get('versao')  || '',
+        sprint:  u.get('sprint')  || '',
+      };
     },
     apply(partial) {
       const u = new URLSearchParams(location.search);
@@ -69,11 +74,35 @@
     error(el, msg) {
       if (el) el.innerHTML = `<div class="alert alert-error"><strong>Erro:</strong> ${msg}</div>`;
     },
+    /** Jornada do item (prefixo "[Jornada] Time" do projeto). */
+    jornadaOf(i) { const m = /^\[([^\]]+)\]/.exec(i.projeto || ''); return m ? m[1].trim() : ''; },
+    /** Time do item (parte após "[Jornada] "). */
+    teamOf(i) { const m = /^\[[^\]]+\]\s*(.*)$/.exec(i.projeto || ''); return m && m[1] ? m[1].trim() : ''; },
+    /**
+     * Aplica os filtros globais (jornada/time/versão/sprint) a uma lista de
+     * itens do /extract. Centraliza a lógica usada por todas as views.
+     */
+    applyFilters(items, filters) {
+      const f = filters || Filters.read();
+      return items.filter(i => {
+        if (f.jornada && this.jornadaOf(i) !== f.jornada) return false;
+        if (f.time    && this.teamOf(i)    !== f.time)    return false;
+        if (f.versao  && (i.versoes_corrigidas || '').split(';')[0].trim() !== f.versao) return false;
+        if (f.sprint  && this.shortSprint(i.sprint) !== f.sprint) return false;
+        return true;
+      });
+    },
+    /** Tipos de entrega de valor (de window.VALUE_TYPES). */
+    isValueType(i) {
+      const vt = window.VALUE_TYPES || [];
+      return vt.length ? vt.includes(i.tipo_item) : true;
+    },
   };
 
   // ── Inicializa a barra de filtros (preenche selects, liga eventos) ───────
   async function initFilters() {
     const selJornada = document.getElementById('flt-jornada');
+    const selTime    = document.getElementById('flt-time');
     const selVersao  = document.getElementById('flt-versao');
     const selSprint  = document.getElementById('flt-sprint');
     if (!selJornada) return; // páginas sem filtros (ex: painel)
@@ -81,46 +110,64 @@
     const cur = Filters.read();
 
     // Popula os selects a partir dos dados de extração (cache), com CASCATA:
-    // Jornada filtra Versão e Sprint; Versão filtra Sprint.
+    // Jornada → Time → Versão → Sprint.
     try {
       const json = await Api.get('/extract');
       const items = (json.items) || [];
 
-      // Pré-processa os itens com jornada/versão/sprint normalizados
+      // Pré-processa os itens com jornada/time/versão/sprint normalizados
       const rows = items.map(i => {
-        const mj = /^\[([^\]]+)\]/.exec(i.projeto || '');
+        const mj = /^\[([^\]]+)\]\s*(.*)$/.exec(i.projeto || '');
         return {
           jornada: mj ? mj[1].trim() : '',
+          time:    mj && mj[2] ? mj[2].trim() : '',
           versao:  i.versoes_corrigidas ? i.versoes_corrigidas.split(';')[0].trim() : '',
           sprint:  i.sprint ? Util.shortSprint(i.sprint) : '',
         };
       });
 
-      const rebuild = () => {
-        const j = selJornada.value, v = selVersao.value;
-        // Jornadas: sempre todas
-        const jornadas = [...new Set(rows.map(r => r.jornada).filter(Boolean))].sort();
-        // Versões: filtradas pela jornada escolhida
-        const versoes = [...new Set(rows.filter(r => !j || r.jornada === j).map(r => r.versao).filter(Boolean))].sort();
-        // Sprints: filtradas por jornada E versão
-        const sprints = [...new Set(rows.filter(r => (!j || r.jornada === j) && (!v || r.versao === v)).map(r => r.sprint).filter(Boolean))].sort();
-        fillSelect(selJornada, jornadas, selJornada.value);
-        fillSelect(selVersao,  versoes,  selVersao.value);
-        fillSelect(selSprint,  sprints,  selSprint.value);
-      };
+      const j = cur.jornada, t = cur.time, v = cur.versao;
+      // Jornadas: todas
+      const jornadas = [...new Set(rows.map(r => r.jornada).filter(Boolean))].sort();
+      // Times: filtrados pela jornada
+      const times = [...new Set(rows.filter(r => !j || r.jornada === j).map(r => r.time).filter(Boolean))].sort();
+      // Versões: filtradas por jornada E time
+      const versoes = [...new Set(rows.filter(r => (!j || r.jornada === j) && (!t || r.time === t)).map(r => r.versao).filter(Boolean))].sort();
+      // Sprints: filtradas por jornada, time E versão
+      const sprints = [...new Set(rows.filter(r => (!j || r.jornada === j) && (!t || r.time === t) && (!v || r.versao === v)).map(r => r.sprint).filter(Boolean))].sort();
 
-      // Restaura valores da URL e monta a cascata inicial
-      fillSelect(selJornada, [...new Set(rows.map(r=>r.jornada).filter(Boolean))].sort(), cur.jornada);
-      selVersao.value = cur.versao; selSprint.value = cur.sprint;
-      rebuild();
+      fillSelect(selJornada, jornadas, cur.jornada);
+      fillSelect(selTime,    times,    cur.time);
+      fillSelect(selVersao,  versoes,  cur.versao);
+      fillSelect(selSprint,  sprints,  cur.sprint);
     } catch (e) {
       console.warn('Falha ao popular filtros:', e.message);
     }
 
-    // Ao mudar Jornada: reseta versão/sprint dependentes e recarrega.
-    selJornada.addEventListener('change', () => Filters.apply({ jornada: selJornada.value, versao: '', sprint: '' }));
+    // Cascata: mudar um nível superior reseta os inferiores.
+    selJornada.addEventListener('change', () => Filters.apply({ jornada: selJornada.value, time: '', versao: '', sprint: '' }));
+    selTime   .addEventListener('change', () => Filters.apply({ time:    selTime.value, versao: '', sprint: '' }));
     selVersao .addEventListener('change', () => Filters.apply({ versao:  selVersao.value, sprint: '' }));
     selSprint .addEventListener('change', () => Filters.apply({ sprint:  selSprint.value }));
+
+    renderActiveFilters(cur);
+  }
+
+  // ── Labels destacados dos filtros ativos ─────────────────────────────────
+  function renderActiveFilters(cur) {
+    const box = document.getElementById('active-filters');
+    if (!box) return;
+    const chips = [
+      { label: 'Jornada', value: cur.jornada, ac: '#6366f1' },
+      { label: 'Time',    value: cur.time,    ac: '#22d3ee' },
+      { label: 'Versão',  value: cur.versao,  ac: '#f59e0b' },
+      { label: 'Sprint',  value: cur.sprint,  ac: '#10b981' },
+    ].filter(c => c.value);
+    box.innerHTML = chips.map(c =>
+      `<span class="filter-chip" style="--ac:${c.ac}">
+         <span class="chip-label">${c.label}</span>
+         <span class="chip-value">${c.value}</span>
+       </span>`).join('');
   }
 
   function fillSelect(sel, options, current) {

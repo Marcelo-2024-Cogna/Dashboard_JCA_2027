@@ -2,9 +2,10 @@
 /**
  * vw_cycle_time.php — Lead Time / Cycle Time
  * ────────────────────────────────────────────
- * Ciclos por fase (Ideação, Desenvolvimento, Homologação, Implantação) e
- * Lead Time / Customer Lead Time por tipo de item. Dados via /extract.
- * Usa MEDIANA (robusta a outliers) por padrão.
+ * Ciclos por fase (Ideação, Desenvolvimento, Homologação, Implantação),
+ * Lead Time por tipo de item (só entrega de valor) e ciclos por time
+ * (Desenvolvimento, Homologação, Implantação). Dados via /extract.
+ * Usa MEDIANA. Respeita filtros globais (jornada/time/versão/sprint).
  */
 ?>
 <div id="ct-root">
@@ -22,16 +23,24 @@
       <div class="cwrap tall"><canvas id="ct-fases"></canvas></div>
     </div>
     <div class="ccard">
-      <h3>Lead Time por tipo de item <span class="badge">mediana (dias)</span></h3>
+      <h3>Lead Time por tipo de item <span class="badge">mediana (dias) · só entrega de valor</span></h3>
       <div class="cwrap tall"><canvas id="ct-lt-tipo"></canvas></div>
     </div>
   </div>
 
-  <div class="stitle" style="margin-top:22px">Ciclo de Desenvolvimento por Time</div>
-  <div class="cgrid c1">
+  <div class="stitle" style="margin-top:22px">Ciclos por Time <span style="text-transform:none;font-weight:400">· mediana (dias)</span></div>
+  <div class="cgrid c3">
     <div class="ccard">
-      <h3>Desenvolvimento <span class="badge">mediana por time (dias)</span></h3>
-      <div class="cwrap xtall"><canvas id="ct-dev-time"></canvas></div>
+      <h3>Desenvolvimento <span class="badge">por time</span></h3>
+      <div class="cwrap tall"><canvas id="ct-dev-time"></canvas></div>
+    </div>
+    <div class="ccard">
+      <h3>Homologação <span class="badge">por time</span></h3>
+      <div class="cwrap tall"><canvas id="ct-hom-time"></canvas></div>
+    </div>
+    <div class="ccard">
+      <h3>Implantação <span class="badge">por time</span></h3>
+      <div class="cwrap tall"><canvas id="ct-imp-time"></canvas></div>
     </div>
   </div>
 </template>
@@ -49,20 +58,10 @@
     return s.length%2 ? s[m] : +((s[m-1]+s[m])/2).toFixed(1);
   };
 
-  function filterItems(items) {
-    const f = App.Filters.read();
-    return items.filter(i => {
-      if (f.jornada) { const mj=/^\[([^\]]+)\]/.exec(i.projeto||''); if (!mj || mj[1].trim()!==f.jornada) return false; }
-      if (f.versao && (i.versoes_corrigidas||'').split(';')[0].trim()!==f.versao) return false;
-      if (f.sprint && Util.shortSprint(i.sprint)!==f.sprint) return false;
-      return true;
-    });
-  }
-
   async function load() {
     try {
       const ext = await Api.get('/extract');
-      const items = filterItems(ext.items || []);
+      const items = Util.applyFilters(ext.items || []);
       render(items);
     } catch (e) { Util.error(root, e.message); }
   }
@@ -73,7 +72,9 @@
     renderKpis(items);
     renderFases(items);
     renderLtTipo(items);
-    renderDevTime(items);
+    renderCicloPorTime(items, 'ciclo_desenvolvimento', 'ct-dev-time', 1);
+    renderCicloPorTime(items, 'ciclo_homologacao',     'ct-hom-time', 2);
+    renderCicloPorTime(items, 'ciclo_implantacao',     'ct-imp-time', 3);
   }
 
   function renderKpis(items) {
@@ -82,10 +83,11 @@
     const hom = median(items.map(i=>i.ciclo_homologacao));
     const lt = median(items.map(i=>i.lead_time));
     const cards = [
-      { label:'Lead Time (mediana)',   val: lt!=null?lt+'d':'—',      sub:'criação → produção', ac:'#f59e0b' },
-      { label:'Ciclo Ideação',         val: ideacao!=null?ideacao+'d':'—', sub:'mediana',       ac:'#6366f1' },
-      { label:'Ciclo Desenvolvimento', val: dev!=null?dev+'d':'—',    sub:'mediana',            ac:'#22d3ee' },
-      { label:'Ciclo Homologação',     val: hom!=null?hom+'d':'—',    sub:'mediana',            ac:'#10b981' },
+      // Ajuste: Lead Time até a Implantação (não "produção").
+      { label:'Lead Time (mediana)',   val: lt!=null?lt+'d':'—',      sub:'criação → implantação', ac:'#f59e0b' },
+      { label:'Ciclo Ideação',         val: ideacao!=null?ideacao+'d':'—', sub:'mediana',          ac:'#6366f1' },
+      { label:'Ciclo Desenvolvimento', val: dev!=null?dev+'d':'—',    sub:'mediana',               ac:'#22d3ee' },
+      { label:'Ciclo Homologação',     val: hom!=null?hom+'d':'—',    sub:'mediana',               ac:'#10b981' },
     ];
     document.getElementById('ct-kpis').innerHTML = cards.map(k=>`
       <div class="kpi" style="--ac:${k.ac}"><div class="kpi-label">${k.label}</div><div class="kpi-val">${k.val}</div><div class="kpi-sub">${k.sub}</div></div>`).join('');
@@ -107,9 +109,11 @@
     });
   }
 
+  // Lead Time por tipo — SÓ entrega de valor (exclui sustentação/liderança/etc).
   function renderLtTipo(items) {
-    const tipos = [...new Set(items.map(i=>i.tipo_item).filter(Boolean))];
-    const g = {}; tipos.forEach(t => g[t] = median(items.filter(i=>i.tipo_item===t).map(i=>i.lead_time)));
+    const valor = items.filter(i => Util.isValueType(i));
+    const tipos = [...new Set(valor.map(i=>i.tipo_item).filter(Boolean))];
+    const g = {}; tipos.forEach(t => g[t] = median(valor.filter(i=>i.tipo_item===t).map(i=>i.lead_time)));
     const keys = tipos.filter(t=>g[t]!=null).sort((a,b)=>g[b]-g[a]);
     Charts.make('ct-lt-tipo', {
       type:'bar',
@@ -119,17 +123,21 @@
     });
   }
 
-  function renderDevTime(items) {
+  // Ciclo (dev/hom/imp) por time — mediana, barras horizontais.
+  function renderCicloPorTime(items, field, canvasId, colorIdx) {
     const byTeam = {};
     items.forEach(i => {
-      const m=/^\[([^\]]+)\]\s*(.+)?/.exec(i.projeto||''); const team = i.projeto ? (i.projeto.replace(/^\[.*?\]\s*/,'')||i.projeto) : '(outros)';
-      (byTeam[team]=byTeam[team]||[]).push(i.ciclo_desenvolvimento);
+      const team = Util.teamOf(i) || '(outros)';
+      (byTeam[team] = byTeam[team] || []).push(i[field]);
     });
-    const keys = Object.keys(byTeam).map(t=>({t, v:median(byTeam[t])})).filter(x=>x.v!=null).sort((a,b)=>b.v-a.v);
-    Charts.make('ct-dev-time', {
+    const rows = Object.keys(byTeam)
+      .map(t => ({ t, v: median(byTeam[t]) }))
+      .filter(x => x.v != null)
+      .sort((a,b) => b.v - a.v);
+    Charts.make(canvasId, {
       type:'bar',
-      data:{ labels:keys.map(x=>x.t), datasets:[{ label:'Ciclo Dev (mediana)', data:keys.map(x=>x.v),
-        backgroundColor:keys.map((_,i)=>Charts.fill(1,.8)), borderColor:Charts.color(1), borderWidth:1.5, borderRadius:4 }]},
+      data:{ labels:rows.map(x=>x.t), datasets:[{ label:'dias (mediana)', data:rows.map(x=>x.v),
+        backgroundColor:rows.map(()=>Charts.fill(colorIdx,.8)), borderColor:Charts.color(colorIdx), borderWidth:1.5, borderRadius:4 }]},
       options:{ responsive:true, maintainAspectRatio:false, indexAxis:'y', plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true, title:{display:true,text:'dias'}}} }
     });
   }

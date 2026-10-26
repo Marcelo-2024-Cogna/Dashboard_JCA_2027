@@ -28,11 +28,21 @@
     const { Api, Util } = window.App || {};
     if (!Api) { kpis.innerHTML = '<div class="alert alert-error">Erro: núcleo JS (app.js) não carregou.</div>'; return; }
     try {
+      // Filtros globais (jornada/time/versão/sprint) do header.
+      const f = App.Filters.read();
+      const mParams = {};
+      if (f.jornada) mParams.jornada = f.jornada;
+      if (f.time)    mParams.time    = f.time;
+      if (f.sprint)  mParams.sprint  = f.sprint;
+
       // /metrics é leve e rápido; /extract pode ser grande (cacheado no cliente).
-      const m = await Api.get('/metrics').catch(() => null);
+      const m = await Api.get('/metrics', mParams).catch(() => null);
       let items = [];
       try { const ext = await Api.get('/extract'); items = ext.items || []; }
       catch (e) { Util.error(kpis, 'Falha ao carregar itens do Jira: ' + e.message); return; }
+
+      // Recorta os itens conforme os filtros globais (Home respeita o header).
+      items = Util.applyFilters(items, f);
 
       renderKpis(kpis, m, items);
       renderStatus(items);

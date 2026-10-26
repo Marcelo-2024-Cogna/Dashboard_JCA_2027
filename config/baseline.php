@@ -26,16 +26,17 @@ $rules = [
         'Pendente de Produção',
     ],
 
-    // ── Tipos para cálculo de PRODUTIVIDADE ───────────────────────────────
-    // Decisão: a produtividade considera SOMENTE entrega de valor.
-    // Horas gastas em Sustentação (Incidente, Solicitação de Serviço,
-    // Suporte, Sustentação) e seus Story Points NÃO entram no cálculo.
+    // ── Tipos para cálculo de PRODUTIVIDADE e métricas de valor ───────────
+    // Decisão: considera SOMENTE entrega de valor. Ficam de FORA:
+    // Liderança, Design, Problema, Suporte, Incidente, Solicitação de
+    // Serviço, Sustentação e Bug. "Segurança" entra como entrega de valor.
     'value_delivery_types' => [
         'História',
         'Enabler',
         'Teste',
         'Spike',
         'Débito Técnico',
+        'Segurança',
     ],
     // Tipos de sustentação (excluídos da produtividade; úteis depois para
     // medir o % de SP gasto em chamados).

@@ -254,14 +254,21 @@ class BaselineController
             $jql     = $this->jqlBuilder->forClosing();
             $current = $this->extractGroupedByTeam($jql);
 
-            // Filtro opcional por jornada (?jornada=) — recorta os times.
+            // Filtros opcionais do header global — recortam os times.
+            //   ?jornada= → só times da jornada
+            //   ?time=    → só o time (nome após "[Jornada] ")
             $jornadaFilter = trim($_GET['jornada'] ?? '');
+            $timeFilter    = trim($_GET['time'] ?? '');
 
             $svc  = new MetricsService($this->baselineConfig);
             $rows = [];
             foreach ($baselines as $baseline) {
                 // Se há filtro de jornada, considera só times daquela jornada.
                 if ($jornadaFilter !== '' && !$this->teamInJornada($baseline, $jornadaFilter)) {
+                    continue;
+                }
+                // Se há filtro de time, considera só o time selecionado.
+                if ($timeFilter !== '' && !$this->teamMatches($baseline, $timeFilter)) {
                     continue;
                 }
                 $teamCurrent = $current[$baseline->team] ?? [];
@@ -298,6 +305,22 @@ class BaselineController
         return false;
     }
 
+    /**
+     * Verifica se a baseline de um time corresponde ao filtro de TIME do
+     * header global. O filtro usa o nome exibido (parte após "[Jornada] "
+     * no campo projeto, igual ao Util.teamOf do frontend).
+     */
+    private function teamMatches(BaselineSnapshot $baseline, string $time): bool
+    {
+        foreach ($baseline->items as $it) {
+            $proj = (string)($it['project'] ?? '');
+            if (preg_match('/^\[[^\]]+\]\s*(.*)$/', $proj, $m) && trim($m[1]) !== '') {
+                return strcasecmp(trim($m[1]), $time) === 0;
+            }
+        }
+        return false;
+    }
+
     // ═══════════════════════════════════════════════════════════════════════
     //  Helpers internos
     // ═══════════════════════════════════════════════════════════════════════
@@ -329,20 +352,21 @@ class BaselineController
     private function currentItems(string $jql = ''): array
     {
         $cacheFile = ($this->baselineConfig['data_dir'] ?? (dirname(__DIR__, 2) . '/data')) . '/items.json';
-        $ttl = (int)($this->jiraConfig['cache_ttl'] ?? 1800);
 
-        if (is_file($cacheFile) && (time() - filemtime($cacheFile)) < $ttl) {
+        // Usa o cache de /extract SEMPRE que existir (mesmo "velho"): as
+        // métricas são leitura e não devem disparar a extração pesada dos
+        // 36 projetos (que estoura o limite de tempo do PHP). A atualização
+        // do cache é feita conscientemente pelo botão "Atualizar Jira".
+        if (is_file($cacheFile)) {
             $cached = json_decode(file_get_contents($cacheFile), true);
             if (isset($cached['items']) && is_array($cached['items'])) {
-                // items.json guarda no formato do JiraModel (chave/tipo_item/…);
-                // normaliza para o formato de snapshot (issue_key/team/…).
                 return BaselineSnapshot::normalizeItems($cached['items']);
             }
         }
 
-        // Sem cache válido: extrai ao vivo.
-        $model = new JiraModel($this->jiraConfig);
-        return BaselineSnapshot::normalizeItems($model->fetchAll($jql ?? '', 100)['items'] ?? []);
+        // Sem cache: devolve vazio (não extrai aqui). A tela orienta o
+        // usuário a rodar "Atualizar Jira" para a primeira carga.
+        return [];
     }
 
     /**

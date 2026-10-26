@@ -100,8 +100,10 @@ if (preg_match('#^(/.*?)/public/index\.php$#', $scriptName, $m)) {
 }
 
 // Factory do controller de views (páginas PHP tradicionais)
-$makeViewController = function () use ($basePath) {
-    return new \App\Controllers\ViewController(__DIR__ . '/views', $basePath);
+$makeViewController = function () use ($basePath, $baselineConfig) {
+    return new \App\Controllers\ViewController(__DIR__ . '/views', $basePath, [
+        'value_types' => $baselineConfig['value_delivery_types'] ?? [],
+    ]);
 };
 
 switch (true) {

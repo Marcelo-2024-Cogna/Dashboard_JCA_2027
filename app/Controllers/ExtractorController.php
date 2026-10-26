@@ -39,20 +39,40 @@ class ExtractorController
     {
         $this->sendHeaders();
 
-        $force      = !empty($_GET['force']);
-        $maxPerPage = min((int)($_GET['max'] ?? 100), 500);
-        $jql        = $this->resolveJql();
+        // Parâmetros de JQL customizada também forçam extração (não cacheiam).
+        $customQuery = !empty($_GET['jql']) || !empty($_GET['sprints']);
+        $force       = !empty($_GET['force']) || $customQuery;
+        $maxPerPage  = min((int)($_GET['max'] ?? 100), 500);
 
-        // Tenta servir do cache
-        if (!$force && $this->isCacheValid()) {
-            $cached = json_decode(file_get_contents($this->cacheFile), true);
-            $cached['_cache']           = true;
-            $cached['_cache_age_seconds'] = time() - filemtime($this->cacheFile);
-            $this->respond($cached);
+        // ── LEITURA (sem force): serve o cache se EXISTIR, mesmo "velho". ──
+        // As telas (Home/views) só LEEM — nunca disparam a extração pesada
+        // dos 36 projetos (que leva >120s e estoura o PHP). A reextração é
+        // um ato consciente via botão "Atualizar Jira" (force=1).
+        if (!$force) {
+            if (file_exists($this->cacheFile)) {
+                $cached = json_decode(file_get_contents($this->cacheFile), true);
+                $age = time() - filemtime($this->cacheFile);
+                $cached['_cache']             = true;
+                $cached['_cache_age_seconds'] = $age;
+                $cached['_cache_stale']       = $age >= (int)($this->config['cache_ttl'] ?? 1800);
+                $this->respond($cached);
+            } else {
+                // Sem cache ainda: não extrai aqui (evita timeout). Orienta.
+                $this->respond([
+                    'total_items' => 0,
+                    'items'       => [],
+                    '_cache'      => false,
+                    '_no_cache'   => true,
+                    'warning'     => 'Dados ainda não extraídos. Use "Atualizar Jira" para a primeira carga.',
+                ]);
+            }
             return;
         }
 
-        // Extrai do Jira
+        // ── EXTRAÇÃO (force=1): reextrai do Jira. Pode levar 1-2 min. ──────
+        // Remove o limite de tempo só para esta operação pesada.
+        @set_time_limit(0);
+        $jql = $this->resolveJql();
         try {
             $model  = new JiraModel($this->config);
             $result = $model->fetchAll($jql, $maxPerPage);
@@ -67,7 +87,10 @@ class ExtractorController
                 'items'        => $result['items'],
             ];
 
-            $this->saveCache($output);
+            // Só grava no cache se for a JQL padrão (não poluir com queries ad-hoc).
+            if (!$customQuery) {
+                $this->saveCache($output);
+            }
             $this->respond($output);
 
         } catch (\RuntimeException $e) {

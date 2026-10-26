@@ -105,6 +105,8 @@ class ConfigRepository
             'working_days_by_sprint' => $json['working_days_by_sprint'] ?? $seed['working_days_by_sprint'],
             'teams'    => $json['teams']    ?? $seed['teams'],
             'defaults' => array_merge($seed['defaults'], $json['defaults'] ?? []),
+            // sprint_dates não é editável pelo Painel: sempre do seed PHP.
+            'sprint_dates' => $seed['sprint_dates'],
         ];
     }
 
@@ -175,6 +177,8 @@ class ConfigRepository
                 'productive_hours' => $this->phpCapacity['productive_hours_per_dev'] ?? 7,
                 'working_days'     => 8,
             ],
+            // Datas início/fim por sprint (janela de sprints fechadas).
+            'sprint_dates' => $this->phpCapacity['sprint_dates'] ?? [],
         ];
     }
 
@@ -202,6 +206,10 @@ class ConfigRepository
             'reference_productivity_by_team'  => $prod,
             'productive_hours_by_team'        => $hours,
             'productive_hours_per_dev'        => $cap['defaults']['productive_hours'],
+            // Datas de início/fim por sprint — vêm do seed PHP (não editável
+            // pelo Painel). Necessário para a janela de sprints fechadas em
+            // /metrics (SprintWindowService).
+            'sprint_dates'                    => $cap['sprint_dates'] ?? [],
         ];
     }
 

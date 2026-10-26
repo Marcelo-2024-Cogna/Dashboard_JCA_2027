@@ -74,11 +74,12 @@
 
   async function load() {
     try {
-      // Passa os filtros da tela (jornada/sprint) ao /metrics para recortar
-      // a janela de sprints fechadas e a jornada.
+      // Passa os filtros globais (jornada/time/sprint) ao /metrics para
+      // recortar a janela de sprints fechadas, a jornada e o time.
       const f = App.Filters.read();
       const params = {};
       if (f.jornada) params.jornada = f.jornada;
+      if (f.time)    params.time    = f.time;
       if (f.sprint)  params.sprint  = f.sprint;
 
       const m = await Api.get('/metrics', params);

@@ -33,7 +33,12 @@ $menuMain = ['overview','velocidade','cycle-time','plan-real','produtividade','e
   <link rel="stylesheet" href="<?= $base ?>/assets/css/app.css" />
   <!-- Base URL + libs + núcleo JS carregados ANTES do conteúdo, para que os
        scripts inline das views já encontrem window.App e window.Charts. -->
-  <script>window.APP_BASE = <?= json_encode($base) ?>;</script>
+  <script>
+    window.APP_BASE = <?= json_encode($base) ?>;
+    // Tipos de "entrega de valor" (config/baseline.php). Usado pelas views
+    // para filtrar métricas de valor (Lead Time, Produtividade).
+    window.VALUE_TYPES = <?= json_encode($valueTypes ?? []) ?>;
+  </script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="<?= $base ?>/assets/js/charts.js"></script>
   <script src="<?= $base ?>/assets/js/app.js"></script>
@@ -77,6 +82,9 @@ $menuMain = ['overview','velocidade','cycle-time','plan-real','produtividade','e
       <label>Jornada
         <select id="flt-jornada"><option value="">Todas</option></select>
       </label>
+      <label>Time
+        <select id="flt-time"><option value="">Todos</option></select>
+      </label>
       <label>Versão Corrigida
         <select id="flt-versao"><option value="">Todas</option></select>
       </label>
@@ -92,6 +100,10 @@ $menuMain = ['overview','velocidade','cycle-time','plan-real','produtividade','e
 
   <!-- ── Conteúdo (view da seção) ── -->
   <main class="main" id="main-content">
+    <?php if ($activeSection !== 'painel'): ?>
+    <!-- Labels destacados dos filtros ativos -->
+    <div id="active-filters" class="active-filters"></div>
+    <?php endif; ?>
     <?php require $contentView; ?>
   </main>
 

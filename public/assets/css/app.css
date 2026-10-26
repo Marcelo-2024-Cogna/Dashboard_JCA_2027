@@ -126,6 +126,18 @@ body {
 /* ── Main / conteúdo ── */
 .main { grid-area: main; padding: 24px 28px; max-width: 1600px; }
 
+/* ── Labels de filtros ativos (destaque) ── */
+.active-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+.active-filters:empty { display: none; }
+.filter-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-left: 3px solid var(--ac, var(--indigo));
+  padding: 5px 12px; border-radius: 6px; font-size: .8rem;
+}
+.filter-chip .chip-label { color: var(--muted); font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; }
+.filter-chip .chip-value { font-weight: 600; }
+
 /* ── Section titles ── */
 .stitle {
   font-size: .68rem; font-weight: 700; letter-spacing: .12em;
