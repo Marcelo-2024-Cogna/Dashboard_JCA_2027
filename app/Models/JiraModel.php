@@ -69,6 +69,20 @@ class JiraModel
         ];
     }
 
+    /**
+     * Mapeia uma lista de issues RAW (mesma estrutura do payload do Jira:
+     * cada item com 'key' e 'fields') para os campos do template, reutilizando
+     * EXATAMENTE a mesma lógica de mapIssue(). Usado pelo modo fixture do
+     * runner de extração para validar o pipeline sem acesso de rede ao Jira.
+     *
+     * @param array[] $rawIssues
+     * @return array[]
+     */
+    public function mapRawIssues(array $rawIssues): array
+    {
+        return array_map(fn(array $issue) => $this->mapIssue($issue), $rawIssues);
+    }
+
     // ── Busca uma página ─────────────────────────────────────────────────
 
     /**
@@ -159,6 +173,11 @@ class JiraModel
             /* 8  */ 'story_points'          => $f[$this->cf['story_points']]         ?? null,
             /* 9  */ 'story_point_estimate'  => $f[$this->cf['story_point_estimate']] ?? null,
             /* 10 */ 'tempo_gasto_horas'     => $this->toHours($f['aggregatetimespent'] ?? null),
+            // Valor BRUTO em SEGUNDOS de aggregatetimespent (aditivo; não
+            // quebra consumidores existentes). O runner de extração grava este
+            // valor em extracao_jira.soma_tempo_gasto (coluna em SEGUNDOS), para
+            // que a view faça soma_tempo_gasto/3600 SEM dupla divisão.
+            'tempo_gasto_segundos'           => $this->toSeconds($f['aggregatetimespent'] ?? null),
             /* 11 */ 'tipo'                  => $cf('tipo'),
             /* 12 */ 'categoria_status'      => $f['status']['statusCategory']['name'] ?? null,
             /* 13 */ 'pai'                   => $f['parent']['key'] ?? null,
@@ -210,5 +229,11 @@ class JiraModel
     private function toHours(mixed $v): ?float
     {
         return (is_numeric($v) && $v > 0) ? round((float) $v / 3600, 2) : null;
+    }
+
+    /** Valor bruto de aggregatetimespent em SEGUNDOS (null se vazio/zero). */
+    private function toSeconds(mixed $v): ?int
+    {
+        return (is_numeric($v) && $v > 0) ? (int) $v : null;
     }
 }

@@ -54,6 +54,37 @@ class JqlBuilder
     }
 
     /**
+     * JQL para um RECORTE arbitrário (usado pelo runner de extração CLI):
+     * projeto(s) + uma PI (fixVersion) + sprint(s) opcionais.
+     *
+     * Diferente de build()/forCurrentPi() (que leem projetos/sprints de
+     * config/pi.php), este método recebe TODOS os parâmetros por argumento,
+     * sem depender do catálogo da PI corrente. Não altera o comportamento
+     * dos métodos existentes.
+     *
+     * @param string[]      $projetos  chaves de projeto Jira (ex: ['SGGU'])
+     * @param string        $pi        rótulo da fixVersion (ex: 'PI 4/26')
+     * @param string[]|null $sprints   nomes de sprint (ex: ['SP 26.4.1']); null = todas
+     */
+    public function forSelection(array $projetos, string $pi, ?array $sprints = null): string
+    {
+        $projects = implode(', ', $projetos);
+        $types    = $this->cfg['issue_types_jql'] ?? 'standardIssueTypes()';
+        $orderBy  = $this->cfg['order_by'] ?? 'project';
+
+        $jql = "project in ({$projects})"
+            . " AND issuetype in {$types}"
+            . ' AND fixVersion = "' . $pi . '"';
+
+        if ($sprints !== null && $sprints !== []) {
+            $sprintList = '"' . implode('", "', $sprints) . '"';
+            $jql .= " AND Sprint in ({$sprintList})";
+        }
+
+        return $jql . " ORDER BY {$orderBy}";
+    }
+
+    /**
      * JQL com uma lista de sprints arbitrária.
      * @param string[] $sprints
      */
