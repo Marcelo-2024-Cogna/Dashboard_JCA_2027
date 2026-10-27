@@ -20,11 +20,11 @@ CREATE USER IF NOT EXISTS 'metricas_jca'@'localhost' IDENTIFIED BY 'metricas_jca
 CREATE USER IF NOT EXISTS 'metricas_jca'@'%'         IDENTIFIED BY 'metricas_jca';
 
 GRANT SELECT, INSERT, UPDATE, DELETE,
-      CREATE, DROP, ALTER, INDEX, CREATE VIEW, SHOW VIEW
+      CREATE, DROP, ALTER, INDEX, REFERENCES, CREATE VIEW, SHOW VIEW
     ON metricas_agil.* TO 'metricas_jca'@'localhost';
 
 GRANT SELECT, INSERT, UPDATE, DELETE,
-      CREATE, DROP, ALTER, INDEX, CREATE VIEW, SHOW VIEW
+      CREATE, DROP, ALTER, INDEX, REFERENCES, CREATE VIEW, SHOW VIEW
     ON metricas_agil.* TO 'metricas_jca'@'%';
 
 FLUSH PRIVILEGES;
@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS times (
 CREATE TABLE IF NOT EXISTS times_composicao (
     id_time_composicao      INT UNSIGNED NOT NULL AUTO_INCREMENT,
     times_id                INT UNSIGNED NOT NULL,
-    qtde_dev                INT NULL,
+    qtde_dev                DECIMAL(4,1) NULL,
     horas_dev               DECIMAL(6,2) NULL,
     media_produtividade_pi  DECIMAL(10,2) NULL,
     ativo                   CHAR(1) NOT NULL DEFAULT 'S',
@@ -83,22 +83,22 @@ CREATE TABLE IF NOT EXISTS configuracao_pi (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 5. sprints ----------------------------------------------------------
+-- Sprint pertence à PI (catálogo da PI), não a um time específico.
+-- `tipo` separa sprints de entrega de VALOR das de SUSTENTAÇÃO (ex: as duas
+-- últimas sprints da PI 4/26). Views de valor consideram só tipo='valor'.
 CREATE TABLE IF NOT EXISTS sprints (
     id_sprint            INT UNSIGNED NOT NULL AUTO_INCREMENT,
     configuracao_pi_id   INT UNSIGNED NOT NULL,
-    times_id             INT UNSIGNED NULL,
     nome                 VARCHAR(50) NOT NULL,
+    tipo                 VARCHAR(20) NOT NULL DEFAULT 'valor',  -- valor | sustentacao
     dias_uteis           INT NULL,
     data_ini             DATE NULL,
     data_fim             DATE NULL,
     ativo                CHAR(1) NOT NULL DEFAULT 'S',
     PRIMARY KEY (id_sprint),
     KEY idx_sprints_configuracao_pi_id (configuracao_pi_id),
-    KEY idx_sprints_times_id (times_id),
     CONSTRAINT fk_sprints_configuracao_pi
-        FOREIGN KEY (configuracao_pi_id) REFERENCES configuracao_pi (id_versao_corrigida),
-    CONSTRAINT fk_sprints_times
-        FOREIGN KEY (times_id) REFERENCES times (id_time)
+        FOREIGN KEY (configuracao_pi_id) REFERENCES configuracao_pi (id_versao_corrigida)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 6. extracao_jira ----------------------------------------------------
@@ -179,6 +179,51 @@ CREATE TABLE IF NOT EXISTS extracao_agendamento (
     PRIMARY KEY (id_agendamento),
     KEY idx_extracao_agendamento_status (status),
     KEY idx_extracao_agendamento_agendado_para (agendado_para)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 10. produtividade_historico -----------------------------------------
+-- Consolida a produtividade (horas por ponto) por time e PI quando uma PI
+-- (ou sprint) fecha. Preserva o histórico mesmo após o DELETE do dado bruto
+-- da extração. A média consolidada ao fim da PI alimenta o cálculo de
+-- velocidade da PI seguinte (times_composicao.media_produtividade_pi).
+CREATE TABLE IF NOT EXISTS produtividade_historico (
+    id_produtividade     BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    times_id             INT UNSIGNED NOT NULL,
+    configuracao_pi_id   INT UNSIGNED NOT NULL,
+    produtividade        DECIMAL(10,2) NULL,  -- horas gastas / pontos entregues
+    pontos_entregues     DECIMAL(10,2) NULL,
+    horas_gastas         DECIMAL(14,2) NULL,
+    data_consolidacao    DATETIME NULL,
+    ativo                CHAR(1) NOT NULL DEFAULT 'S',
+    PRIMARY KEY (id_produtividade),
+    KEY idx_produtividade_historico_times_id (times_id),
+    KEY idx_produtividade_historico_configuracao_pi_id (configuracao_pi_id),
+    CONSTRAINT fk_produtividade_historico_times
+        FOREIGN KEY (times_id) REFERENCES times (id_time),
+    CONSTRAINT fk_produtividade_historico_configuracao_pi
+        FOREIGN KEY (configuracao_pi_id) REFERENCES configuracao_pi (id_versao_corrigida)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 11. sustentacao_historico -------------------------------------------
+-- Histórico de pontos de sustentação por time, PI e sprint. Fonte: coluna
+-- "Média dos Pts de Sustentação da PI passada" da aba 2026_Produtividade da
+-- planilha Velocity. A média da PI anterior é descontada da velocity para
+-- compor a capacity (ver vw_velocidade). times_id pode ser NULL (times sem
+-- projeto_key ainda são identificados pelo nome no seed).
+CREATE TABLE IF NOT EXISTS sustentacao_historico (
+    id                   BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    times_id             INT UNSIGNED NULL,
+    configuracao_pi_id   INT UNSIGNED NOT NULL,
+    sprint_nome          VARCHAR(50) NULL,
+    pts_sustentacao      DECIMAL(10,2) NULL,
+    ativo                CHAR(1) NOT NULL DEFAULT 'S',
+    PRIMARY KEY (id),
+    KEY idx_sustentacao_historico_times_id (times_id),
+    KEY idx_sustentacao_historico_configuracao_pi_id (configuracao_pi_id),
+    CONSTRAINT fk_sustentacao_historico_times
+        FOREIGN KEY (times_id) REFERENCES times (id_time),
+    CONSTRAINT fk_sustentacao_historico_configuracao_pi
+        FOREIGN KEY (configuracao_pi_id) REFERENCES configuracao_pi (id_versao_corrigida)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 9. extracao_log -----------------------------------------------------

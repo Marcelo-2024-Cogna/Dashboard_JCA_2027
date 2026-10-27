@@ -190,36 +190,68 @@ GROUP BY
 
 -- ---------------------------------------------------------------------
 -- 3. vw_velocidade
---    Capacidade DISPONIVEL por time (NAO calcula realizado).
---    capacidade_horas = qtde_dev * horas_dev * (SOMA dias_uteis das sprints
---    de tipo='valor' da PI corrente 'PI 4/26').
---    capacidade_pontos = capacidade_horas / media_produtividade_pi (>0).
---    Soh times de jornada ativa e time ativo e composicao ativa.
+--    VELOCITY e CAPACITY por time para a PI corrente ('PI 4/26'),
+--    calculadas POR SPRINT (sprints de tipo='valor') e somadas por time.
+--
+--    Para cada time e cada sprint de valor da PI 4/26:
+--      velocity_sprint    = qtde_dev * horas_dev * dias_uteis_sprint
+--                           / media_produtividade_pi
+--      sustentacao_sprint = pts de sustentação daquele time+sprint
+--                           (sustentacao_historico; 0 se não houver)
+--      capacity_sprint    = velocity_sprint - sustentacao_sprint
+--
+--    A planilha arredonda CADA sprint para inteiro antes de somar — por isso
+--    aplicamos ROUND(...,0) no velocity_sprint e no capacity_sprint ANTES do
+--    SUM, para bater numericamente com a Velocity.
+--
+--    Exposição por time:
+--      velocity     = SUM(ROUND(velocity_sprint))
+--      sustentacao  = SUM(sustentacao_sprint)
+--      capacity     = SUM(ROUND(capacity_sprint))
+--      dias_uteis_pi= SUM(dias_uteis_sprint das sprints de valor)
+--    Só times de jornada ativa, time ativo e composição ativa.
 -- ---------------------------------------------------------------------
 CREATE OR REPLACE VIEW vw_velocidade AS
 SELECT
-    j.nome                               AS jornada,
-    t.nome                               AS time,
-    tc.qtde_dev,
-    tc.horas_dev,
-    pi_val.dias_uteis_pi,
-    (tc.qtde_dev * tc.horas_dev * pi_val.dias_uteis_pi) AS capacidade_horas,
-    CASE WHEN tc.media_produtividade_pi > 0
-         THEN (tc.qtde_dev * tc.horas_dev * pi_val.dias_uteis_pi) / tc.media_produtividade_pi
-         ELSE NULL
-    END                                  AS capacidade_pontos
-FROM times t
-JOIN jornada j                ON j.id_jornada = t.jornada_id
-JOIN times_composicao tc      ON tc.times_id = t.id_time AND tc.ativo = 'S'
-CROSS JOIN (
-    SELECT SUM(s.dias_uteis) AS dias_uteis_pi
-    FROM sprints s
-    JOIN configuracao_pi p ON p.id_versao_corrigida = s.configuracao_pi_id
-    WHERE p.desc_pi = 'PI 4/26'
-      AND s.tipo = 'valor'
-) pi_val
-WHERE t.ativo = 'S'
-  AND j.ativo = 'S';
+    sp.jornada,
+    sp.time,
+    sp.projeto_key,
+    SUM(sp.dias_uteis)                 AS dias_uteis_pi,
+    SUM(ROUND(sp.velocity_sprint, 0))  AS velocity,
+    SUM(sp.sustentacao_sprint)         AS sustentacao,
+    SUM(ROUND(sp.capacity_sprint, 0))  AS capacity
+FROM (
+    SELECT
+        j.nome                                            AS jornada,
+        t.nome                                            AS time,
+        t.projeto_key,
+        s.nome                                            AS sprint_nome,
+        s.dias_uteis,
+        CASE WHEN tc.media_produtividade_pi > 0
+             THEN (tc.qtde_dev * tc.horas_dev * s.dias_uteis) / tc.media_produtividade_pi
+             ELSE NULL
+        END                                               AS velocity_sprint,
+        COALESCE(sh.pts_sustentacao, 0)                   AS sustentacao_sprint,
+        CASE WHEN tc.media_produtividade_pi > 0
+             THEN ((tc.qtde_dev * tc.horas_dev * s.dias_uteis) / tc.media_produtividade_pi)
+                  - COALESCE(sh.pts_sustentacao, 0)
+             ELSE NULL
+        END                                               AS capacity_sprint
+    FROM times t
+    JOIN jornada j           ON j.id_jornada = t.jornada_id
+    JOIN times_composicao tc ON tc.times_id = t.id_time AND tc.ativo = 'S'
+    JOIN configuracao_pi p   ON p.desc_pi = 'PI 4/26'
+    JOIN sprints s           ON s.configuracao_pi_id = p.id_versao_corrigida
+                            AND s.tipo = 'valor'
+    LEFT JOIN sustentacao_historico sh
+                             ON sh.times_id = t.id_time
+                            AND sh.configuracao_pi_id = p.id_versao_corrigida
+                            AND sh.sprint_nome = s.nome
+                            AND sh.ativo = 'S'
+    WHERE t.ativo = 'S'
+      AND j.ativo = 'S'
+) sp
+GROUP BY sp.jornada, sp.time, sp.projeto_key;
 
 -- ---------------------------------------------------------------------
 -- 4. vw_previsibilidade

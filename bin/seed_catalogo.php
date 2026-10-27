@@ -1,130 +1,75 @@
 <?php
 /**
- * bin/seed_catalogo.php — SEED / carga inicial do catálogo (ETAPA 3, v1.5)
+ * bin/seed_catalogo.php — SEED / reseed do CATÁLOGO a partir da Velocity (v1.5)
  * ────────────────────────────────────────────────────────────────────────────
- * Popula as tabelas de catálogo (NÃO as de dados brutos de extração):
- *   jornada · times · times_composicao · configuracao_pi · sprints
+ * Popula as tabelas de catálogo de TIMES:
+ *   jornada · times · times_composicao
  *
- * FONTES:
- *   1. config/capacity.php          → jornadas, times e composição (qtde_dev,
- *                                      horas_dev, media_produtividade_pi).
- *   2. Aba "Apoio" da planilha       → catálogo de PIs e sprints de 2026.
- *      (Template Velocity 26-4.xlsx)   SOMENTE o bloco 2026 (colunas A-D).
+ * NÃO toca em configuracao_pi nem em sprints (já populadas corretamente:
+ * 4 PIs, 26 sprints). Também NÃO toca em extração/baseline.
  *
- * IDEMPOTENTE: cada execução apaga o conteúdo das 5 tabelas (ordem segura via
- * SET FOREIGN_KEY_CHECKS) e reinsere tudo dentro de UMA transação InnoDB.
- * Rodar N vezes não duplica.
+ * FONTE ÚNICA (catálogo de times, 46 times):
+ *   "Template Velocity 26-4.xlsx", aba "2026_Produtividade".
+ *     A=Jornada  B=Time  C=Qtde de Devs  D=Produtividade (H/P)
+ *     E=Horas Produtivas/dia  F=PI  G=Sprint  H=Dias Úteis  I=Velocity
+ *     J=Média Pts Sustentação  K=Capacity
+ *   Os times aparecem repetidos (uma linha por sprint/PI). Para o catálogo
+ *   usamos os valores da PI 4/26 (quando o time existe nela); se o time só
+ *   existe em PIs anteriores (Sparta, Triforce — pré-fusão), usamos a PI
+ *   mais recente disponível.
  *
- * NÃO cria views (etapa 4) nem camada de conexão reutilizável (etapa 5):
- * a conexão PDO é autocontida aqui.
+ *   projeto_key vem de config/team_keys.php[nomeTime] (pode ser null).
+ *
+ * Mapeamento para times_composicao (confirmado):
+ *   qtde_dev                = C (Qtde de Devs)
+ *   horas_dev               = E (Horas Produtivas por dia e por Dev)
+ *   media_produtividade_pi  = D (Produtividade H/P)
+ *
+ * IDEMPOTENTE e TRANSACIONAL: com FOREIGN_KEY_CHECKS=0 apaga, na ordem segura,
+ * sustentacao_historico (FK->times, se existir), times_composicao, times,
+ * jornada; reinsere tudo; FOREIGN_KEY_CHECKS=1 ao fim. Rodar N vezes não
+ * duplica.
  *
  * Uso: php bin/seed_catalogo.php
  */
 
-$ROOT     = __DIR__ . '/..';
-$CAPACITY = $ROOT . '/config/capacity.php';
-$XLSX     = $ROOT . '/Template Velocity 26-4.xlsx';
-$SHEET    = 'Apoio';
+require __DIR__ . '/../app/Database.php';
 
-// ── Conexão PDO autocontida ───────────────────────────────────────────────
-$DB_HOST = 'localhost';
-$DB_NAME = 'metricas_agil';
-$DB_USER = 'metricas_jca';
-$DB_PASS = 'metricas_jca';
+use App\Database;
 
-try {
-    $pdo = new PDO(
-        "mysql:host={$DB_HOST};dbname={$DB_NAME};charset=utf8mb4",
-        $DB_USER,
-        $DB_PASS,
-        [
-            PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            PDO::ATTR_EMULATE_PREPARES   => false,
-        ]
-    );
-} catch (PDOException $e) {
-    fwrite(STDERR, "Falha na conexão: " . $e->getMessage() . "\n");
+$ROOT      = __DIR__ . '/..';
+$XLSX      = $ROOT . '/Template Velocity 26-4.xlsx';
+$SHEET     = '2026_Produtividade';
+$TEAM_KEYS = $ROOT . '/config/team_keys.php';
+$PI_CATALOGO = 'PI 4/26'; // PI de referência para os valores de composição
+
+// ── De-para nome do time → projeto_key (validado com o usuário) ────────────
+if (!is_file($TEAM_KEYS)) {
+    fwrite(STDERR, "Arquivo não encontrado: $TEAM_KEYS\n");
     exit(1);
 }
+$teamKeys = require $TEAM_KEYS;
 
-// ── Catálogo de Jornadas, Times (projeto_key) e nomes ──────────────────────
-// Ordem de jornadas e times conforme o cabeçalho de config/capacity.php.
-// Jornadas ATIVAS (ativo='S') com seus 29 times.
-$JORNADAS_ATIVAS = [
-    'Secretaria e Gestor de Unidades' => [
-        'SGGU' => 'Gestor de Unidades',
-        'SGSE' => 'Secretaria - Enturmação',
-        'SGGS' => 'Secretaria - Gestão Acadêmica',
-        'SGTB' => 'Thunderbolts',
-    ],
-    'Ingresso' => [
-        'INAP' => 'Aplicativos de Captação',
-        'INBI' => 'Backoffice de Inscrição',
-        'INBO' => 'Backoffice de Ofertas',
-        'INCA' => 'Captar',
-        'INFU' => 'Funis e Área do Candidato',
-        'INPV' => 'Portais e Vitrines',
-    ],
-    'Acadêmica' => [
-        'JACM' => 'CMS',
-        'JACO' => 'Colaborar',
-        'JADO' => 'Docência',
-        'JAES' => 'Estágio',
-        'JAMO' => 'Moodle',
-        'JASA' => 'SAG',
-    ],
-    'Aprendizagem Digital' => [
-        'APAP' => 'Aprendizagem',
-        'APAV' => 'Avaliação',
-        'APCO' => 'Comunicação',
-        'APIN' => 'Interação',
-        'APPL' => 'Plataforma',
-        'APSF' => 'Secretaria e Financeiro',
-    ],
-    'Atendimento e Serviços' => [
-        'ASAT' => 'Atendimento',
-        'ASKB' => 'KBots',
-        'ASPL' => 'Papa-Léguas',
-        'ASR6' => 'Route 66',
-    ],
-    'Saber' => [
-        'SADV' => 'Devengers',
-        'SAJO' => 'Joker!',
-        'SATT' => 'Team Tregamos',
-    ],
-];
-
-// Jornadas EXCLUÍDAS (ativo='N', sem times) — ficam no banco mas fora das views.
-$JORNADAS_EXCLUIDAS = [
-    'Financeira',
-    'Pós Graduação',
-    'IA',
-    'Voomp',
-    'Digital Finance',
-];
-
-// ── Carrega parâmetros de capacidade ───────────────────────────────────────
-if (!is_file($CAPACITY)) {
-    fwrite(STDERR, "Arquivo não encontrado: $CAPACITY\n");
-    exit(1);
-}
-$cap = require $CAPACITY;
-$devCount  = $cap['dev_count_by_team']               ?? [];
-$refProd   = $cap['reference_productivity_by_team']  ?? [];
-$prodHours = $cap['productive_hours_by_team']        ?? [];
-
-// ── Leitor xlsx mínimo (mesma técnica de check_apoio_dates.php) ────────────
-/** Converte serial Excel (epoch 30/12/1899) para 'Y-m-d'. Vazio se nulo. */
-function excelSerialToDate($serial): ?string
+// ── Normalização de jornada ────────────────────────────────────────────────
+// A Velocity usa variações para a MESMA jornada (ex.: '& ' vs ' e ', singular
+// vs plural). Unificamos para uma forma canônica (preferindo a forma com 'e').
+function normalizaJornada(string $j): string
 {
-    if ($serial === '' || $serial === null) return null;
-    if (!is_numeric($serial)) return null;
-    $days = (int) floor((float)$serial);
-    $base = new DateTimeImmutable('1899-12-30');
-    return $base->add(new DateInterval("P{$days}D"))->format('Y-m-d');
+    $j = trim($j);
+    $map = [
+        // Secretaria & Gestor de Unidades  ≡  Secretaria e Gestor de Unidades
+        'Secretaria & Gestor de Unidades' => 'Secretaria e Gestor de Unidades',
+        'Secretaria e Gestor de Unidades' => 'Secretaria e Gestor de Unidades',
+        // Atendimento & Serviço / Atendimento e Serviço  ≡  Atendimento e Serviços
+        'Atendimento & Serviço'   => 'Atendimento e Serviços',
+        'Atendimento & Serviços'  => 'Atendimento e Serviços',
+        'Atendimento e Serviço'   => 'Atendimento e Serviços',
+        'Atendimento e Serviços'  => 'Atendimento e Serviços',
+    ];
+    return $map[$j] ?? $j;
 }
 
+// ── Leitor xlsx mínimo (ZipArchive + sharedStrings) ─────────────────────────
 function readSheet(string $file, string $sheetName): array
 {
     $z = new ZipArchive();
@@ -162,7 +107,7 @@ function readSheet(string $file, string $sheetName): array
         $r = (int)$row['r'];
         foreach ($row->c as $c) {
             preg_match('/^([A-Z]+)\d+$/', (string)$c['r'], $m);
-            $col = $m[1];
+            $col  = $m[1];
             $type = (string)$c['t'];
             $val  = (string)$c->v;
             if ($type === 's') $val = $shared[(int)$val] ?? $val;
@@ -172,56 +117,88 @@ function readSheet(string $file, string $sheetName): array
     return $rows;
 }
 
-// ── Lê SOMENTE o bloco 2026 (A=Sprint B=DiasUteis C=Serial Ini D=Serial Fim)
+/** Extrai o número da PI (ex.: 'PI 4/26' → 4); null se não casar. */
+function piNum(string $pi): ?int
+{
+    return preg_match('/PI\s+(\d+)\/\d+/', $pi, $m) ? (int)$m[1] : null;
+}
+
+// ── Lê a aba e consolida o catálogo de times ───────────────────────────────
 $rows = readSheet($XLSX, $SHEET);
-$sprints = []; // [ ['nome'=>, 'pi'=>, 'dias'=>, 'ini'=>, 'fim'=>], ... ]
-for ($r = 2; $r <= 60; $r++) {
-    $nome = trim($rows[$r]['A'] ?? '');
+$max  = max(array_keys($rows));
+
+// $teams[nome] = [
+//   'jornada'  => jornada normalizada (1ª ocorrência),
+//   'order'    => ordem de 1ª aparição,
+//   'byPi'     => [ piNum => ['c'=>,'d'=>,'e'=>] ],  // valores por PI
+// ]
+$teams = [];
+$order = 0;
+for ($r = 2; $r <= $max; $r++) {
+    $nome = trim($rows[$r]['B'] ?? '');
     if ($nome === '') continue;
-    // Só aceita sprints no padrão 'SP 26.P.S' (bloco 2026).
-    if (!preg_match('/^SP\s+26\.(\d+)\.(\d+)$/', $nome, $m)) continue;
-    $sprints[] = [
-        'nome' => $nome,
-        'pi'   => (int)$m[1],
-        'dias' => ($rows[$r]['B'] ?? '') === '' ? null : (int)$rows[$r]['B'],
-        'ini'  => excelSerialToDate($rows[$r]['C'] ?? ''),
-        'fim'  => excelSerialToDate($rows[$r]['D'] ?? ''),
+    $jor  = normalizaJornada($rows[$r]['A'] ?? '');
+    $pi   = piNum(trim($rows[$r]['F'] ?? ''));
+    if ($pi === null) continue;
+
+    if (!isset($teams[$nome])) {
+        $teams[$nome] = ['jornada' => $jor, 'order' => $order++, 'byPi' => []];
+    }
+    $teams[$nome]['byPi'][$pi] = [
+        'c' => $rows[$r]['C'] ?? '',
+        'd' => $rows[$r]['D'] ?? '',
+        'e' => $rows[$r]['E'] ?? '',
     ];
 }
 
-if (!$sprints) {
-    fwrite(STDERR, "Nenhuma sprint 2026 encontrada na aba '$SHEET'.\n");
+if (!$teams) {
+    fwrite(STDERR, "Nenhum time encontrado na aba '$SHEET'.\n");
     exit(1);
 }
 
-// ── Agrupa sprints por PI → configuracao_pi ────────────────────────────────
-$pis = []; // [ P => ['desc'=>'PI P/26','qtde'=>, 'ini'=>, 'fim'=>] ]
-foreach ($sprints as $sp) {
-    $p = $sp['pi'];
-    if (!isset($pis[$p])) {
-        $pis[$p] = ['desc' => "PI {$p}/26", 'qtde' => 0, 'ini' => null, 'fim' => null];
-    }
-    $pis[$p]['qtde']++;
-    if ($sp['ini'] !== null && ($pis[$p]['ini'] === null || $sp['ini'] < $pis[$p]['ini'])) {
-        $pis[$p]['ini'] = $sp['ini'];
-    }
-    if ($sp['fim'] !== null && ($pis[$p]['fim'] === null || $sp['fim'] > $pis[$p]['fim'])) {
-        $pis[$p]['fim'] = $sp['fim'];
-    }
-}
-ksort($pis);
+$piRefNum = piNum($PI_CATALOGO); // 4
 
-// ── Carga transacional idempotente ─────────────────────────────────────────
+/** Converte célula numérica da planilha em float ou null. */
+function numOrNull($v): ?float
+{
+    if ($v === '' || $v === null) return null;
+    return is_numeric($v) ? (float)$v : null;
+}
+
+// Resolve C/D/E de cada time: usa a PI de referência; senão a PI mais recente.
+foreach ($teams as $nome => &$info) {
+    $byPi = $info['byPi'];
+    if (isset($byPi[$piRefNum])) {
+        $src = $byPi[$piRefNum];
+    } else {
+        krsort($byPi);                 // PI mais recente primeiro
+        $src = reset($byPi);
+    }
+    $info['qtde_dev']  = numOrNull($src['c']);
+    $info['horas_dev'] = numOrNull($src['e']);
+    $info['media']     = numOrNull($src['d']);
+}
+unset($info);
+
+// ── Carga transacional idempotente (via App\Database::pdo()) ────────────────
+$pdo = Database::pdo();
+
 try {
     $pdo->exec('SET FOREIGN_KEY_CHECKS = 0');
     $pdo->beginTransaction();
 
-    // Limpa as 5 tabelas de catálogo (apenas estas; não toca extração/baseline).
-    foreach (['sprints', 'configuracao_pi', 'times_composicao', 'times', 'jornada'] as $t) {
-        $pdo->exec("DELETE FROM {$t}");
+    // Limpa o catálogo de times na ordem segura. sustentacao_historico (se já
+    // existir) referencia times por FK → apaga primeiro. NÃO apaga
+    // configuracao_pi nem sprints.
+    foreach (['sustentacao_historico', 'times_composicao', 'times', 'jornada'] as $t) {
+        try {
+            $pdo->exec("DELETE FROM {$t}");
+        } catch (Throwable $e) {
+            // sustentacao_historico pode ainda não existir (criada na tarefa B).
+            if ($t !== 'sustentacao_historico') throw $e;
+        }
     }
 
-    // 1) Jornadas ativas + times + composição
     $insJornada = $pdo->prepare(
         'INSERT INTO jornada (nome, projeto_baseline, ativo) VALUES (:nome, NULL, :ativo)'
     );
@@ -235,72 +212,41 @@ try {
          VALUES (:times_id, :qtde_dev, :horas_dev, :media, :ativo)'
     );
 
-    $totTimes = 0;
-    $totComp  = 0;
-    foreach ($JORNADAS_ATIVAS as $nomeJornada => $times) {
-        $insJornada->execute([':nome' => $nomeJornada, ':ativo' => 'S']);
-        $jornadaId = (int)$pdo->lastInsertId();
-
-        foreach ($times as $key => $nomeTime) {
-            $insTime->execute([
-                ':jornada_id'  => $jornadaId,
-                ':nome'        => $nomeTime,
-                ':projeto_key' => $key,
-                ':ativo'       => 'S',
-            ]);
-            $timeId = (int)$pdo->lastInsertId();
-            $totTimes++;
-
-            $insComp->execute([
-                ':times_id'  => $timeId,
-                ':qtde_dev'  => $devCount[$key]  ?? null,
-                ':horas_dev' => $prodHours[$key] ?? null,
-                ':media'     => $refProd[$key]   ?? null,
-                ':ativo'     => 'S',
-            ]);
-            $totComp++;
+    // 1) Jornadas distintas (ordem de 1ª aparição), ativo='S'.
+    $jornadaId = [];
+    foreach ($teams as $info) {
+        $j = $info['jornada'];
+        if (!isset($jornadaId[$j])) {
+            $insJornada->execute([':nome' => $j, ':ativo' => 'S']);
+            $jornadaId[$j] = (int)$pdo->lastInsertId();
         }
     }
 
-    // Jornadas excluídas (ativo='N', sem times)
-    foreach ($JORNADAS_EXCLUIDAS as $nomeJornada) {
-        $insJornada->execute([':nome' => $nomeJornada, ':ativo' => 'N']);
-    }
+    // 2) Times + 3) composição (uma linha por time).
+    $totTimes = 0;
+    $totComp  = 0;
+    $semKey   = []; // times com projeto_key NULL
+    foreach ($teams as $nome => $info) {
+        $pk = array_key_exists($nome, $teamKeys) ? $teamKeys[$nome] : null;
+        if ($pk === null) $semKey[] = $nome;
 
-    // 2) configuracao_pi (por PI) + mapa P → id
-    $insPi = $pdo->prepare(
-        'INSERT INTO configuracao_pi (desc_pi, qtde_sprints, data_ini, data_fim, ativo)
-         VALUES (:desc, :qtde, :ini, :fim, :ativo)'
-    );
-    $piIdByNum = [];
-    foreach ($pis as $p => $info) {
-        $insPi->execute([
-            ':desc'  => $info['desc'],
-            ':qtde'  => $info['qtde'],
-            ':ini'   => $info['ini'],
-            ':fim'   => $info['fim'],
-            ':ativo' => 'S', // todas as 4 PIs de 2026 são do ano corrente
+        $insTime->execute([
+            ':jornada_id'  => $jornadaId[$info['jornada']],
+            ':nome'        => $nome,
+            ':projeto_key' => $pk,
+            ':ativo'       => 'S',
         ]);
-        $piIdByNum[$p] = (int)$pdo->lastInsertId();
-    }
+        $timeId = (int)$pdo->lastInsertId();
+        $totTimes++;
 
-    // 3) sprints (catálogo da PI; times_id = NULL)
-    $insSprint = $pdo->prepare(
-        'INSERT INTO sprints
-            (configuracao_pi_id, times_id, nome, dias_uteis, data_ini, data_fim, ativo)
-         VALUES (:pi_id, NULL, :nome, :dias, :ini, :fim, :ativo)'
-    );
-    $totSprints = 0;
-    foreach ($sprints as $sp) {
-        $insSprint->execute([
-            ':pi_id' => $piIdByNum[$sp['pi']],
-            ':nome'  => $sp['nome'],
-            ':dias'  => $sp['dias'],
-            ':ini'   => $sp['ini'],
-            ':fim'   => $sp['fim'],
-            ':ativo' => 'S',
+        $insComp->execute([
+            ':times_id'  => $timeId,
+            ':qtde_dev'  => $info['qtde_dev'],
+            ':horas_dev' => $info['horas_dev'],
+            ':media'     => $info['media'],
+            ':ativo'     => 'S',
         ]);
-        $totSprints++;
+        $totComp++;
     }
 
     $pdo->commit();
@@ -312,17 +258,14 @@ try {
     exit(1);
 }
 
-// ── Relatório de carga ──────────────────────────────────────────────────────
+// ── Relatório ───────────────────────────────────────────────────────────────
 echo str_repeat('=', 70) . "\n";
-echo "  SEED DO CATÁLOGO — concluído\n";
+echo "  RESEED DO CATÁLOGO (Velocity · aba {$SHEET}) — concluído\n";
 echo str_repeat('=', 70) . "\n";
-echo "  Jornadas ativas inseridas:   " . count($JORNADAS_ATIVAS) . "\n";
-echo "  Jornadas excluídas (ativo=N):" . count($JORNADAS_EXCLUIDAS) . "\n";
-echo "  Times inseridos:             {$totTimes}\n";
-echo "  Composições inseridas:       {$totComp}\n";
-echo "  PIs (configuracao_pi):       " . count($pis) . "\n";
-foreach ($pis as $p => $info) {
-    echo "     - {$info['desc']}: {$info['qtde']} sprints ({$info['ini']} → {$info['fim']})\n";
-}
-echo "  Sprints (bloco 2026):        {$totSprints}\n";
+echo "  Jornadas distintas inseridas: " . count($jornadaId) . "\n";
+foreach ($jornadaId as $j => $id) echo "     - {$j}\n";
+echo "  Times inseridos:              {$totTimes}\n";
+echo "  Composições inseridas:        {$totComp}\n";
+echo "  Times com projeto_key NULL:   " . count($semKey) . "\n";
+foreach ($semKey as $n) echo "     - {$n}\n";
 echo "\nSeed finalizado com sucesso.\n";
