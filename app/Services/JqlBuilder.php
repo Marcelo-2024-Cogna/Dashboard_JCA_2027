@@ -72,9 +72,12 @@ class JqlBuilder
         $types    = $this->cfg['issue_types_jql'] ?? 'standardIssueTypes()';
         $orderBy  = $this->cfg['order_by'] ?? 'project';
 
+        // fixVersion no Jira vem com prefixo do time (ex: "[SGGU] PI 4/26"),
+        // então a igualdade exata não casa. Usamos o operador "contém" (~)
+        // com wildcards para encontrar a PI independente do prefixo.
         $jql = "project in ({$projects})"
             . " AND issuetype in {$types}"
-            . ' AND fixVersion = "' . $pi . '"';
+            . ' AND fixVersion ~ "*' . $pi . '*"';
 
         if ($sprints !== null && $sprints !== []) {
             $sprintList = '"' . implode('", "', $sprints) . '"';
