@@ -1,0 +1,334 @@
+==============================================================================
+  CONFERÊNCIA PLANILHA x BANCO — 2026-10-28 20:08:03
+==============================================================================
+  Planilha : Template Métricas Review.xlsx (aba 'Extração Jira - Itens', 1190 linhas de dados)
+  Projetos : SGGU, SGSE, SGGS, SGTB
+  Sprints  : 26.4.1, 26.4.2 (filtro aplicado ao lado do BANCO)
+  PIs no banco (itens dos projetos): PI 4/26
+  Itens do banco fora do filtro de sprint: 306
+
+==============================================================================
+  PROJETO SGGU
+==============================================================================
+
+(1) CONTAGEM DE ITENS
+    Planilha: 163 | Banco: 154 | Em comum: 154 | Só planilha: 9 | Só banco: 0
+
+(2) CHAVES SÓ NA PLANILHA — causa provável
+    - 9 item(ns): carry-over de PI anterior (fixVersion PI 3/26); JQL por fixVersion do PI alvo não traz
+        tipos: Incidente=6, Bug=2, Solicitação de Serviço=1 | SP total: 0
+        status: Aceito=9
+        ex.: SGGU-7697 | fixVersion=[SGGU] PI 3/26 | tipo=Incidente | status=Aceito | SP=(vazio)
+        ex.: SGGU-7696 | fixVersion=[SGGU] PI 3/26 | tipo=Incidente | status=Aceito | SP=(vazio)
+        ex.: SGGU-7680 | fixVersion=[SGGU] PI 3/26 | tipo=Incidente | status=Aceito | SP=(vazio)
+
+    CHAVES SÓ NO BANCO
+    (nenhuma)
+
+(3) DIVERGÊNCIAS NOS 14 CAMPOS BRUTOS (154 itens em comum)
+    tipo_item              OK (0 divergências)
+    status                 OK (0 divergências)
+    story_points           OK (0 divergências)
+    story_point_estimate   OK (0 divergências)
+    soma_tempo_gasto       OK (0 divergências)
+    pai                    OK (0 divergências)
+    criado                 OK (0 divergências)
+    ponto_compromisso      OK (0 divergências)
+    inicio_fluxo           OK (0 divergências)
+    fim_fluxo              OK (0 divergências)
+    inicio_homologacao     OK (0 divergências)
+    fim_homologacao        OK (0 divergências)
+    inicio_implantacao     OK (0 divergências)
+    fim_implantacao        OK (0 divergências)
+    Total de divergências brutas: 0
+
+(4) COLUNAS CALCULADAS (planilha, valor cacheado) x vw_extracao_calculada
+    AK Ideação (dias_ideacao)                1 divergência(s)
+        ex.: SGGU-7888 (Enabler, Pendente de Produção): planilha=-3 | view=1
+    AM Desenvolvimento (dias_desenvolvimento)  OK (0 divergências)
+    AO Homologação (dias_homologacao)        OK (0 divergências)
+    AQ Implantação (dias_implantacao)        OK (0 divergências)
+    AS Lead Time (lead_time)                   OK (0 divergências)
+    AH Tempo Gasto h (tempo_gasto_horas)       OK (0 divergências)
+    Total de divergências calculadas: 1
+    ⚠ VALORES NEGATIVOS NA PLANILHA (ex.: item criado depois do ponto de compromisso):
+        AK Ideação (dias_ideacao): 1 item(ns)
+            SGGU-7888: planilha=-3 | view=1 | criado=2026-10-14 15:40:49 | ponto_compromisso=2026-10-13 00:00:00
+
+(5) TOTAIS
+                                      itens         SP SP val.entreg.   estimate
+    Planilha (todos)                    163        112             94        116
+    Banco (todos)                       154        112             94        116
+    Em comum — valores planilha       154        112             94        116
+    Em comum — valores banco          154        112             94        116
+
+==============================================================================
+  PROJETO SGSE
+==============================================================================
+
+(1) CONTAGEM DE ITENS
+    Planilha: 144 | Banco: 136 | Em comum: 136 | Só planilha: 8 | Só banco: 0
+
+(2) CHAVES SÓ NA PLANILHA — causa provável
+    - 8 item(ns): carry-over de PI anterior (fixVersion PI 3/26); JQL por fixVersion do PI alvo não traz
+        tipos: Incidente=8 | SP total: 0
+        status: Aceito=7, Concluído=1
+        ex.: SGSE-4819 | fixVersion=[SGSE] PI 3/26 | tipo=Incidente | status=Aceito | SP=(vazio)
+        ex.: SGSE-4811 | fixVersion=[SGSE] PI 3/26 | tipo=Incidente | status=Aceito | SP=(vazio)
+        ex.: SGSE-4809 | fixVersion=[SGSE] PI 3/26 | tipo=Incidente | status=Aceito | SP=(vazio)
+
+    CHAVES SÓ NO BANCO
+    (nenhuma)
+
+(3) DIVERGÊNCIAS NOS 14 CAMPOS BRUTOS (136 itens em comum)
+    tipo_item              OK (0 divergências)
+    status                 OK (0 divergências)
+    story_points           OK (0 divergências)
+    story_point_estimate   OK (0 divergências)
+    soma_tempo_gasto       OK (0 divergências)
+    pai                    OK (0 divergências)
+    criado                 OK (0 divergências)
+    ponto_compromisso      OK (0 divergências)
+    inicio_fluxo           OK (0 divergências)
+    fim_fluxo              OK (0 divergências)
+    inicio_homologacao     OK (0 divergências)
+    fim_homologacao        OK (0 divergências)
+    inicio_implantacao     OK (0 divergências)
+    fim_implantacao        OK (0 divergências)
+    Total de divergências brutas: 0
+
+(4) COLUNAS CALCULADAS (planilha, valor cacheado) x vw_extracao_calculada
+    AK Ideação (dias_ideacao)                5 divergência(s)
+        ex.: SGSE-5105 (Enabler, Aceito): planilha=-7 | view=1
+        ex.: SGSE-5104 (Enabler, Aceito): planilha=-7 | view=1
+        ex.: SGSE-5090 (Bug, Pendente de Produção): planilha=-4 | view=1
+    AM Desenvolvimento (dias_desenvolvimento)  OK (0 divergências)
+    AO Homologação (dias_homologacao)        OK (0 divergências)
+    AQ Implantação (dias_implantacao)        OK (0 divergências)
+    AS Lead Time (lead_time)                   OK (0 divergências)
+    AH Tempo Gasto h (tempo_gasto_horas)       OK (0 divergências)
+    Total de divergências calculadas: 5
+    ⚠ VALORES NEGATIVOS NA PLANILHA (ex.: item criado depois do ponto de compromisso):
+        AK Ideação (dias_ideacao): 5 item(ns)
+            SGSE-5105: planilha=-7 | view=1 | criado=2026-10-20 10:12:49 | ponto_compromisso=2026-10-13 00:00:00
+            SGSE-5104: planilha=-7 | view=1 | criado=2026-10-20 10:04:47 | ponto_compromisso=2026-10-13 00:00:00
+            SGSE-5090: planilha=-4 | view=1 | criado=2026-10-15 10:13:08 | ponto_compromisso=2026-10-13 00:00:00
+
+(5) TOTAIS
+                                      itens         SP SP val.entreg.   estimate
+    Planilha (todos)                    144         91             66         91
+    Banco (todos)                       136         91             66         91
+    Em comum — valores planilha       136         91             66         91
+    Em comum — valores banco          136         91             66         91
+
+==============================================================================
+  PROJETO SGGS
+==============================================================================
+
+(1) CONTAGEM DE ITENS
+    Planilha: 697 | Banco: 615 | Em comum: 615 | Só planilha: 82 | Só banco: 0
+
+(2) CHAVES SÓ NA PLANILHA — causa provável
+    - 9 item(ns): sem fixVersion na planilha (JQL por fixVersion não traz)
+        tipos: Incidente=8, Bug=1 | SP total: 0
+        status: Backlog=8, Cancelado=1
+        ex.: SGGS-19159 | fixVersion=(vazio) | tipo=Bug | status=Cancelado | SP=(vazio)
+        ex.: SGGS-18960 | fixVersion=(vazio) | tipo=Incidente | status=Backlog | SP=(vazio)
+        ex.: SGGS-18959 | fixVersion=(vazio) | tipo=Incidente | status=Backlog | SP=(vazio)
+    - 72 item(ns): carry-over de PI anterior (fixVersion PI 3/26); JQL por fixVersion do PI alvo não traz
+        tipos: Incidente=72 | SP total: 0
+        status: Aceito=72
+        ex.: SGGS-18644 | fixVersion=[SGGS] PI 3/26 | tipo=Incidente | status=Aceito | SP=(vazio)
+        ex.: SGGS-18540 | fixVersion=[SGGS] PI 3/26 | tipo=Incidente | status=Aceito | SP=(vazio)
+        ex.: SGGS-18522 | fixVersion=[SGGS] PI 3/26 | tipo=Incidente | status=Aceito | SP=(vazio)
+    - 1 item(ns): fixVersion de PI POSTERIOR (PI 1/27) — item em sprint do PI alvo, mas já reetiquetado; JQL por fixVersion do PI alvo não traz
+        tipos: História=1 | SP total: 3
+        status: Pendente de Produção=1
+        ex.: SGGS-18402 | fixVersion=[SGGS] PI 1/27 | tipo=História | status=Pendente de Produção | SP=3
+
+    CHAVES SÓ NO BANCO
+    (nenhuma)
+
+(3) DIVERGÊNCIAS NOS 14 CAMPOS BRUTOS (615 itens em comum)
+    tipo_item              OK (0 divergências)
+    status                 6 divergência(s)
+        ex.: SGGS-18815: planilha=Backlog | banco=Aceito
+        ex.: SGGS-18735: planilha=Concluído | banco=Aceito
+        ex.: SGGS-18576: planilha=Concluído | banco=Aceito
+    story_points           OK (0 divergências)
+    story_point_estimate   OK (0 divergências)
+    soma_tempo_gasto       1 divergência(s)
+        ex.: SGGS-18815: planilha=(vazio) | banco=1800
+    pai                    OK (0 divergências)
+    criado                 OK (0 divergências)
+    ponto_compromisso      OK (0 divergências)
+    inicio_fluxo           1 divergência(s)
+        ex.: SGGS-18815: planilha=(vazio) | banco=2026-10-28 00:00
+    fim_fluxo              OK (0 divergências)
+    inicio_homologacao     OK (0 divergências)
+    fim_homologacao        OK (0 divergências)
+    inicio_implantacao     OK (0 divergências)
+    fim_implantacao        OK (0 divergências)
+    Total de divergências brutas: 8
+
+(4) COLUNAS CALCULADAS (planilha, valor cacheado) x vw_extracao_calculada
+    AK Ideação (dias_ideacao)                2 divergência(s)
+        ex.: SGGS-19145 (Suporte, Aceito): planilha=-6 | view=1
+        ex.: SGGS-18795 (Suporte, Aceito): planilha=-3 | view=1
+    AM Desenvolvimento (dias_desenvolvimento)  OK (0 divergências)
+    AO Homologação (dias_homologacao)        OK (0 divergências)
+    AQ Implantação (dias_implantacao)        OK (0 divergências)
+    AS Lead Time (lead_time)                   OK (0 divergências)
+    AH Tempo Gasto h (tempo_gasto_horas)       1 divergência(s)
+        ex.: SGGS-18815 (Incidente, Aceito): planilha=(vazio) | view=0.5
+    Total de divergências calculadas: 3
+    ⚠ VALORES NEGATIVOS NA PLANILHA (ex.: item criado depois do ponto de compromisso):
+        AK Ideação (dias_ideacao): 2 item(ns)
+            SGGS-19145: planilha=-6 | view=1 | criado=2026-10-19 09:23:53 | ponto_compromisso=2026-10-13 00:00:00
+            SGGS-18795: planilha=-3 | view=1 | criado=2026-09-29 15:38:19 | ponto_compromisso=2026-09-28 00:00:00
+
+(5) TOTAIS
+                                      itens         SP SP val.entreg.   estimate
+    Planilha (todos)                    697        134             83        162
+    Banco (todos)                       615        131             80        159
+    Em comum — valores planilha       615        131             80        159
+    Em comum — valores banco          615        131             80        159
+
+==============================================================================
+  PROJETO SGTB
+==============================================================================
+
+(1) CONTAGEM DE ITENS
+    Planilha: 186 | Banco: 163 | Em comum: 163 | Só planilha: 23 | Só banco: 0
+
+(2) CHAVES SÓ NA PLANILHA — causa provável
+    - 23 item(ns): carry-over de PI anterior (fixVersion PI 3/26); JQL por fixVersion do PI alvo não traz
+        tipos: Incidente=15, Solicitação de Serviço=8 | SP total: 0
+        status: Aceito=23
+        ex.: SGTB-2867 | fixVersion=[SGTB] PI 3/26 | tipo=Incidente | status=Aceito | SP=(vazio)
+        ex.: SGTB-2856 | fixVersion=[SGTB] PI 3/26 | tipo=Incidente | status=Aceito | SP=(vazio)
+        ex.: SGTB-2855 | fixVersion=[SGTB] PI 3/26 | tipo=Incidente | status=Aceito | SP=(vazio)
+
+    CHAVES SÓ NO BANCO
+    (nenhuma)
+
+(3) DIVERGÊNCIAS NOS 14 CAMPOS BRUTOS (163 itens em comum)
+    tipo_item              OK (0 divergências)
+    status                 3 divergência(s)
+        ex.: SGTB-3255: planilha=Concluído | banco=Aceito
+        ex.: SGTB-2866: planilha=Pendente de Produção | banco=Em produção
+        ex.: SGTB-2793: planilha=Pendente de Produção | banco=Em produção
+    story_points           OK (0 divergências)
+    story_point_estimate   OK (0 divergências)
+    soma_tempo_gasto       OK (0 divergências)
+    pai                    OK (0 divergências)
+    criado                 OK (0 divergências)
+    ponto_compromisso      OK (0 divergências)
+    inicio_fluxo           OK (0 divergências)
+    fim_fluxo              OK (0 divergências)
+    inicio_homologacao     OK (0 divergências)
+    fim_homologacao        OK (0 divergências)
+    inicio_implantacao     OK (0 divergências)
+    fim_implantacao        2 divergência(s)
+        ex.: SGTB-2866: planilha=(vazio) | banco=2026-10-28 00:00
+        ex.: SGTB-2793: planilha=(vazio) | banco=2026-10-28 00:00
+    Total de divergências brutas: 5
+
+(4) COLUNAS CALCULADAS (planilha, valor cacheado) x vw_extracao_calculada
+    AK Ideação (dias_ideacao)                OK (0 divergências)
+    AM Desenvolvimento (dias_desenvolvimento)  OK (0 divergências)
+    AO Homologação (dias_homologacao)        OK (0 divergências)
+    AQ Implantação (dias_implantacao)        2 divergência(s)
+        ex.: SGTB-2866 (Segurança, Em produção): planilha=(vazio) | view=14
+        ex.: SGTB-2793 (Segurança, Em produção): planilha=(vazio) | view=14
+    AS Lead Time (lead_time)                   OK (0 divergências)
+    AH Tempo Gasto h (tempo_gasto_horas)       OK (0 divergências)
+    Total de divergências calculadas: 2
+    Valores negativos na planilha: nenhum.
+
+(5) TOTAIS
+                                      itens         SP SP val.entreg.   estimate
+    Planilha (todos)                    186         85             52         96
+    Banco (todos)                       163         85             52         96
+    Em comum — valores planilha       163         85             52         96
+    Em comum — valores banco          163         85             52         96
+
+==============================================================================
+  TOTAL (SGGU, SGSE, SGGS, SGTB)
+==============================================================================
+
+(1) CONTAGEM DE ITENS
+    Planilha: 1190 | Banco: 1068 | Em comum: 1068 | Só planilha: 122 | Só banco: 0
+
+(2) CHAVES SÓ NA PLANILHA — causa provável
+    - 112 item(ns): carry-over de PI anterior (fixVersion PI 3/26); JQL por fixVersion do PI alvo não traz
+        tipos: Incidente=101, Solicitação de Serviço=9, Bug=2 | SP total: 0
+        status: Aceito=111, Concluído=1
+        ex.: SGGU-7697 | fixVersion=[SGGU] PI 3/26 | tipo=Incidente | status=Aceito | SP=(vazio)
+        ex.: SGGU-7696 | fixVersion=[SGGU] PI 3/26 | tipo=Incidente | status=Aceito | SP=(vazio)
+        ex.: SGGU-7680 | fixVersion=[SGGU] PI 3/26 | tipo=Incidente | status=Aceito | SP=(vazio)
+    - 9 item(ns): sem fixVersion na planilha (JQL por fixVersion não traz)
+        tipos: Incidente=8, Bug=1 | SP total: 0
+        status: Backlog=8, Cancelado=1
+        ex.: SGGS-19159 | fixVersion=(vazio) | tipo=Bug | status=Cancelado | SP=(vazio)
+        ex.: SGGS-18960 | fixVersion=(vazio) | tipo=Incidente | status=Backlog | SP=(vazio)
+        ex.: SGGS-18959 | fixVersion=(vazio) | tipo=Incidente | status=Backlog | SP=(vazio)
+    - 1 item(ns): fixVersion de PI POSTERIOR (PI 1/27) — item em sprint do PI alvo, mas já reetiquetado; JQL por fixVersion do PI alvo não traz
+        tipos: História=1 | SP total: 3
+        status: Pendente de Produção=1
+        ex.: SGGS-18402 | fixVersion=[SGGS] PI 1/27 | tipo=História | status=Pendente de Produção | SP=3
+
+    CHAVES SÓ NO BANCO
+    (nenhuma)
+
+(3) DIVERGÊNCIAS NOS 14 CAMPOS BRUTOS (1068 itens em comum)
+    tipo_item              OK (0 divergências)
+    status                 9 divergência(s)
+        ex.: SGGS-18815: planilha=Backlog | banco=Aceito
+        ex.: SGGS-18735: planilha=Concluído | banco=Aceito
+        ex.: SGGS-18576: planilha=Concluído | banco=Aceito
+    story_points           OK (0 divergências)
+    story_point_estimate   OK (0 divergências)
+    soma_tempo_gasto       1 divergência(s)
+        ex.: SGGS-18815: planilha=(vazio) | banco=1800
+    pai                    OK (0 divergências)
+    criado                 OK (0 divergências)
+    ponto_compromisso      OK (0 divergências)
+    inicio_fluxo           1 divergência(s)
+        ex.: SGGS-18815: planilha=(vazio) | banco=2026-10-28 00:00
+    fim_fluxo              OK (0 divergências)
+    inicio_homologacao     OK (0 divergências)
+    fim_homologacao        OK (0 divergências)
+    inicio_implantacao     OK (0 divergências)
+    fim_implantacao        2 divergência(s)
+        ex.: SGTB-2866: planilha=(vazio) | banco=2026-10-28 00:00
+        ex.: SGTB-2793: planilha=(vazio) | banco=2026-10-28 00:00
+    Total de divergências brutas: 13
+
+(4) COLUNAS CALCULADAS (planilha, valor cacheado) x vw_extracao_calculada
+    AK Ideação (dias_ideacao)                8 divergência(s)
+        ex.: SGGU-7888 (Enabler, Pendente de Produção): planilha=-3 | view=1
+        ex.: SGSE-5105 (Enabler, Aceito): planilha=-7 | view=1
+        ex.: SGSE-5104 (Enabler, Aceito): planilha=-7 | view=1
+    AM Desenvolvimento (dias_desenvolvimento)  OK (0 divergências)
+    AO Homologação (dias_homologacao)        OK (0 divergências)
+    AQ Implantação (dias_implantacao)        2 divergência(s)
+        ex.: SGTB-2866 (Segurança, Em produção): planilha=(vazio) | view=14
+        ex.: SGTB-2793 (Segurança, Em produção): planilha=(vazio) | view=14
+    AS Lead Time (lead_time)                   OK (0 divergências)
+    AH Tempo Gasto h (tempo_gasto_horas)       1 divergência(s)
+        ex.: SGGS-18815 (Incidente, Aceito): planilha=(vazio) | view=0.5
+    Total de divergências calculadas: 11
+    ⚠ VALORES NEGATIVOS NA PLANILHA (ex.: item criado depois do ponto de compromisso):
+        AK Ideação (dias_ideacao): 8 item(ns)
+            SGGU-7888: planilha=-3 | view=1 | criado=2026-10-14 15:40:49 | ponto_compromisso=2026-10-13 00:00:00
+            SGSE-5105: planilha=-7 | view=1 | criado=2026-10-20 10:12:49 | ponto_compromisso=2026-10-13 00:00:00
+            SGSE-5104: planilha=-7 | view=1 | criado=2026-10-20 10:04:47 | ponto_compromisso=2026-10-13 00:00:00
+
+(5) TOTAIS
+                                      itens         SP SP val.entreg.   estimate
+    Planilha (todos)                   1190        422            295        465
+    Banco (todos)                      1068        419            292        462
+    Em comum — valores planilha      1068        419            292        462
+    Em comum — valores banco         1068        419            292        462
+
