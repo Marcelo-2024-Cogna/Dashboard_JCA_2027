@@ -188,6 +188,16 @@ switch (true) {
         };
         break;
 
+    // ── Filtros do header (catálogo lido do banco) ───────────────────────
+    case $uri === '/filtros':
+        (new \App\Controllers\FiltrosController(new \App\Repositories\CatalogRepository()))->listar();
+        break;
+
+    // ── Gráficos (v1.5) ──────────────────────────────────────────────────
+    case $uri === '/graficos/previsibilidade':
+        (new \App\Controllers\GraficosController(new \App\Repositories\PrevisibilidadeRepository()))->previsibilidade();
+        break;
+
     // ── Home → Visão Geral ───────────────────────────────────────────────
     case $uri === '/' || $uri === '/index.html':
         $makeViewController()->render('overview');

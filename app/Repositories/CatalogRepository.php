@@ -82,6 +82,25 @@ class CatalogRepository
     }
 
     /**
+     * Times ATIVOS de jornadas ATIVAS que têm projeto_key (não exige
+     * composição, ao contrário de vw_config_time). Alimenta os filtros do
+     * header. Colunas: jornada, time, projeto_key.
+     */
+    public function timesAtivos(): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT j.nome AS jornada, t.nome AS time, t.projeto_key
+               FROM times t
+               JOIN jornada j ON j.id_jornada = t.jornada_id
+              WHERE t.ativo = 'S' AND j.ativo = 'S'
+                AND t.projeto_key IS NOT NULL AND t.projeto_key <> ''
+           ORDER BY j.nome, t.nome"
+        );
+        $stmt->execute();
+        return $stmt->fetchAll();
+    }
+
+    /**
      * PIs ATIVAS (configuracao_pi.ativo = 'S'), ordenadas por desc_pi.
      * Alimenta o seletor de PI do dashboard.
      */

@@ -29,6 +29,7 @@ class ViewController
         'overview'      => ['vw_overview.php',      'Visão Geral'],
         'velocidade'    => ['vw_velocity.php',      'Velocidade'],
         'cycle-time'    => ['vw_cycle_time.php',    'Lead Time'],
+        'previsibilidade' => ['vw_previsibilidade.php', 'Previsibilidade'],
         'plan-real'     => ['vw_plan_real.php',     'Planejado x Realizado'],
         'produtividade' => ['vw_produtividade.php', 'Produtividade'],
         'epicos'        => ['vw_epicos.php',        'Status dos Épicos'],

@@ -46,12 +46,14 @@
 
 require __DIR__ . '/../app/Database.php';
 require __DIR__ . '/../app/Services/Logger.php';
+require __DIR__ . '/../app/Services/SprintRef.php';
 require __DIR__ . '/lib/xlsx_reader.php';
 
 date_default_timezone_set((require __DIR__ . '/../config/app.php')['timezone'] ?? 'America/Sao_Paulo');
 
 use App\Database;
 use App\Services\Logger;
+use App\Services\SprintRef;
 
 const CANAL = 'importacao';
 const ABA   = 'Baseline itens';
@@ -332,16 +334,16 @@ try {
         $ins = $pdo->prepare(
             'INSERT INTO baseline
                 (configuracao_pi_id, tipo_item, chave, resumo, projeto, status, versoes_corrigidas, pai,
-                 story_point_estimate, story_points, sprint, tipo_sustentacao, jornada_dona_epico, data_carga, ativo)
+                 story_point_estimate, story_points, sprint, sprint_ref, tipo_sustentacao, jornada_dona_epico, data_carga, ativo)
              VALUES
-                (:pi, :tipo, :chave, :resumo, :projeto, :status, :vc, :pai, :est, :sp, :sprint, :tsus, NULL, :carga, :ativo)'
+                (:pi, :tipo, :chave, :resumo, :projeto, :status, :vc, :pai, :est, :sp, :sprint, :sprint_ref, :tsus, NULL, :carga, :ativo)'
         );
         $gravadas = 0;
         foreach ($itens as $i) {
             $ins->execute([
                 ':pi' => $piId, ':tipo' => $i['tipo_item'], ':chave' => $i['chave'], ':resumo' => $i['resumo'],
                 ':projeto' => $i['projeto'], ':status' => $i['status'], ':vc' => $i['versoes_corrigidas'], ':pai' => $i['pai'],
-                ':est' => $i['story_point_estimate'], ':sp' => $i['story_points'], ':sprint' => $i['sprint'],
+                ':est' => $i['story_point_estimate'], ':sp' => $i['story_points'], ':sprint' => $i['sprint'], ':sprint_ref' => SprintRef::fromText($i['sprint']),
                 ':tsus' => $i['tipo_sustentacao'], ':carga' => $dataCarga, ':ativo' => 'S',
             ]);
             $gravadas++;

@@ -305,6 +305,19 @@ tbody td { padding: 8px 13px; }
 }
 
 /* ── Responsivo ── */
+/* ── Previsibilidade ── */
+.prev-janela { margin: 0 0 14px; }
+.prev-janela strong { color: var(--text); }
+.prev-avisos { margin: 0 0 14px; padding-left: 18px; font-size: .78rem; color: var(--amber); }
+.prev-legenda { display: flex; flex-wrap: wrap; gap: 14px; font-size: .72rem; color: var(--muted); margin-top: 10px; }
+.prev-legenda i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+.prev-tbl td.num, .prev-tbl th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.prev-tbl tfoot td { padding: 9px 13px; font-weight: 700; border-top: 2px solid var(--border); background: var(--surface2); }
+.prev-pct-ok   { color: #34d399; font-weight: 600; }
+.prev-pct-warn { color: #fbbf24; font-weight: 600; }
+.prev-pct-bad  { color: #fda4af; font-weight: 600; }
+.prev-pct-na   { color: var(--muted); }
+
 @media (max-width: 1000px) {
   .layout { grid-template-columns: 1fr; grid-template-areas: "header" "main"; }
   .sidebar { display: none; }

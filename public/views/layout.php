@@ -15,6 +15,7 @@ $icons = [
     'overview'      => '◼',
     'velocidade'    => '🚀',
     'cycle-time'    => '⏱',
+    'previsibilidade' => '🔮',
     'plan-real'     => '🎯',
     'produtividade' => '📈',
     'epicos'        => '🗂',
@@ -22,7 +23,7 @@ $icons = [
     'painel'        => '⚙',
 ];
 // Ordem do menu (painel separado por divisória)
-$menuMain = ['overview','velocidade','cycle-time','plan-real','produtividade','epicos','sustentacao'];
+$menuMain = ['overview','velocidade','cycle-time','previsibilidade','plan-real','produtividade','epicos','sustentacao'];
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">

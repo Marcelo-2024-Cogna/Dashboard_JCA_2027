@@ -38,6 +38,7 @@ SELECT
     e.tipo_item,
     e.chave,
     e.sprint,
+    e.sprint_ref,
     e.projeto,
     e.status,
     e.versoes_corrigidas,
@@ -254,46 +255,194 @@ FROM (
 GROUP BY sp.jornada, sp.time, sp.projeto_key;
 
 -- ---------------------------------------------------------------------
--- 4. vw_previsibilidade
---    (SP entregue de valor / SP Estimate da baseline de valor) * 100, por time.
---    Numerador: SUM(story_points) de extracao_jira com status entregue e
---               tipo de valor (ativo='S').
---    Denominador: SUM(story_point_estimate) da baseline (itens de valor).
---    baseline vazia agora -> retorna vazio/NULL ate haver dados (ok).
---    Time extraido de `projeto` como em vw_cycle_time. NULLIF evita /0.
+-- 4a. vw_item  (BASE para os graficos: Previsibilidade, Planejado x
+--     Realizado, Lead Time, Produtividade)
+--    Item da extracao (ativo='S') enriquecido com o CATALOGO. A ligacao com
+--    o time e SEMPRE por projeto_key (prefixo da chave: PROJ-123 -> PROJ),
+--    nunca pelo texto 'projeto' do Jira. Expoe nomes do CATALOGO
+--    (jornada.nome, times.nome), a PI (desc_pi) e a sprint de referencia
+--    (sprint_ref = maior sprint do campo `sprint`, ex. 'SP 26.4.2').
+--    Herda as colunas derivadas de vw_extracao_calculada (dias_*, lead_time,
+--    tempo_gasto_horas, is_entrega_valor, com_epico) e acrescenta `entregue`.
+--    Somente times e jornadas ATIVOS do catalogo.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE VIEW vw_item AS
+SELECT
+    c.id_extracao,
+    c.chave,
+    t.projeto_key,
+    j.nome                AS jornada,
+    t.nome                AS time,
+    p.desc_pi             AS pi,
+    c.configuracao_pi_id,
+    c.tipo_item,
+    c.status,
+    c.categoria_status,
+    c.sprint,
+    c.sprint_ref,
+    c.pai,
+    c.projeto             AS projeto_jira,
+    c.story_points,
+    c.story_point_estimate,
+    c.soma_tempo_gasto,
+    c.tempo_gasto_horas,
+    c.criado,
+    c.ponto_compromisso,
+    c.inicio_fluxo,
+    c.fim_fluxo,
+    c.inicio_homologacao,
+    c.fim_homologacao,
+    c.inicio_implantacao,
+    c.fim_implantacao,
+    c.dias_ideacao,
+    c.dias_desenvolvimento,
+    c.dias_homologacao,
+    c.dias_implantacao,
+    c.lead_time,
+    c.is_entrega_valor,
+    CASE WHEN c.status IN ('Aceito','Pendente de Produção','Em produção')
+         THEN 1 ELSE 0 END AS entregue,
+    c.com_epico
+FROM vw_extracao_calculada c
+JOIN times t   ON t.projeto_key = SUBSTRING_INDEX(c.chave, '-', 1)
+              AND t.ativo = 'S'
+JOIN jornada j ON j.id_jornada = t.jornada_id
+              AND j.ativo = 'S'
+LEFT JOIN configuracao_pi p ON p.id_versao_corrigida = c.configuracao_pi_id;
+
+-- ---------------------------------------------------------------------
+-- 4b. vw_baseline_item
+--    Item da baseline (ativo='S', snapshot imutavel por PI) enriquecido com
+--    o catalogo, igual a vw_item. PI = baseline.configuracao_pi_id.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE VIEW vw_baseline_item AS
+SELECT
+    b.id_baseline,
+    b.chave,
+    t.projeto_key,
+    j.nome                AS jornada,
+    t.nome                AS time,
+    p.desc_pi             AS pi,
+    b.configuracao_pi_id,
+    b.tipo_item,
+    b.status,
+    b.sprint,
+    b.sprint_ref,
+    b.pai,
+    b.story_points,
+    b.story_point_estimate,
+    CASE WHEN b.tipo_item IN
+        ('História','Enabler','Débito Técnico','Spike','Teste','Segurança')
+        THEN 1 ELSE 0 END AS is_entrega_valor
+FROM baseline b
+JOIN times t   ON t.projeto_key = SUBSTRING_INDEX(b.chave, '-', 1)
+              AND t.ativo = 'S'
+JOIN jornada j ON j.id_jornada = t.jornada_id
+              AND j.ativo = 'S'
+LEFT JOIN configuracao_pi p ON p.id_versao_corrigida = b.configuracao_pi_id
+WHERE b.ativo = 'S';
+
+-- ---------------------------------------------------------------------
+-- 4. vw_previsibilidade  (REDEFINIDA - grao: projeto_key, jornada, time,
+--    pi, sprint_ref [+ sprint_ref_baseline, ver abaixo]). A janela de
+--    sprints e a agregacao por time/jornada/total sao feitas na CONSULTA
+--    (PrevisibilidadeRepository), filtrando sprint_ref IN (janela).
+--    Semantica replicada de MetricsService::consolidateWindowed (v1.0),
+--    restrita aos itens de ENTREGA DE VALOR:
+--
+--    LADO BASELINE (sprint_ref = sprint de referencia do item NA BASELINE):
+--      committed_sp         = SUM(story_points) dos itens de valor da baseline
+--                             (v1.0 usa story_points; a SPE vai em committed_spe)
+--      committed_spe        = SUM(story_point_estimate) (informativo)
+--      delivered_planned_sp = SUM(story_points da baseline) dos itens que,
+--                             pelo status ATUAL da extracao (casamento por
+--                             chave e PI; se o item nao estiver na extracao,
+--                             vale o status congelado da baseline - v1.0),
+--                             estao em status ENTREGUE
+--    LADO EXTRACAO (sprint_ref = sprint de referencia do item NA EXTRACAO;
+--                   sprint_ref_baseline = sprint_ref do MESMO item na
+--                   baseline, NULL se ele nao esta na baseline):
+--      scope_add_sp         = SUM(story_points) dos itens de valor que NAO
+--                             existem na baseline (chave+PI)
+--      scope_realocado_sp   = SUM(story_points) dos itens de valor que existem
+--                             na baseline (qualquer sprint)
+--      delivered_total_sp   = SUM(story_points) dos itens de valor entregues
+--    ESCOPO ADICIONADO NA JANELA (v1.0): item da extracao na janela que nao
+--    esta na baseline JANELADA = scope_add_sp + scope_realocado_sp das linhas
+--    cujo sprint_ref_baseline e NULL ou fora da janela (feito na consulta).
+--    Colunas *_itens trazem as contagens. Item sem sprint -> sprint_ref NULL
+--    (fora de qualquer janela). A PI do lado baseline e baseline.
+--    configuracao_pi_id; a do lado extracao e extracao_jira.configuracao_pi_id.
 -- ---------------------------------------------------------------------
 CREATE OR REPLACE VIEW vw_previsibilidade AS
 SELECT
-    COALESCE(ent.jornada, bl.jornada) AS jornada,
-    COALESCE(ent.time, bl.time)       AS time,
-    ent.sp_entregue,
-    bl.sp_baseline,
-    (ent.sp_entregue / NULLIF(bl.sp_baseline, 0)) * 100 AS previsibilidade_pct
+    m.projeto_key,
+    m.jornada,
+    m.time,
+    m.pi,
+    m.sprint_ref,
+    m.sprint_ref_baseline,
+    SUM(m.committed_sp)                AS committed_sp,
+    SUM(m.committed_spe)               AS committed_spe,
+    SUM(m.delivered_planned_sp)        AS delivered_planned_sp,
+    SUM(m.scope_add_sp)                AS scope_add_sp,
+    SUM(m.scope_realocado_sp)          AS scope_realocado_sp,
+    SUM(m.delivered_total_sp)          AS delivered_total_sp,
+    SUM(m.committed_itens)             AS committed_itens,
+    SUM(m.delivered_planned_itens)     AS delivered_planned_itens,
+    SUM(m.scope_add_itens)             AS scope_add_itens,
+    SUM(m.scope_realocado_itens)       AS scope_realocado_itens,
+    SUM(m.delivered_total_itens)       AS delivered_total_itens
 FROM (
+    -- lado BASELINE
     SELECT
-        TRIM(SUBSTRING_INDEX(SUBSTRING_INDEX(e.projeto, ']', 1), '[', -1)) AS jornada,
-        TRIM(SUBSTRING_INDEX(e.projeto, '] ', -1))                        AS time,
-        SUM(e.story_points) AS sp_entregue
-    FROM extracao_jira e
-    WHERE e.ativo = 'S'
-      AND e.status IN ('Aceito','Pendente de Produção','Em produção')
-      AND e.tipo_item IN ('História','Enabler','Débito Técnico','Spike','Teste','Segurança')
-    GROUP BY
-        TRIM(SUBSTRING_INDEX(SUBSTRING_INDEX(e.projeto, ']', 1), '[', -1)),
-        TRIM(SUBSTRING_INDEX(e.projeto, '] ', -1))
-) ent
-LEFT JOIN (
+        b.projeto_key, b.jornada, b.time, b.pi, b.sprint_ref,
+        b.sprint_ref AS sprint_ref_baseline,
+        COALESCE(b.story_points, 0)          AS committed_sp,
+        COALESCE(b.story_point_estimate, 0)  AS committed_spe,
+        CASE WHEN COALESCE(e.status, b.status) IN ('Aceito','Pendente de Produção','Em produção')
+             THEN COALESCE(b.story_points, 0) ELSE 0 END AS delivered_planned_sp,
+        0 AS scope_add_sp,
+        0 AS scope_realocado_sp,
+        0 AS delivered_total_sp,
+        1 AS committed_itens,
+        CASE WHEN COALESCE(e.status, b.status) IN ('Aceito','Pendente de Produção','Em produção')
+             THEN 1 ELSE 0 END AS delivered_planned_itens,
+        0 AS scope_add_itens,
+        0 AS scope_realocado_itens,
+        0 AS delivered_total_itens
+    FROM vw_baseline_item b
+    LEFT JOIN extracao_jira e
+           ON e.chave = b.chave
+          AND e.ativo = 'S'
+          AND e.configuracao_pi_id = b.configuracao_pi_id
+    WHERE b.is_entrega_valor = 1
+
+    UNION ALL
+
+    -- lado EXTRACAO
     SELECT
-        TRIM(SUBSTRING_INDEX(SUBSTRING_INDEX(b.projeto, ']', 1), '[', -1)) AS jornada,
-        TRIM(SUBSTRING_INDEX(b.projeto, '] ', -1))                        AS time,
-        SUM(b.story_point_estimate) AS sp_baseline
-    FROM baseline b
-    WHERE b.ativo = 'S'
-      AND b.tipo_item IN ('História','Enabler','Débito Técnico','Spike','Teste','Segurança')
-    GROUP BY
-        TRIM(SUBSTRING_INDEX(SUBSTRING_INDEX(b.projeto, ']', 1), '[', -1)),
-        TRIM(SUBSTRING_INDEX(b.projeto, '] ', -1))
-) bl ON bl.jornada = ent.jornada AND bl.time = ent.time;
+        i.projeto_key, i.jornada, i.time, i.pi, i.sprint_ref,
+        bl.sprint_ref AS sprint_ref_baseline,
+        0 AS committed_sp,
+        0 AS committed_spe,
+        0 AS delivered_planned_sp,
+        CASE WHEN bl.chave IS NULL     THEN COALESCE(i.story_points, 0) ELSE 0 END AS scope_add_sp,
+        CASE WHEN bl.chave IS NOT NULL THEN COALESCE(i.story_points, 0) ELSE 0 END AS scope_realocado_sp,
+        CASE WHEN i.entregue = 1       THEN COALESCE(i.story_points, 0) ELSE 0 END AS delivered_total_sp,
+        0 AS committed_itens,
+        0 AS delivered_planned_itens,
+        CASE WHEN bl.chave IS NULL     THEN 1 ELSE 0 END AS scope_add_itens,
+        CASE WHEN bl.chave IS NOT NULL THEN 1 ELSE 0 END AS scope_realocado_itens,
+        CASE WHEN i.entregue = 1       THEN 1 ELSE 0 END AS delivered_total_itens
+    FROM vw_item i
+    LEFT JOIN baseline bl
+           ON bl.chave = i.chave
+          AND bl.ativo = 'S'
+          AND bl.configuracao_pi_id = i.configuracao_pi_id
+    WHERE i.is_entrega_valor = 1
+) m
+GROUP BY m.projeto_key, m.jornada, m.time, m.pi, m.sprint_ref, m.sprint_ref_baseline;
 
 -- ---------------------------------------------------------------------
 -- 5. vw_produtividade

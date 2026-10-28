@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+require_once __DIR__ . '/SprintRef.php';
+
 use App\Database;
 use App\Models\JiraModel;
 use DateTimeImmutable;
@@ -151,11 +153,11 @@ class ExtractionService
                     'INSERT INTO baseline
                         (configuracao_pi_id, tipo_item, chave, resumo, projeto, status,
                          versoes_corrigidas, pai, story_point_estimate, story_points,
-                         sprint, tipo_sustentacao, jornada_dona_epico, data_carga, ativo)
+                         sprint, sprint_ref, tipo_sustentacao, jornada_dona_epico, data_carga, ativo)
                      VALUES
                         (:pi, :tipo_item, :chave, :resumo, :projeto, :status,
                          :versoes, :pai, :spe, :sp,
-                         :sprint, :tipo_sust, :jornada, :carga, :ativo)'
+                         :sprint, :sprint_ref, :tipo_sust, :jornada, :carga, :ativo)'
                 );
                 foreach ($items as $it) {
                     $ins->execute([
@@ -170,6 +172,7 @@ class ExtractionService
                         ':spe'       => self::numOrNull($it['story_point_estimate'] ?? null),
                         ':sp'        => self::numOrNull($it['story_points'] ?? null),
                         ':sprint'    => self::strOrNull($it['sprint'] ?? null),
+                        ':sprint_ref' => SprintRef::fromText(self::strOrNull($it['sprint'] ?? null)),
                         ':tipo_sust' => self::strOrNull($it['tipo_sustentacao'] ?? null),
                         ':jornada'   => null,
                         ':carga'     => $agora,
@@ -180,7 +183,7 @@ class ExtractionService
             } else {
                 $ins = $pdo->prepare(
                     'INSERT INTO extracao_jira
-                        (configuracao_pi_id, tipo_item, chave, sprint, projeto, status,
+                        (configuracao_pi_id, tipo_item, chave, sprint, sprint_ref, projeto, status,
                          versoes_corrigidas, story_points, story_point_estimate,
                          soma_tempo_gasto, categoria_status, pai, alteracao_escopo,
                          resolucao, tipo_sustentacao, criado, ponto_compromisso,
@@ -188,7 +191,7 @@ class ExtractionService
                          inicio_implantacao, fim_implantacao, ambiente,
                          tempo_total_bloqueado, data_carga, ativo)
                      VALUES
-                        (:pi, :tipo_item, :chave, :sprint, :projeto, :status,
+                        (:pi, :tipo_item, :chave, :sprint, :sprint_ref, :projeto, :status,
                          :versoes, :sp, :spe,
                          :soma_seg, :cat, :pai, :alt_escopo,
                          :resolucao, :tipo_sust, :criado, :ponto_comp,
@@ -202,6 +205,7 @@ class ExtractionService
                         ':tipo_item'  => self::strOrNull($it['tipo_item'] ?? null),
                         ':chave'      => self::strOrNull($it['chave'] ?? null),
                         ':sprint'     => self::strOrNull($it['sprint'] ?? null),
+                        ':sprint_ref' => SprintRef::fromText(self::strOrNull($it['sprint'] ?? null)),
                         ':projeto'    => self::strOrNull($it['projeto'] ?? null),
                         ':status'     => self::strOrNull($it['status'] ?? null),
                         ':versoes'    => self::strOrNull($it['versoes_corrigidas'] ?? null),

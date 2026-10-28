@@ -55,12 +55,40 @@ class MetricsRepository
     }
 
     /**
-     * Previsibilidade (entregue x baseline) por time (vw_previsibilidade).
-     * Colunas: jornada, time, sp_entregue, sp_baseline, previsibilidade_pct.
+     * Previsibilidade no grão da vw_previsibilidade (v1.5): uma linha por
+     * projeto_key, jornada, time, pi e sprint_ref (nomes do CATÁLOGO).
+     * Colunas: projeto_key, jornada, time, pi, sprint_ref, committed_sp,
+     *          committed_spe, delivered_planned_sp, scope_add_sp,
+     *          delivered_total_sp e as contagens *_itens.
+     * Filtros opcionais: jornada, time, PI (desc_pi) e lista de sprint_ref
+     * (a janela). A agregação por time/total e o % ficam em
+     * PrevisibilidadeRepository::consultar().
+     *
+     * @param string[]|null $sprintRefs ex.: ['SP 26.4.1','SP 26.4.2']; [] → nenhuma linha
      */
-    public function previsibilidade(?string $jornada = null, ?string $time = null): array
-    {
-        return $this->selectView('vw_previsibilidade', $jornada, $time);
+    public function previsibilidade(
+        ?string $jornada = null,
+        ?string $time = null,
+        ?string $pi = null,
+        ?array $sprintRefs = null
+    ): array {
+        $where  = [];
+        $params = [];
+        if ($jornada !== null) { $where[] = 'jornada = :jornada'; $params[':jornada'] = $jornada; }
+        if ($time !== null)    { $where[] = 'time = :time';       $params[':time'] = $time; }
+        if ($pi !== null)      { $where[] = 'pi = :pi';           $params[':pi'] = $pi; }
+        if ($sprintRefs !== null) {
+            if ($sprintRefs === []) return [];
+            $ph = [];
+            foreach (array_values($sprintRefs) as $i => $s) { $ph[] = ":s$i"; $params[":s$i"] = $s; }
+            $where[] = 'sprint_ref IN (' . implode(',', $ph) . ')';
+        }
+        $sql = 'SELECT * FROM vw_previsibilidade'
+             . ($where ? ' WHERE ' . implode(' AND ', $where) : '')
+             . ' ORDER BY jornada, time, pi, sprint_ref';
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll();
     }
 
     /**

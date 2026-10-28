@@ -30,6 +30,7 @@ class Logger
 {
     public const CANAL_EXTRACAO   = 'extracao';
     public const CANAL_IMPORTACAO = 'importacao';
+    public const CANAL_DASHBOARD  = 'dashboard';
 
     private const MAX_BYTES    = 5242880; // 5 MB
     private const MAX_ROTATION = 5;

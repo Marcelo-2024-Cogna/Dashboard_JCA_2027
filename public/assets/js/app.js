@@ -78,17 +78,39 @@
     jornadaOf(i) { const m = /^\[([^\]]+)\]/.exec(i.projeto || ''); return m ? m[1].trim() : ''; },
     /** Time do item (parte após "[Jornada] "). */
     teamOf(i) { const m = /^\[[^\]]+\]\s*(.*)$/.exec(i.projeto || ''); return m && m[1] ? m[1].trim() : ''; },
+    /** projeto_key do item (prefixo da chave: "SGGU-123" → "SGGU"). */
+    keyOf(i) { const m = /^([A-Za-z0-9]+)-\d+$/.exec(i.chave || ''); return m ? m[1].toUpperCase() : ''; },
     /**
      * Aplica os filtros globais (jornada/time/versão/sprint) a uma lista de
-     * itens do /extract. Centraliza a lógica usada por todas as views.
+     * itens do /extract (páginas LEGADAS). Os filtros do header agora usam
+     * nomes do CATÁLOGO do banco; aqui:
+     *   - jornada/time: casam pelo projeto_key da chave do item, usando o
+     *     catálogo de /filtros (App.catalog) quando já carregado; senão,
+     *     melhor esforço pelo texto do Jira (jornada sem o prefixo "Jornada";
+     *     time só casa se o nome for igual ao do Jira);
+     *   - versão: "contém" em versoes_corrigidas (ex.: "[SGGU] PI 4/26" ∋ "PI 4/26");
+     *   - sprint: "contém" em sprint (ex.: "[SGGU] SP 26.4.1;..." ∋ "SP 26.4.1").
      */
     applyFilters(items, filters) {
       const f = filters || Filters.read();
+      const cat = window.App && window.App.catalog;
+      const norm = s => (s || '').replace(/^Jornada\s+/i, '').trim().toLowerCase();
+      const reSprint = f.sprint ? sprintRegex(f.sprint) : null;
       return items.filter(i => {
-        if (f.jornada && this.jornadaOf(i) !== f.jornada) return false;
-        if (f.time    && this.teamOf(i)    !== f.time)    return false;
-        if (f.versao  && (i.versoes_corrigidas || '').split(';')[0].trim() !== f.versao) return false;
-        if (f.sprint  && this.shortSprint(i.sprint) !== f.sprint) return false;
+        if (f.jornada) {
+          const keys = cat && cat.keysByJornada[f.jornada];
+          const k = this.keyOf(i);
+          const ok = keys && k ? keys.has(k) : norm(this.jornadaOf(i)) === norm(f.jornada);
+          if (!ok) return false;
+        }
+        if (f.time) {
+          const keys = cat && cat.keysByTime[f.time];
+          const k = this.keyOf(i);
+          const ok = keys && k ? keys.has(k) : this.teamOf(i) === f.time;
+          if (!ok) return false;
+        }
+        if (f.versao && !(i.versoes_corrigidas || '').includes(f.versao)) return false;
+        if (reSprint && !reSprint.test(i.sprint || '')) return false;
         return true;
       });
     },
@@ -99,7 +121,25 @@
     },
   };
 
+  /** Regex que casa o número da sprint ("SP 26.4.1" → 26.4.1) sem confundir 26.4.1 com 26.4.10. */
+  function sprintRegex(name) {
+    const num = (/\d+\.\d+\.\d+/.exec(name) || [name])[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp('(?<![\\d.])' + num + '(?![\\d.]*\\d)');
+  }
+
+  /** Índices do catálogo de /filtros usados pelo Util.applyFilters (legado). */
+  function indexCatalog(cat) {
+    const keysByJornada = {}, keysByTime = {};
+    (cat.times || []).forEach(t => {
+      (keysByJornada[t.jornada] = keysByJornada[t.jornada] || new Set()).add(t.projeto_key);
+      (keysByTime[t.time] = keysByTime[t.time] || new Set()).add(t.projeto_key);
+    });
+    return { raw: cat, keysByJornada, keysByTime };
+  }
+
   // ── Inicializa a barra de filtros (preenche selects, liga eventos) ───────
+  // Fonte: GET /filtros (catálogo do BANCO). Cascata: Jornada → Time →
+  // Versão Corrigida (PI) → Sprint. Parâmetros de URL: jornada, time, versao, sprint.
   async function initFilters() {
     const selJornada = document.getElementById('flt-jornada');
     const selTime    = document.getElementById('flt-time');
@@ -109,37 +149,28 @@
 
     const cur = Filters.read();
 
-    // Popula os selects a partir dos dados de extração (cache), com CASCATA:
-    // Jornada → Time → Versão → Sprint.
+    // Popula os selects a partir do catálogo do BANCO (GET /filtros), com CASCATA.
+    const eff = Object.assign({}, cur); // filtros efetivos (versão padrão = PI corrente)
     try {
-      const json = await Api.get('/extract');
-      const items = (json.items) || [];
+      const cat = await Api.get('/filtros');
+      window.App.catalog = indexCatalog(cat);
 
-      // Pré-processa os itens com jornada/time/versão/sprint normalizados
-      const rows = items.map(i => {
-        const mj = /^\[([^\]]+)\]\s*(.*)$/.exec(i.projeto || '');
-        return {
-          jornada: mj ? mj[1].trim() : '',
-          time:    mj && mj[2] ? mj[2].trim() : '',
-          versao:  i.versoes_corrigidas ? i.versoes_corrigidas.split(';')[0].trim() : '',
-          sprint:  i.sprint ? Util.shortSprint(i.sprint) : '',
-        };
-      });
+      // Versão: sem valor na URL → PI corrente.
+      eff.versao = cur.versao || cat.pi_corrente || '';
 
-      const j = cur.jornada, t = cur.time, v = cur.versao;
-      // Jornadas: todas
-      const jornadas = [...new Set(rows.map(r => r.jornada).filter(Boolean))].sort();
-      // Times: filtrados pela jornada
-      const times = [...new Set(rows.filter(r => !j || r.jornada === j).map(r => r.time).filter(Boolean))].sort();
-      // Versões: filtradas por jornada E time
-      const versoes = [...new Set(rows.filter(r => (!j || r.jornada === j) && (!t || r.time === t)).map(r => r.versao).filter(Boolean))].sort();
-      // Sprints: filtradas por jornada, time E versão
-      const sprints = [...new Set(rows.filter(r => (!j || r.jornada === j) && (!t || r.time === t) && (!v || r.versao === v)).map(r => r.sprint).filter(Boolean))].sort();
+      const jornadas = (cat.jornadas || []).map(j => j.nome);
+      // Times: filtrados pela jornada escolhida (nome do catálogo).
+      const times = [...new Set((cat.times || [])
+        .filter(t => !cur.jornada || t.jornada === cur.jornada)
+        .map(t => t.time))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+      const versoes = (cat.pis || []).map(p => p.desc_pi);
+      // Sprints da PI efetiva (nome 'SP 26.4.1'); vazio = "Todas as fechadas".
+      const sprints = ((cat.sprints_por_pi || {})[eff.versao] || []).map(s => s.nome);
 
       fillSelect(selJornada, jornadas, cur.jornada);
       fillSelect(selTime,    times,    cur.time);
-      fillSelect(selVersao,  versoes,  cur.versao);
-      fillSelect(selSprint,  sprints,  cur.sprint);
+      fillSelect(selVersao,  versoes,  eff.versao, { semVazio: true });
+      fillSelect(selSprint,  sprints,  cur.sprint, { rotuloVazio: 'Todas as fechadas' });
     } catch (e) {
       console.warn('Falha ao popular filtros:', e.message);
     }
@@ -150,7 +181,7 @@
     selVersao .addEventListener('change', () => Filters.apply({ versao:  selVersao.value, sprint: '' }));
     selSprint .addEventListener('change', () => Filters.apply({ sprint:  selSprint.value }));
 
-    renderActiveFilters(cur);
+    renderActiveFilters(eff);
   }
 
   // ── Labels destacados dos filtros ativos ─────────────────────────────────
@@ -163,17 +194,30 @@
       { label: 'Versão',  value: cur.versao,  ac: '#f59e0b' },
       { label: 'Sprint',  value: cur.sprint,  ac: '#10b981' },
     ].filter(c => c.value);
-    box.innerHTML = chips.map(c =>
-      `<span class="filter-chip" style="--ac:${c.ac}">
-         <span class="chip-label">${c.label}</span>
-         <span class="chip-value">${c.value}</span>
-       </span>`).join('');
+    // DOM + textContent: o valor vem da URL (não confiável).
+    box.textContent = '';
+    chips.forEach(c => {
+      const chip = document.createElement('span');
+      chip.className = 'filter-chip';
+      chip.style.setProperty('--ac', c.ac);
+      const l = document.createElement('span'); l.className = 'chip-label'; l.textContent = c.label;
+      const v = document.createElement('span'); v.className = 'chip-value'; v.textContent = c.value;
+      chip.append(l, ' ', v);
+      box.appendChild(chip);
+    });
   }
 
-  function fillSelect(sel, options, current) {
-    const first = sel.querySelector('option'); // mantém "Todas"
+  /**
+   * Preenche um <select>. opts.semVazio remove a opção vazia ("Todas");
+   * opts.rotuloVazio troca o texto dela.
+   */
+  function fillSelect(sel, options, current, opts = {}) {
+    const first = sel.querySelector('option'); // opção vazia ("Todas")
     sel.innerHTML = '';
-    sel.appendChild(first);
+    if (!opts.semVazio) {
+      if (opts.rotuloVazio) first.textContent = opts.rotuloVazio;
+      sel.appendChild(first);
+    }
     options.forEach(o => {
       const opt = document.createElement('option');
       opt.value = o; opt.textContent = o;

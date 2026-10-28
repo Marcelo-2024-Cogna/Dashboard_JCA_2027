@@ -334,29 +334,57 @@ function relatorio(string $titulo, array $prefixos, array $plan, array $db, arra
     // (4) calculadas
     out('');
     out('(4) COLUNAS CALCULADAS (planilha, valor cacheado) x vw_extracao_calculada');
-    $totCalc = 0; $negativos = [];
+    $totCalc = 0; $negativos = []; $esperadas = [];
     foreach (CALCULADAS as $rotulo => [$col, $colV, $tol]) {
-        $n = 0; $ex = []; $neg = [];
+        $n = 0; $ex = []; $neg = []; $esp = [];
         foreach ($comuns as $k) {
             $a = normNum($P[$k][$col] ?? null);
             $b = normNum($D[$k][$colV]);
             if ($a !== null && $a < 0) $neg[] = $k;
             $dif = ($a === null) !== ($b === null) || ($a !== null && abs($a - $b) > $tol);
-            if ($dif) {
-                $n++;
-                if (count($ex) < 3) $ex[] = sprintf('%s (%s, %s): planilha=%s | view=%s',
-                    $k, $D[$k]['tipo_item'], $D[$k]['status'], a2s($a), a2s($b));
+            if (!$dif) continue;
+            // Regra de negócio (acordada): ideação NEGATIVA na planilha vale 1 na view.
+            // Divergência ESPERADA → seção própria, fora da contagem de divergências reais.
+            if ($colV === 'dias_ideacao' && $a !== null && $a < 0 && $b !== null && abs($b - 1) <= $tol) {
+                $esp[] = $k;
+                continue;
             }
+            $n++;
+            if (count($ex) < 3) $ex[] = sprintf('%s (%s, %s): planilha=%s | view=%s',
+                $k, $D[$k]['tipo_item'], $D[$k]['status'], a2s($a), a2s($b));
         }
         $totCalc += $n;
         out(sprintf('    %-42s %s', $rotulo, $n === 0 ? 'OK (0 divergências)' : "$n divergência(s)"));
         foreach ($ex as $e) out("        ex.: $e");
         if ($neg) $negativos[$rotulo] = $neg;
+        if ($esp) $esperadas[$rotulo] = $esp;
     }
-    out("    Total de divergências calculadas: $totCalc");
-    if ($negativos) {
-        out('    ⚠ VALORES NEGATIVOS NA PLANILHA (ex.: item criado depois do ponto de compromisso):');
-        foreach ($negativos as $rotulo => $ks) {
+    $totEsperadas = array_sum(array_map('count', $esperadas));
+    out("    Total de divergências calculadas (reais): $totCalc");
+    out('');
+    out('    DIVERGÊNCIAS ESPERADAS (regra de negócio: ideação negativa vale 1) — NÃO contam como divergência real');
+    if ($esperadas) {
+        foreach ($esperadas as $rotulo => $ks) {
+            out(sprintf('        %s: %d item(ns) — planilha negativa, view = 1', $rotulo, count($ks)));
+            foreach (array_slice($ks, 0, 3) as $k) {
+                $col = CALCULADAS[$rotulo][0]; $colV = CALCULADAS[$rotulo][1];
+                out(sprintf('            %s: planilha=%s | view=%s | criado=%s | ponto_compromisso=%s', $k,
+                    $P[$k][$col], a2s(normNum($D[$k][$colV])), fmt($D[$k]['criado']), fmt($D[$k]['ponto_compromisso'])));
+            }
+        }
+        out("        Total esperado: $totEsperadas");
+    } else {
+        out('        (nenhuma)');
+    }
+    // Negativos que NÃO são a regra da ideação (ou em que a view não deu 1) seguem como alerta.
+    $outros = [];
+    foreach ($negativos as $rotulo => $ks) {
+        $resto = array_values(array_diff($ks, $esperadas[$rotulo] ?? []));
+        if ($resto) $outros[$rotulo] = $resto;
+    }
+    if ($outros) {
+        out('    ⚠ OUTROS VALORES NEGATIVOS NA PLANILHA (fora da regra da ideação):');
+        foreach ($outros as $rotulo => $ks) {
             out(sprintf('        %s: %d item(ns)', $rotulo, count($ks)));
             foreach (array_slice($ks, 0, 3) as $k) {
                 $col = CALCULADAS[$rotulo][0]; $colV = CALCULADAS[$rotulo][1];
@@ -365,7 +393,7 @@ function relatorio(string $titulo, array $prefixos, array $plan, array $db, arra
             }
         }
     } else {
-        out('    Valores negativos na planilha: nenhum.');
+        out('    Outros valores negativos na planilha: nenhum.');
     }
 
     // (5) totais
@@ -398,7 +426,7 @@ function relatorio(string $titulo, array $prefixos, array $plan, array $db, arra
     return [
         'planilha' => count($P), 'banco' => count($D), 'comuns' => count($comuns),
         'so_planilha' => count($soPlan), 'so_banco' => count($soBanco),
-        'div_brutos' => $totDiv, 'div_calculadas' => $totCalc,
+        'div_brutos' => $totDiv, 'div_calculadas' => $totCalc, 'div_esperadas_ideacao_negativa' => $totEsperadas,
         'sp_comum_planilha' => $linhas['Em comum — valores planilha'][1],
         'sp_valor_comum_planilha' => $linhas['Em comum — valores planilha'][2],
         'estimate_comum_planilha' => $linhas['Em comum — valores planilha'][3],

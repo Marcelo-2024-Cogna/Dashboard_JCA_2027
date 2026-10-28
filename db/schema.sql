@@ -107,10 +107,11 @@ CREATE TABLE IF NOT EXISTS extracao_jira (
     configuracao_pi_id     INT UNSIGNED NULL,
     tipo_item              VARCHAR(100) NULL,
     chave                  VARCHAR(50) NULL,
-    sprint                 VARCHAR(100) NULL,
+    sprint                 TEXT NULL,  -- itens que passam por várias sprints chegam a >1000 caracteres
+    sprint_ref             VARCHAR(20) NULL,  -- sprint de MAIOR numeração do campo sprint (ex.: 'SP 26.4.2')
     projeto                VARCHAR(255) NULL,
     status                 VARCHAR(100) NULL,
-    versoes_corrigidas     VARCHAR(255) NULL,
+    versoes_corrigidas     TEXT NULL,
     story_points           DECIMAL(10,2) NULL,
     story_point_estimate   DECIMAL(10,2) NULL,
     soma_tempo_gasto       DECIMAL(14,2) NULL,
@@ -136,6 +137,7 @@ CREATE TABLE IF NOT EXISTS extracao_jira (
     KEY idx_extracao_jira_configuracao_pi_id (configuracao_pi_id),
     KEY idx_extracao_jira_tipo_item (tipo_item),
     KEY idx_extracao_jira_status (status),
+    KEY idx_extracao_jira_sprint_ref (sprint_ref),
     CONSTRAINT fk_extracao_jira_configuracao_pi
         FOREIGN KEY (configuracao_pi_id) REFERENCES configuracao_pi (id_versao_corrigida)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -149,11 +151,12 @@ CREATE TABLE IF NOT EXISTS baseline (
     resumo                 TEXT NULL,
     projeto                VARCHAR(255) NULL,
     status                 VARCHAR(100) NULL,
-    versoes_corrigidas     VARCHAR(255) NULL,
+    versoes_corrigidas     TEXT NULL,
     pai                    VARCHAR(50) NULL,
     story_point_estimate   DECIMAL(10,2) NULL,
     story_points           DECIMAL(10,2) NULL,
-    sprint                 VARCHAR(100) NULL,
+    sprint                 TEXT NULL,  -- itens que passam por várias sprints chegam a >1000 caracteres
+    sprint_ref             VARCHAR(20) NULL,  -- sprint de MAIOR numeração do campo sprint (ex.: 'SP 26.4.2')
     tipo_sustentacao       VARCHAR(255) NULL,
     jornada_dona_epico     VARCHAR(255) NULL,
     data_carga             DATETIME NULL,
@@ -161,6 +164,7 @@ CREATE TABLE IF NOT EXISTS baseline (
     PRIMARY KEY (id_baseline),
     KEY idx_baseline_chave (chave),
     KEY idx_baseline_configuracao_pi_id (configuracao_pi_id),
+    KEY idx_baseline_sprint_ref (sprint_ref),
     CONSTRAINT fk_baseline_configuracao_pi
         FOREIGN KEY (configuracao_pi_id) REFERENCES configuracao_pi (id_versao_corrigida)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -190,6 +194,29 @@ SET @col := (SELECT COUNT(*) FROM information_schema.COLUMNS
                 AND COLUMN_NAME = 'parametros_hash');
 SET @sql := IF(@col = 0,
     'ALTER TABLE extracao_agendamento ADD COLUMN parametros_hash CHAR(40) NULL, ADD KEY idx_extracao_agendamento_hash (parametros_hash)',
+    'SELECT 1');
+PREPARE stmt_mig FROM @sql;
+EXECUTE stmt_mig;
+DEALLOCATE PREPARE stmt_mig;
+
+-- 8c. Migração idempotente (v1.5 / camada de dados): sprint_ref + índice em
+-- extracao_jira e baseline. Bancos novos já nascem com a coluna (CREATE TABLE
+-- acima); bancos antigos recebem o ALTER. Preencher com bin/backfill_sprint_ref.php.
+SET @col := (SELECT COUNT(*) FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'extracao_jira'
+                AND COLUMN_NAME = 'sprint_ref');
+SET @sql := IF(@col = 0,
+    'ALTER TABLE extracao_jira ADD COLUMN sprint_ref VARCHAR(20) NULL AFTER sprint, ADD KEY idx_extracao_jira_sprint_ref (sprint_ref)',
+    'SELECT 1');
+PREPARE stmt_mig FROM @sql;
+EXECUTE stmt_mig;
+DEALLOCATE PREPARE stmt_mig;
+
+SET @col := (SELECT COUNT(*) FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'baseline'
+                AND COLUMN_NAME = 'sprint_ref');
+SET @sql := IF(@col = 0,
+    'ALTER TABLE baseline ADD COLUMN sprint_ref VARCHAR(20) NULL AFTER sprint, ADD KEY idx_baseline_sprint_ref (sprint_ref)',
     'SELECT 1');
 PREPARE stmt_mig FROM @sql;
 EXECUTE stmt_mig;
