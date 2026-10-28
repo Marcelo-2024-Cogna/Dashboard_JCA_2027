@@ -65,7 +65,22 @@ class Database
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
                 PDO::ATTR_EMULATE_PREPARES   => false,
             ]);
+            // Alinha o relógio do MySQL (NOW()) ao fuso do PHP (date()).
+            $appCfg = dirname(__DIR__) . '/config/app.php';
+            if (is_file($appCfg)) {
+                $tz = (require $appCfg)['timezone'] ?? null;
+                if (is_string($tz) && $tz !== '') date_default_timezone_set($tz);
+            }
+            $offset = (new \DateTime())->format('P'); // ex: -03:00
+            self::$instance->exec("SET time_zone = '{$offset}'");
         } catch (PDOException $e) {
+            self::$instance = null;
+            // Log sem host/usuário/senha: apenas o nome do banco.
+            require_once __DIR__ . '/Services/Logger.php';
+            \App\Services\Logger::error('sistema', 'Falha ao conectar ao banco', [
+                'banco' => $dbname,
+                'codigo' => $e->getCode(),
+            ]);
             // Não repassa a senha nem a mensagem crua do driver.
             throw new RuntimeException(
                 "Falha ao conectar ao banco '{$dbname}' em {$host}:{$port}. " .

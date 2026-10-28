@@ -16,6 +16,9 @@ error_reporting(E_ALL);
 define('BASE_DIR', dirname(__DIR__));
 define('DATA_DIR', BASE_DIR . '/data');
 
+// Fuso único da aplicação (config/app.php); Database::pdo() alinha o MySQL.
+date_default_timezone_set((require BASE_DIR . '/config/app.php')['timezone'] ?? 'America/Sao_Paulo');
+
 // ── Autoload simples (sem Composer) ────────────────────────────────────────
 spl_autoload_register(function (string $class): void {
     // Converte "App\Controllers\Foo" → "BASE_DIR/app/Controllers/Foo.php"

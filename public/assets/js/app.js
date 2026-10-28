@@ -216,41 +216,9 @@
     });
   }
 
-  // ── Atualizar dados do Jira (força reextração, ignora cache) ─────────────
-  async function refreshJira() {
-    const btn = document.getElementById('btn-refresh-jira');
-    if (!btn) return;
-    const original = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = '↻ Atualizando (pode levar 1-2 min)...';
-    btn.classList.add('btn-busy');
-
-    try {
-      // force=1 ignora o cache de 30min e rebusca do Jira (36 projetos,
-      // pode levar minutos). fetch direto, sem cache de cliente.
-      const res = await fetch(`${BASE}/extract?force=1`, { headers: { 'Accept': 'application/json' } });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      if (json.error) throw new Error(json.error);
-      const total = json.total_items ?? (json.items ? json.items.length : '?');
-      // Invalida o cache de cliente do /extract para a página recarregada
-      // pegar os dados novos.
-      Api.invalidate('/extract');
-      btn.textContent = `✓ ${total} itens — atualizando tela...`;
-      setTimeout(() => location.reload(), 800);
-    } catch (e) {
-      btn.textContent = '⚠ Falha ao atualizar';
-      btn.title = 'Erro: ' + e.message;
-      btn.disabled = false;
-      btn.classList.remove('btn-busy');
-      setTimeout(() => { btn.textContent = original; btn.title = 'Buscar dados atualizados do Jira (ignora cache)'; }, 4000);
-    }
-  }
-
   // ── Bootstrap da página ──────────────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', () => {
     initFilters();
-    document.getElementById('btn-refresh-jira')?.addEventListener('click', refreshJira);
     document.getElementById('btn-export-pdf')?.addEventListener('click', exportPdf);
     document.getElementById('btn-export-xlsx')?.addEventListener('click', exportXlsx);
   });

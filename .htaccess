@@ -18,6 +18,6 @@
 </IfModule>
 
 # Protege arquivos sensiveis caso alguem acesse a raiz diretamente
-<FilesMatch "\.(xlsx|json|md|bat|cmd)$">
+<FilesMatch "\.(xlsx|json|md|bat|cmd|log)$">
     Require all denied
 </FilesMatch>

@@ -1,3 +1,7 @@
 # Credenciais de conexão ao banco (específicas de cada ambiente).
 # O modelo versionável é config/db.php.example.
 config/db.php
+
+# Logs de execução (mantém apenas o diretório versionado).
+data/logs/*.log
+data/logs/*.log.*

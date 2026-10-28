@@ -4,6 +4,7 @@ namespace App\Controllers;
 
 use App\Repositories\CatalogRepository;
 use App\Repositories\ExtractionQueueRepository;
+use App\Services\Logger;
 use Throwable;
 
 /**
@@ -39,6 +40,7 @@ class ExtractionController
         try {
             $this->respond(200, $this->montarCatalogo());
         } catch (Throwable $e) {
+            Logger::exception('extracao', 'GET /extracao/catalogo: exceção', $e);
             $this->respond(500, ['erro' => 'Falha ao ler o catálogo.']);
         }
     }
@@ -173,6 +175,7 @@ class ExtractionController
             $dirAbs = $this->baseDir . '/' . $dirRel;
             if (!is_dir($dirAbs) && !@mkdir($dirAbs, 0775, true)) {
                 $this->queue->atualizarStatus($id, 'erro');
+                Logger::error('extracao', 'POST /extracao/agendar: não foi possível criar o diretório de agendamentos', ['ordem' => $id, 'dir' => $dirRel]);
                 $this->respond(500, ['erro' => 'Não foi possível criar o diretório de agendamentos.']);
                 return;
             }
@@ -183,6 +186,7 @@ class ExtractionController
             );
             if (@file_put_contents($dirAbs . '/' . $nomeArq, $conteudo, LOCK_EX) === false) {
                 $this->queue->atualizarStatus($id, 'erro');
+                Logger::error('extracao', 'POST /extracao/agendar: não foi possível gravar o JSON da ordem', ['ordem' => $id, 'arquivo' => $nomeArq]);
                 $this->respond(500, ['erro' => 'Não foi possível gravar o JSON da ordem.']);
                 return;
             }
@@ -200,6 +204,7 @@ class ExtractionController
                 'substitui'     => $existente,
             ]);
         } catch (Throwable $e) {
+            Logger::exception('extracao', 'POST /extracao/agendar: exceção', $e);
             $this->respond(500, ['erro' => 'Falha ao agendar a extração.']);
         }
     }
@@ -212,6 +217,7 @@ class ExtractionController
             $limite = (int)($this->cfg['fila_limite'] ?? 20);
             $this->respond(200, ['ordens' => $this->queue->listarFila($limite)]);
         } catch (Throwable $e) {
+            Logger::exception('extracao', 'GET /extracao/fila: exceção', $e);
             $this->respond(500, ['erro' => 'Falha ao listar a fila.']);
         }
     }
@@ -226,9 +232,29 @@ class ExtractionController
             $this->catalog->jornadas()
         );
         $pis = array_map(
-            fn($p) => ['id' => (int)$p['id_versao_corrigida'], 'desc_pi' => $p['desc_pi']],
+            fn($p) => [
+                'id'       => (int)$p['id_versao_corrigida'],
+                'desc_pi'  => $p['desc_pi'],
+                'data_ini' => $p['data_ini'] ?? null,
+                'data_fim' => $p['data_fim'] ?? null,
+            ],
             $this->catalog->pis()
         );
+
+        // PI corrente: a que contém a data de hoje; senão a mais recente (maior data_fim).
+        $hoje = date('Y-m-d');
+        $piCorrente = null;
+        $maisRecente = null;
+        foreach ($pis as $p) {
+            if ($p['data_ini'] && $p['data_fim'] && $p['data_ini'] <= $hoje && $hoje <= $p['data_fim']) {
+                $piCorrente = $p['desc_pi'];
+                break;
+            }
+            if ($maisRecente === null || (string)$p['data_fim'] > (string)$maisRecente['data_fim']) {
+                $maisRecente = $p;
+            }
+        }
+        $piCorrente ??= $maisRecente['desc_pi'] ?? null;
 
         $sprintsPorPi = [];
         foreach ($pis as $p) {
@@ -251,6 +277,8 @@ class ExtractionController
         return [
             'jornadas'          => $jornadas,
             'pis'               => $pis,
+            'pi_corrente'       => $piCorrente,
+            'email_padrao'      => (string)($this->cfg['email_destino_padrao'] ?? ''),
             'sprints_por_pi'    => $sprintsPorPi,
             'times_por_jornada' => $timesPorJornada,
         ];
@@ -283,6 +311,10 @@ class ExtractionController
 
     private function respond(int $status, array $payload): void
     {
+        // 400/409 (validação/duplicidade) → WARNING; 500 com erro já logado na exceção.
+        if ($status === 400 || $status === 409) {
+            Logger::warning('extracao', "POST /extracao/agendar → {$status}: " . (string)($payload['erro'] ?? $payload['aviso'] ?? ''), array_diff_key($payload, ['erro' => 1, 'aviso' => 1]));
+        }
         http_response_code($status);
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PARTIAL_OUTPUT_ON_ERROR);

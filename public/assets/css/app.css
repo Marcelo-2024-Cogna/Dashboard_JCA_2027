@@ -221,6 +221,89 @@ tbody td { padding: 8px 13px; }
 .bs-risk  { background: rgba(249,115,22,.15);  color: #fb923c; }
 .bs-block { background: rgba(244,63,94,.15);   color: #fda4af; }
 
+/* ── Foco visível (teclado) ── */
+.btn:focus-visible, .link-btn:focus-visible, .tab:focus-visible,
+.ext-item:focus-within, .field input:focus-visible {
+  outline: 2px solid var(--cyan); outline-offset: 2px;
+}
+
+/* ── Modal de extração do Jira (<dialog>) ── */
+.modal {
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--r);
+  box-shadow: var(--shadow);
+  width: min(960px, 94vw); max-height: 90vh; padding: 0;
+  margin: auto;
+}
+.modal[open] { display: flex; flex-direction: column; }
+.modal::backdrop { background: rgba(8,10,16,.72); }
+.modal [hidden] { display: none !important; }
+.modal-form { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.modal-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 16px 22px; border-bottom: 1px solid var(--border);
+}
+.modal-head h3 { font-size: 1rem; font-weight: 600; }
+.modal-head h3:focus { outline: none; }
+.modal-x { padding: 4px 10px; }
+.modal-tabs { display: flex; gap: 4px; padding: 10px 22px 0; border-bottom: 1px solid var(--border); }
+.tab {
+  background: transparent; border: 1px solid transparent; border-bottom: none;
+  color: var(--muted); padding: 8px 16px; border-radius: 8px 8px 0 0;
+  cursor: pointer; font-size: .82rem;
+}
+.tab:hover { color: var(--text); }
+.tab.is-active { background: var(--surface2); color: var(--text); border-color: var(--border); font-weight: 600; }
+.modal-body { padding: 18px 22px; overflow-y: auto; flex: 1; min-height: 0; }
+.modal-foot {
+  display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap;
+  padding: 14px 22px; border-top: 1px solid var(--border);
+}
+
+.ext-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.ext-box { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px 12px; min-width: 0; }
+.ext-box legend { font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 0 6px; }
+.req { color: var(--rose); }
+.ext-tools { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+.link-btn {
+  background: none; border: none; padding: 2px 0; cursor: pointer;
+  color: #a5b4fc; font-size: .74rem; text-decoration: underline;
+}
+.link-btn:hover { color: var(--text); }
+.ext-list { max-height: 190px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.ext-item {
+  display: flex; align-items: center; gap: 8px; padding: 4px 6px;
+  border-radius: 6px; font-size: .82rem; cursor: pointer;
+}
+.ext-item:hover { background: var(--surface2); }
+.ext-item input { accent-color: var(--indigo); width: 15px; height: 15px; flex-shrink: 0; }
+.ext-item-txt { overflow-wrap: anywhere; }
+.ext-sub { color: var(--muted); font-size: .7rem; margin-left: auto; white-space: nowrap; }
+.ext-grp { font-size: .68rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin: 8px 6px 2px; }
+.ext-vazio, .ext-hint { font-size: .74rem; color: var(--muted); }
+.ext-hint { margin-top: 6px; }
+.ext-item .bs { margin-left: auto; }
+.ext-email { margin-top: 14px; max-width: 420px; }
+.ext-field-erro { color: #fda4af; font-size: .74rem; min-height: 1em; }
+.ext-resumo {
+  margin-top: 14px; padding: 10px 14px; border-radius: 8px;
+  background: var(--surface2); border: 1px solid var(--border);
+  font-size: .84rem; font-weight: 600;
+}
+.ext-msg:empty { display: none; }
+.ext-msg { margin-top: 14px; }
+.ext-msg-det { margin-top: 4px; font-size: .76rem; opacity: .9; overflow-wrap: anywhere; }
+
+.fila-tools { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.fila-tab td { vertical-align: top; }
+.fila-det { max-width: 340px; }
+.fila-erro { color: #fda4af; font-size: .74rem; overflow-wrap: anywhere; display: block; max-height: 6.5em; overflow-y: auto; }
+
+@media (max-width: 720px) {
+  .ext-grid { grid-template-columns: 1fr; }
+  .modal { width: 100vw; max-height: 100vh; border-radius: 0; }
+}
+
 /* ── Responsivo ── */
 @media (max-width: 1000px) {
   .layout { grid-template-columns: 1fr; grid-template-areas: "header" "main"; }

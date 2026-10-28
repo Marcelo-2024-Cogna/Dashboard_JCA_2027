@@ -34,8 +34,12 @@
  */
 
 require __DIR__ . '/../app/Database.php';
+require __DIR__ . '/../app/Services/Logger.php';
+
+date_default_timezone_set((require __DIR__ . '/../config/app.php')['timezone'] ?? 'America/Sao_Paulo');
 
 use App\Database;
+use App\Services\Logger;
 
 $ROOT      = __DIR__ . '/..';
 $XLSX      = $ROOT . '/Template Velocity 26-4.xlsx';
@@ -254,9 +258,15 @@ try {
 } catch (Throwable $e) {
     if ($pdo->inTransaction()) $pdo->rollBack();
     $pdo->exec('SET FOREIGN_KEY_CHECKS = 1');
+    Logger::exception('importacao', 'seed_catalogo: erro na carga, rollback executado', $e);
     fwrite(STDERR, "ERRO na carga, rollback executado: " . $e->getMessage() . "\n");
     exit(1);
 }
+
+Logger::info('importacao', 'seed_catalogo: carga concluída', [
+    'jornadas' => count($jornadaId), 'times' => $totTimes,
+    'composicoes' => $totComp, 'times_sem_projeto_key' => count($semKey),
+]);
 
 // ── Relatório ───────────────────────────────────────────────────────────────
 echo str_repeat('=', 70) . "\n";

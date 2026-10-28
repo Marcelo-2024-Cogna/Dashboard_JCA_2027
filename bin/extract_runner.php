@@ -25,7 +25,10 @@
 require __DIR__ . '/../app/Database.php';
 require __DIR__ . '/../app/Models/JiraModel.php';
 require __DIR__ . '/../app/Services/JqlBuilder.php';
+require __DIR__ . '/../app/Services/Logger.php';
 require __DIR__ . '/../app/Services/ExtractionService.php';
+
+date_default_timezone_set((require __DIR__ . '/../config/app.php')['timezone'] ?? 'America/Sao_Paulo');
 
 use App\Database;
 use App\Services\ExtractionService;

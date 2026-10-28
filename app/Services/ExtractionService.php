@@ -78,15 +78,20 @@ class ExtractionService
         $model  = new JiraModel($this->jiraCfg);
         $paginas = null;
         $logs    = [];
+        $ctxLog  = ['projetos' => $projetos, 'pi' => $pi, 'sprints' => $sprints ?: [], 'fonte' => $fonte, 'tabela' => $tabela];
+
+        Logger::info(Logger::CANAL_EXTRACAO, 'Lote: início da extração', $ctxLog + ['jql' => $jql]);
 
         // ── Obtém os itens ───────────────────────────────────────────────
         if ($fonte === 'fixture') {
             $fixture = $fixture ?? dirname(__DIR__, 2) . '/data/import/fixtures/jira_sample.json';
             if (!is_file($fixture)) {
+                Logger::error(Logger::CANAL_EXTRACAO, 'Lote: fixture não encontrada', $ctxLog + ['fixture' => basename($fixture)]);
                 throw new RuntimeException("Fixture não encontrada: {$fixture}", self::ERR_FETCH);
             }
             $raw = json_decode((string)file_get_contents($fixture), true);
             if (!is_array($raw) || !isset($raw['issues']) || !is_array($raw['issues'])) {
+                Logger::error(Logger::CANAL_EXTRACAO, 'Lote: fixture com JSON inválido', $ctxLog + ['fixture' => basename($fixture)]);
                 throw new RuntimeException("Fixture inválida (esperado objeto com chave 'issues').", self::ERR_FETCH);
             }
             $items  = $model->mapRawIssues($raw['issues']);
@@ -98,7 +103,8 @@ class ExtractionService
                 $paginas = (int)$result['pages'];
                 $logs    = $result['logs'] ?? [];
             } catch (Throwable $e) {
-                // A mensagem do JiraModel não contém o token.
+                // A mensagem do JiraModel não contém o token (e o Logger ainda mascara).
+                Logger::exception(Logger::CANAL_EXTRACAO, 'Lote: falha ao buscar no Jira (HTTP/cURL/SSL/JSON)', $e, $ctxLog + ['jql' => $jql]);
                 throw new RuntimeException($e->getMessage(), self::ERR_FETCH, $e);
             }
         }
@@ -227,8 +233,14 @@ class ExtractionService
             $pdo->commit();
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
+            Logger::exception(Logger::CANAL_EXTRACAO, 'Lote: erro de banco na gravação, rollback executado', $e, $ctxLog);
             throw new RuntimeException('Erro na gravação, rollback executado: ' . $e->getMessage(), self::ERR_PERSIST, $e);
         }
+
+        Logger::info(Logger::CANAL_EXTRACAO, 'Lote: extração concluída', $ctxLog + [
+            'itens_lidos' => count($items), 'inseridos' => $inseridos,
+            'apagados' => $apagados, 'paginas' => $paginas, 'pi_id' => $piId,
+        ]);
 
         return [
             'total_itens'        => $inseridos,

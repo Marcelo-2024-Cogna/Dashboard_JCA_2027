@@ -32,6 +32,7 @@ if (PHP_SAPI !== 'cli') {
 }
 
 define('BASE_DIR', dirname(__DIR__));
+date_default_timezone_set((require BASE_DIR . '/config/app.php')['timezone'] ?? 'America/Sao_Paulo');
 spl_autoload_register(function (string $class): void {
     $file = BASE_DIR . '/' . str_replace(['App\\', '\\'], ['app/', '/'], $class) . '.php';
     if (is_file($file)) require_once $file;
@@ -40,6 +41,7 @@ spl_autoload_register(function (string $class): void {
 use App\Repositories\ExtractionQueueRepository;
 use App\Services\ExtractionService;
 use App\Services\LogNotifier;
+use App\Services\Logger;
 use App\Services\Notifier;
 
 $opts   = getopt('', ['fonte::', 'agora', 'id::']);
@@ -65,6 +67,7 @@ $notifier = new LogNotifier(BASE_DIR . '/' . ltrim((string)$cfg['log_notificacoe
 // ── 1. Zumbis ───────────────────────────────────────────────────────────────
 foreach ($queue->marcarZumbis((int)$cfg['zumbi_horas']) as $zid) {
     logw("Ordem #{$zid} em 'processando' além do limite → marcada 'erro' (timeout).");
+    Logger::warning('extracao', "Ordem #{$zid} zumbi: 'processando' além do limite, marcada 'erro' (timeout)", ['ordem' => $zid, 'zumbi_horas' => (int)$cfg['zumbi_horas']]);
 }
 
 // ── 2. Ordens vencidas ──────────────────────────────────────────────────────
@@ -81,6 +84,7 @@ foreach ($ids as $id) {
         continue;
     }
     logw("Ordem #{$id}: claim OK, processando (fonte={$fonte}).");
+    Logger::info('extracao', "Ordem #{$id}: início do processamento", ['ordem' => $id, 'fonte' => $fonte]);
 
     $ordemRow = $queue->buscar($id);
     $inicio   = date('Y-m-d H:i:s');
@@ -106,6 +110,7 @@ foreach ($ids as $id) {
 
     if (!is_array($ordem) || empty($ordem['lotes']) || empty($ordem['pis'])) {
         $falhas[] = 'ordem ilegível ou sem lotes/PIs';
+        Logger::error('extracao', "Ordem #{$id}: ordem ilegível ou sem lotes/PIs", ['ordem' => $id, 'arquivo' => $arq]);
     } else {
         // ── 4. Jornada por jornada x PI ─────────────────────────────────────
         foreach ($ordem['lotes'] as $lote) {
@@ -115,6 +120,7 @@ foreach ($ids as $id) {
                 $pi      = (string)($piDef['pi'] ?? '');
                 $sprints = array_values((array)($piDef['sprints'] ?? []));
                 $rotulo  = "{$jornada} / {$pi}";
+                Logger::info('extracao', "Ordem #{$id}: início da jornada {$rotulo}", ['ordem' => $id, 'jornada' => $jornada, 'pi' => $pi, 'projetos' => $projetos, 'sprints' => $sprints]);
                 try {
                     $r = $service->extract($projetos, $pi, $sprints ?: null, $fonte);
                     $totalItens += $r['total_itens'];
@@ -122,9 +128,11 @@ foreach ($ids as $id) {
                     $okLotes++;
                     $resumo[] = "{$rotulo}: {$r['total_itens']} itens, {$r['registros_apagados']} apagados";
                     logw("  OK   {$rotulo}: {$r['total_itens']} itens, {$r['registros_apagados']} apagados");
+                    Logger::info('extracao', "Ordem #{$id}: fim da jornada {$rotulo} (OK)", ['ordem' => $id, 'itens' => $r['total_itens'], 'apagados' => $r['registros_apagados']]);
                 } catch (Throwable $e) {
                     $falhas[] = "{$rotulo}: " . $e->getMessage();
                     logw("  ERRO {$rotulo}: " . $e->getMessage());
+                    Logger::exception('extracao', "Ordem #{$id}: jornada {$rotulo} FALHOU", $e, ['ordem' => $id, 'jornada' => $jornada, 'pi' => $pi]);
                 }
             }
         }
@@ -152,4 +160,10 @@ foreach ($ids as $id) {
     $queue->gravarLog($id, $inicio, date('Y-m-d H:i:s'), $statusLog, $totalItens, $totalApag, $mensagem, $enviado);
     $queue->atualizarStatus($id, $statusOrdem);
     logw("Ordem #{$id}: {$statusOrdem} (itens={$totalItens}, apagados={$totalApag}, email_enviado={$enviado}).");
+    $ctxFim = ['ordem' => $id, 'status' => $statusOrdem, 'itens' => $totalItens, 'apagados' => $totalApag, 'falhas' => count($falhas)];
+    if ($statusOrdem === 'erro') {
+        Logger::error('extracao', "Ordem #{$id}: fim do processamento com ERRO (todas as jornadas falharam)", $ctxFim);
+    } else {
+        Logger::info('extracao', "Ordem #{$id}: fim do processamento ({$statusOrdem})", $ctxFim);
+    }
 }

@@ -21,8 +21,12 @@
  */
 
 require __DIR__ . '/../app/Database.php';
+require __DIR__ . '/../app/Services/Logger.php';
+
+date_default_timezone_set((require __DIR__ . '/../config/app.php')['timezone'] ?? 'America/Sao_Paulo');
 
 use App\Database;
+use App\Services\Logger;
 
 $ROOT  = __DIR__ . '/..';
 $XLSX  = $ROOT . '/Template Velocity 26-4.xlsx';
@@ -133,8 +137,18 @@ try {
     $pdo->commit();
 } catch (Throwable $e) {
     if ($pdo->inTransaction()) $pdo->rollBack();
+    Logger::exception('importacao', 'seed_sustentacao: erro na carga, rollback executado', $e);
     fwrite(STDERR, "ERRO na carga, rollback executado: " . $e->getMessage() . "\n");
     exit(1);
+}
+
+Logger::info('importacao', 'seed_sustentacao: carga concluída', [
+    'linhas_inseridas' => $inseridos,
+    'times_sem_match'  => array_keys($semTime),
+    'pis_sem_match'    => array_keys($semPi),
+]);
+if ($semTime) {
+    Logger::warning('importacao', 'seed_sustentacao: times sem match em `times` (times_id NULL)', ['times' => array_keys($semTime)]);
 }
 
 // ── Relatório ───────────────────────────────────────────────────────────────
