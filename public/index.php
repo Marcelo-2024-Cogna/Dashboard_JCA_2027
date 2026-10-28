@@ -168,6 +168,23 @@ switch (true) {
         (new \App\Controllers\ConfigController($configRepo))->saveCapacity();
         break;
 
+    // ── Fila de extração (v1.5 / 6b-1): catálogo, agendar, fila ──────────
+    case $uri === '/extracao/catalogo':
+    case $uri === '/extracao/agendar':
+    case $uri === '/extracao/fila':
+        $extracaoCtl = new \App\Controllers\ExtractionController(
+            new \App\Repositories\CatalogRepository(),
+            new \App\Repositories\ExtractionQueueRepository(),
+            require BASE_DIR . '/config/extracao.php',
+            BASE_DIR
+        );
+        match ($uri) {
+            '/extracao/catalogo' => $extracaoCtl->catalogo(),
+            '/extracao/agendar'  => $extracaoCtl->agendar(),
+            '/extracao/fila'     => $extracaoCtl->fila(),
+        };
+        break;
+
     // ── Home → Visão Geral ───────────────────────────────────────────────
     case $uri === '/' || $uri === '/index.html':
         $makeViewController()->render('overview');

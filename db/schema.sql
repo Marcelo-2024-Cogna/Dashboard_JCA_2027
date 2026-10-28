@@ -176,10 +176,24 @@ CREATE TABLE IF NOT EXISTS extracao_agendamento (
     atualizado_em    DATETIME NULL,
     email_destino    VARCHAR(255) NULL,
     ativo            CHAR(1) NOT NULL DEFAULT 'S',
+    parametros_hash  CHAR(40) NULL,  -- sha1 dos parâmetros normalizados (duplicidade no dia)
     PRIMARY KEY (id_agendamento),
     KEY idx_extracao_agendamento_status (status),
-    KEY idx_extracao_agendamento_agendado_para (agendado_para)
+    KEY idx_extracao_agendamento_agendado_para (agendado_para),
+    KEY idx_extracao_agendamento_hash (parametros_hash)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 8b. Migração idempotente (bancos criados antes da ETAPA 6b-1): adiciona
+-- parametros_hash + índice em extracao_agendamento somente se ainda não existirem.
+SET @col := (SELECT COUNT(*) FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'extracao_agendamento'
+                AND COLUMN_NAME = 'parametros_hash');
+SET @sql := IF(@col = 0,
+    'ALTER TABLE extracao_agendamento ADD COLUMN parametros_hash CHAR(40) NULL, ADD KEY idx_extracao_agendamento_hash (parametros_hash)',
+    'SELECT 1');
+PREPARE stmt_mig FROM @sql;
+EXECUTE stmt_mig;
+DEALLOCATE PREPARE stmt_mig;
 
 -- 10. produtividade_historico -----------------------------------------
 -- Consolida a produtividade (horas por ponto) por time e PI quando uma PI
