@@ -144,3 +144,46 @@
   --headless=new --screenshot=...`), lint `php -l` e `node --check`.
 - Não editar baseline/extração por `UPDATE` direto: usar `bin/ajustar_baseline.php`.
 - PowerShell corrompe UTF-8 em `Set-Content`: gravar arquivos com a ferramenta de edição.
+
+## 8. CHECKLIST DO DIA DO DEPLOY (ambiente interno)
+> Combinado em 29/10/2026: no dia do deploy o usuário pede para **excluir os
+> segredos do repositório**. Não fazer antes disso sem pedido. Até lá, os tokens
+> seguem expostos no histórico do GitHub (commit `8edcbb5`) e na conversa.
+
+**Segredos (a pedido do usuário no dia do deploy)**
+- Token do **Jira** em texto em `config/jira.php` e em `.kiro/settings/mcp.json`;
+  token do **Confluence** e e-mail corporativo também em `.kiro/settings/mcp.json`
+  (arquivo rastreado, contém comentário `//` → não é JSON puro; NÃO ler com
+  `ConvertFrom-Json`/imprimir, o conteúdo vaza no terminal).
+- Fazer: (1) usuário **revoga e gera novos tokens** (id.atlassian.com → Segurança →
+  Tokens de API) — a única correção que de fato resolve; (2) `config/jira.php`
+  passa a ler só `getenv('JIRA_API_TOKEN')` (documentar onde definir: Apache/XAMPP
+  e CentOS/systemd); (3) parar de rastrear `.kiro/settings/mcp.json` (`git rm
+  --cached` + `.gitignore`) e criar `mcp.json.example` sem segredos;
+  (4) reescrever histórico (`git filter-repo`/BFG + force-push) SOMENTE se o
+  usuário pedir (destrutivo; com os tokens revogados deixa de ser urgente).
+- Também revisar: senha de dev do banco (`metricas_jca`/`metricas_jca`) em
+  `db/schema.sql`, senha do root usada nos testes, `app/Services/Logger.php`
+  (máscara de segredos já existe).
+
+**Banco**: aplicar `db/schema.sql`, `db/views.sql`, `db/triggers.sql` (este com
+conta privilegiada); trocar a senha do usuário de aplicação por uma forte;
+`config/db.php` real no servidor (fora do git).
+
+**Servidor / rede interna**
+- **Chart.js e libs vêm de CDN** (`cdn.jsdelivr.net` no `layout.php`; html2pdf e
+  xlsx sob demanda em `app.js`). Se o ambiente interno não tiver internet, os
+  gráficos NÃO renderizam → baixar e servir as libs localmente (`public/assets/vendor`).
+  Confirmar com o usuário se há acesso à internet no ambiente.
+- Caminho base: `.htaccess` (raiz e `public/`) e `public/index.php` têm `/dashboard`
+  fixo (RewriteBase e remoção de prefixo de URI) → ajustar se o app for publicado
+  em outro caminho/virtual host.
+- Jira: usar CA bundle (`JIRA_CA_BUNDLE`) em vez de `JIRA_SSL_VERIFY=0`.
+- Registrar o worker (`bin/queue_worker.php`) no crontab de 1 em 1 minuto; definir
+  SMTP real no lugar do `LogNotifier`; permissões de escrita em `data/`
+  (`logs`, `agendamentos`, `exports`, `import`).
+- Fuso `America/Sao_Paulo` (config/app.php) e sessão MySQL já alinhados.
+
+**Dados**: base será zerada e reimportada pelo modal de importação (Baseline ×
+Velocity) quando existir; sem ele, usar `bin/seed_catalogo.php`,
+`bin/seed_sustentacao.php`, `bin/import_baseline.php` e os runners de extração.
