@@ -81,9 +81,19 @@
    inalterados. Na janela padrão: 17 de 77 itens têm fim de implantação; dos 60
    restantes, 37 são "Pendente de Produção" e 23 são "Aceito" (sem a data
    preenchida — possível ajuste de qualidade de dado no Jira).
-3. **Gráfico de Produtividade** (`Template_Proposta_Grafico_Produtividade.png`) —
-   **PRÓXIMO**. Horas para entregar 1 ponto: barra da jornada + colunas por time
-   ao longo das PIs (1/26, 2/26, 3/26 do histórico; 4/26 AO VIVO). Dados prontos:
+3. ~~**Gráfico de Produtividade**~~ **CONCLUÍDO** (`/metricas/produtividade`, endpoint
+   `/graficos/produtividade`, `ProdutividadeRepository`). Definição: h/ponto = Σ horas
+   gastas ÷ Σ story points dos itens de valor ENTREGUES; sem fallback para estimate
+   (`itens_sp_nulo` reportado). Média da jornada = **PONDERADA** (Σh ÷ Σpts; a média
+   simples vai só como dado). Colunas = PIs até a de referência (filtro Versão; padrão =
+   corrente). PIs fechadas vêm de `produtividade_historico`; a PI de referência corrente
+   é AO VIVO na janela de sprints fechadas (ou só na sprint do filtro). Time sem dado =
+   "—" (nunca 0). Tabela traz a referência de planejamento (`times_composicao.media_produtividade_pi`)
+   e a **sugestão para a próxima PI** (produtividade da PI fechada mais recente com dados).
+   **A sugestão é SOMENTE LEITURA**: nada é gravado em `times_composicao` até a carga da
+   PI 1/27 (aplicar antes alteraria a Velocidade validada da PI 4/26).
+   Consolidar uma PI fechada: `php bin/consolidar_produtividade.php --pi="PI x/yy" [--dry-run]`.
+   (Histórico do planejamento desta etapa) Dados prontos:
    `extracao_jira` tem PIs 1/26–4/26 da Secretaria; view `vw_produtividade_pi`
    (ao vivo, por time x PI); `produtividade_historico` tem 11 linhas (PIs 1/26–3/26,
    gravadas por `bin/consolidar_produtividade.php --pi="PI x/yy"`; recusa a PI

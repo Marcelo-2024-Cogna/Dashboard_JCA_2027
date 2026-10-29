@@ -327,6 +327,9 @@ tbody td { padding: 8px 13px; }
 .prev-tbl tr.lt-media td { font-weight: 700; background: var(--surface2); border-top: 2px solid var(--border); }
 .prev-tbl tr.lt-grupo td { color: var(--muted); font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; padding-top: 14px; }
 .prev-tbl td.lt-total { font-weight: 700; }
+/* ── Produtividade: coluna da PI em andamento ── */
+.prev-tbl th.pd-corrente { background: #1d3a44; color: var(--text); border-bottom: 2px solid #22d3ee; }
+.prev-tbl td.pd-corrente { background: rgba(34,211,238,.07); }
 .pr-diag { font-size: .78rem; color: var(--muted); }
 .pr-diag summary { cursor: pointer; color: var(--text); }
 .pr-diag ul { margin: 8px 0 0; padding-left: 18px; line-height: 1.6; }

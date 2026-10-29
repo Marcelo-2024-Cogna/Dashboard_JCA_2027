@@ -5,6 +5,7 @@ namespace App\Controllers;
 use App\Repositories\LeadTimeRepository;
 use App\Repositories\PlanejadoRealizadoRepository;
 use App\Repositories\PrevisibilidadeRepository;
+use App\Repositories\ProdutividadeRepository;
 use App\Services\Logger;
 use InvalidArgumentException;
 use Throwable;
@@ -17,9 +18,7 @@ use Throwable;
  *   GET /graficos/previsibilidade?jornada=&time=&versao=&sprint=
  *   GET /graficos/plan-real?jornada=&time=&versao=&sprint=
  *   GET /graficos/lead-time?jornada=&time=&versao=&sprint=
- *
- * O próximo gráfico (Produtividade)
- * entra aqui como novos métodos, reaproveitando os mesmos filtros.
+ *   GET /graficos/produtividade?jornada=&time=&versao=&sprint=
  *
  * Respostas: 200 JSON · 400 filtro inválido/inexistente · 405 método ·
  * 500 falha interna (detalhe só no log, canal 'dashboard').
@@ -31,12 +30,15 @@ class GraficosController
     private PrevisibilidadeRepository $previsibilidade;
     private PlanejadoRealizadoRepository $planejadoRealizado;
     private LeadTimeRepository $leadTime;
+    private ProdutividadeRepository $produtividade;
 
     public function __construct(
         PrevisibilidadeRepository $previsibilidade,
         ?PlanejadoRealizadoRepository $planejadoRealizado = null,
-        ?LeadTimeRepository $leadTime = null
+        ?LeadTimeRepository $leadTime = null,
+        ?ProdutividadeRepository $produtividade = null
     ) {
+        $this->produtividade      = $produtividade ?? new ProdutividadeRepository($previsibilidade);
         $this->previsibilidade    = $previsibilidade;
         $this->planejadoRealizado = $planejadoRealizado ?? new PlanejadoRealizadoRepository($previsibilidade);
         $this->leadTime           = $leadTime ?? new LeadTimeRepository($previsibilidade);
@@ -83,6 +85,28 @@ class GraficosController
         } catch (Throwable $e) {
             Logger::exception(Logger::CANAL_DASHBOARD, 'GET /graficos/lead-time: exceção', $e, ['query' => $_GET]);
             $this->respond(500, ['success' => false, 'erro' => 'Falha ao calcular o Lead Time.']);
+        }
+    }
+
+    // ── GET /graficos/produtividade ──────────────────────────────────────
+    public function produtividade(): void
+    {
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
+            header('Allow: GET');
+            $this->respond(405, ['erro' => 'Use o método GET.']);
+            return;
+        }
+        try {
+            $filtros = $this->lerFiltros();
+            $this->respond(200, ['success' => true] + $this->produtividade->consultar($filtros));
+        } catch (InvalidArgumentException $e) {
+            Logger::warning(Logger::CANAL_DASHBOARD, 'GET /graficos/produtividade → 400: ' . $e->getMessage(), [
+                'query' => $_GET,
+            ]);
+            $this->respond(400, ['success' => false, 'erro' => $e->getMessage()]);
+        } catch (Throwable $e) {
+            Logger::exception(Logger::CANAL_DASHBOARD, 'GET /graficos/produtividade: exceção', $e, ['query' => $_GET]);
+            $this->respond(500, ['success' => false, 'erro' => 'Falha ao calcular a Produtividade.']);
         }
     }
 

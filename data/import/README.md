@@ -355,3 +355,13 @@ Itens "Pendente de Produção" contam como entregues, mas muitos ainda não têm
 implantação; o lead time soma só as etapas que o item tem. A tela sinaliza
 "Implantação concluída x de n" (⚠ quando pendente). Times com muitos pendentes
 aparecem com a Implantação subestimada e não são diretamente comparáveis.
+
+### Gráfico de Produtividade na tela (29/10/2026)
+- **Página** `/metricas/produtividade` · **endpoint** `GET /graficos/produtividade?jornada=&time=&versao=&sprint=` (400 para filtro inexistente).
+- **h/ponto** = Σ(soma_tempo_gasto)/3600 ÷ Σ(story_points) dos itens de VALOR ENTREGUES; sem fallback para o estimate (`itens_sp_nulo` no endpoint).
+- **Média da jornada = PONDERADA** (Σ horas ÷ Σ pontos dos times da seleção na PI); a média simples dos times vem em campo separado só para comparação.
+- **Colunas** = PIs do catálogo até a PI de referência (filtro Versão; padrão = PI corrente), só as com dados. Time sem dados na PI = "—" (não zero).
+- **Origem**: PIs fechadas = `produtividade_historico`; PI de referência corrente = AO VIVO na janela de sprints de valor fechadas (`sprint_ref`); com filtro de sprint, a PI de referência é recalculada ao vivo só para essa sprint.
+- **Referência (planejamento)** = `times_composicao.media_produtividade_pi` (Velocity); a tela mostra a diferença da PI de referência contra ela.
+- **Sugestão para a próxima PI** = produtividade da PI FECHADA mais recente com dados (jornada: ponderada). **Somente leitura**: nada é gravado em `times_composicao` até a carga da PI 1/27.
+- Consolidar uma PI fechada: `php bin/consolidar_produtividade.php --pi="PI 3/26" [--dry-run]`.
