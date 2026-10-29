@@ -32,6 +32,11 @@
   const nf1 = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   const nf0 = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 });
   const f1 = v => (v == null ? '—' : nf1.format(v));
+  const COR_ALERTA = '#fbbf24';   // âmbar: sempre acompanhado de ⚠ + texto
+  // Resumo da implantação (entregues x concluídas x pendentes) de uma linha de dados
+  const resumoDe = l => (l && l.implantacao_resumo) || { entregues: 0, concluidas: 0, pendentes_producao: 0, sem_fim_outros: 0, pct_concluidas: null };
+  const textoPendentes = r => r.pendentes_producao + ' pendentes de produção: contados como entregues, mas ainda sem implantação concluída';
+  const marcaImplantacao = l => { const r = resumoDe(l); return r.pct_concluidas != null && r.pct_concluidas < 50; };
 
   // Etapas na ordem de empilhamento (a primeira fica na base da coluna)
   const ETAPAS = [
@@ -110,11 +115,21 @@
       { label: 'Mediana (P50)', val: t.p50 == null ? '—' : f1(t.p50) + ' d',
         sub: t.max == null ? 'sem dados' : 'máximo ' + nf0.format(t.max) + ' d', ac: '#10b981' },
     ];
+    // Entregues sem implantação concluída (sinalização; não altera o lead time)
+    const rs = resumoDe(t);
+    const semImpl = rs.entregues - rs.concluidas;
+    cards.push({
+      label: '⚠ Entregues sem implantação concluída',
+      val: nf0.format(semImpl) + ' de ' + nf0.format(rs.entregues) + (rs.pct_concluidas == null ? '' : ' (' + nf0.format(100 - rs.pct_concluidas) + '%)'),
+      sub: rs.pendentes_producao + ' pendentes de produção · ' + rs.sem_fim_outros + ' em outros status · contados como entregues',
+      ac: semImpl > 0 ? COR_ALERTA : '#10b981', title: textoPendentes(rs),
+    });
     const grid = el('div', 'kpi-grid');
     cards.forEach(c => {
       const k = el('div', 'kpi'); k.style.setProperty('--ac', c.ac);
       const v = el('div', 'kpi-val', c.val);
       if (c.val.length > 8) v.style.fontSize = '1.1rem';   // valor textual (nome da etapa) não pode estourar o card
+      if (c.title) k.title = c.title;
       k.append(el('div', 'kpi-label', c.label), v, el('div', 'kpi-sub', c.sub));
       grid.appendChild(k);
     });
@@ -220,7 +235,7 @@
 
     card._draw = () => window.Charts.make('lt-chart', {
       type: 'bar',
-      data: { labels: cols.map(c => quebra(c.rotulo, 14)), datasets },
+      data: { labels: cols.map(c => { const q = quebra(c.rotulo, 14); if (marcaImplantacao(c.linha)) q.push('⚠ impl. pendente'); return q; }), datasets },
       options: {
         responsive: true, maintainAspectRatio: false,
         layout: { padding: { top: 26 } },
@@ -231,9 +246,13 @@
             callbacks: {
               title: items => cols[items[0].dataIndex].rotulo,
               label: ctx => {
-                const e = cols[ctx.dataIndex].linha[ETAPAS[ctx.datasetIndex].k];
-                return ctx.dataset.label + ': ' + f1(e.contribuicao) + ' d'
+                const k = ETAPAS[ctx.datasetIndex].k;
+                const e = cols[ctx.dataIndex].linha[k];
+                const linha = ctx.dataset.label + ': ' + f1(e.contribuicao) + ' d'
                   + (e.n > 0 ? ' · média nos itens que têm a etapa: ' + f1(e.media_nos_itens) + ' d (n=' + e.n + ')' : ' · nenhum item tem esta etapa');
+                if (k !== 'implantacao') return linha;
+                const r = resumoDe(cols[ctx.dataIndex].linha);
+                return [linha, 'concluída em ' + r.concluidas + ' de ' + r.entregues + ' itens (' + r.pendentes_producao + ' pendentes)'];
               },
               footer: items => {
                 const l = cols[items[0].dataIndex].linha;
@@ -290,20 +309,33 @@
   function tabelaPrincipal(d) {
     const { card, tb } = tabelaBase('Cycle time médio por etapas (dias úteis)',
       'Contribuição de cada etapa ao lead time médio por time, com lead time médio e número de itens', 640);
-    cabecalho(tb, [['Time', ''], ['Desenvolvimento', 'num'], ['Homologação', 'num'], ['Implantação', 'num'], ['Lead time médio', 'num'], ['Itens', 'num']]);
+    cabecalho(tb, [['Time', ''], ['Desenvolvimento', 'num'], ['Homologação', 'num'], ['Implantação', 'num'], ['Lead time médio', 'num'], ['Itens', 'num'], ['Implantação concluída', 'num']]);
+    tb.style.minWidth = '860px';
     const tbody = el('tbody');
     linhasDaTabela(d).forEach(r => {
-      if (r.grupo) { linhaGrupo(tbody, r.grupo, 6); return; }
+      if (r.grupo) { linhaGrupo(tbody, r.grupo, 7); return; }
       const tr = el('tr', r.media ? 'lt-media' : null);
       tr.appendChild(el('td', null, r.nome));
       ETAPAS.forEach(e => tr.appendChild(el('td', 'num', f1(r.l[e.k].contribuicao))));
       tr.appendChild(el('td', 'num lt-total', f1(r.l.lead_time_medio)));
       tr.appendChild(el('td', 'num', nf0.format(r.l.itens)));
+      const rs = resumoDe(r.l);
+      const td = el('td', 'num', rs.concluidas + ' de ' + rs.entregues);
+      if (rs.pendentes_producao > 0) {
+        const aviso = el('span', null, ' ⚠ ' + rs.pendentes_producao + ' pend.');
+        aviso.style.cssText = 'color:' + COR_ALERTA + ';font-weight:700;white-space:nowrap';
+        td.appendChild(aviso);
+        td.title = textoPendentes(rs);
+      }
+      tr.appendChild(td);
       tbody.appendChild(tr);
     });
     tb.appendChild(tbody);
     const nota = el('div', 'pr-sub', 'Cada etapa mostra a contribuição ao lead time médio (Σ dias da etapa ÷ itens do time); a soma das três etapas é o lead time médio. '
-      + 'Ideação fora da conta. A média da jornada é a média de todos os itens da jornada, não a média dos times.');
+      + 'Ideação fora da conta. A média da jornada é a média de todos os itens da jornada, não a média dos times. '
+      + '⚠ Implantação concluída: itens "Pendente de Produção" contam como entregues, mas ainda não têm fim de implantação; '
+      + 'a Implantação só soma as etapas que o item tem, então times com muitos pendentes aparecem com implantação subestimada e não são diretamente comparáveis '
+      + '(⚠ no eixo do gráfico = menos de 50% dos itens com implantação concluída).');
     nota.style.margin = '8px 4px 0';
     card.appendChild(nota);
     return card;

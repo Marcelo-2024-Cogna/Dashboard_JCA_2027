@@ -437,7 +437,11 @@ SELECT
          THEN NULL
          ELSE COALESCE(i.dias_desenvolvimento, 0) + COALESCE(i.dias_homologacao, 0) + COALESCE(i.dias_implantacao, 0)
     END AS lead_time_item,
-    (i.dias_desenvolvimento IS NOT NULL) + (i.dias_homologacao IS NOT NULL) + (i.dias_implantacao IS NOT NULL) AS qtd_etapas
+    (i.dias_desenvolvimento IS NOT NULL) + (i.dias_homologacao IS NOT NULL) + (i.dias_implantacao IS NOT NULL) AS qtd_etapas,
+    -- v1.5: sinalizacao de implantacao pendente (nao altera o calculo do lead time)
+    i.status,
+    i.inicio_implantacao,
+    i.fim_implantacao
 FROM vw_item i
 WHERE i.is_entrega_valor = 1
   AND i.entregue = 1;

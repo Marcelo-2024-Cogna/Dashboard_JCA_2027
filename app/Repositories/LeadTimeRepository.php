@@ -128,7 +128,7 @@ class LeadTimeRepository
     /**
      * Itens de valor entregues na janela, por projeto_key (inclui os sem etapa,
      * que são separados em estatisticas()).
-     * @return array<string,list<array{d:?int,h:?int,i:?int,lt:?int,qtd:int}>>
+     * @return array<string,list<array{d:?int,h:?int,i:?int,lt:?int,qtd:int,st:?string,fi:bool}>>
      */
     private function itens(string $descPi, array $sprints, array $keys): array
     {
@@ -136,7 +136,7 @@ class LeadTimeRepository
         $s = $this->in('s', $sprints, $par); $k = $this->in('k', $keys, $par);
         $st = $this->pdo->prepare(
             "SELECT projeto_key, dias_desenvolvimento AS d, dias_homologacao AS h, dias_implantacao AS i,
-                    lead_time_item AS lt, qtd_etapas AS qtd
+                    lead_time_item AS lt, qtd_etapas AS qtd, status AS st, fim_implantacao AS fi
                FROM vw_lead_time_item
               WHERE pi = :pi AND sprint_ref IN ($s) AND projeto_key IN ($k)"
         );
@@ -149,6 +149,8 @@ class LeadTimeRepository
                 'i' => $r['i'] === null ? null : (int)$r['i'],
                 'lt' => $r['lt'] === null ? null : (int)$r['lt'],
                 'qtd' => (int)$r['qtd'],
+                'st' => $r['st'],
+                'fi' => $r['fi'] !== null,
             ];
         }
         return $out;
@@ -169,6 +171,7 @@ class LeadTimeRepository
             }
         }
         $itens = count($lts);
+        $resumo = $this->implantacaoResumo($rows);
         $etapa = function (string $e) use ($soma, $n, $itens): array {
             return [
                 'contribuicao'    => $itens > 0 ? round($soma[$e] / $itens, 4) : null,
@@ -188,9 +191,38 @@ class LeadTimeRepository
             'desenvolvimento'  => $etapa('d'),
             'homologacao'      => $etapa('h'),
             'implantacao'      => $etapa('i'),
+            'implantacao_resumo' => $resumo,
             'lead_time_medio'  => $itens > 0 ? round(array_sum($lts) / $itens, 4) : null,
             'p50'              => $p50,
             'max'              => $itens > 0 ? (int)max($lts) : null,
+        ];
+    }
+
+    /**
+     * Sinalização de implantação pendente (NÃO altera nenhuma média de lead time).
+     * População = todos os itens de valor entregues do conjunto (inclui os sem etapa).
+     * concluída = tem fim_implantacao; pendente de produção = status 'Pendente de Produção'
+     * sem fim; sem_fim_outros = sem fim e outro status (distribuição em sem_fim_outros_por_status).
+     */
+    private function implantacaoResumo(array $rows): array
+    {
+        $entregues = count($rows);
+        $concl = 0; $pend = 0; $outros = 0; $porStatus = [];
+        foreach ($rows as $r) {
+            if ($r['fi']) { $concl++; continue; }
+            if ($r['st'] === 'Pendente de Produção') { $pend++; continue; }
+            $outros++;
+            $k = $r['st'] ?? '(vazio)';
+            $porStatus[$k] = ($porStatus[$k] ?? 0) + 1;
+        }
+        arsort($porStatus);
+        return [
+            'entregues'         => $entregues,
+            'concluidas'        => $concl,
+            'pendentes_producao' => $pend,
+            'sem_fim_outros'    => $outros,
+            'sem_fim_outros_por_status' => $porStatus === [] ? new \stdClass() : $porStatus,
+            'pct_concluidas'    => $entregues > 0 ? round($concl / $entregues * 100, 1) : null,
         ];
     }
 
