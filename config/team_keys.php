@@ -13,11 +13,9 @@
  * Validado com o usuário (de-para de conferência). Times sem match ficam null.
  * Atualizar a cada PI conforme a formação dos times muda.
  *
- * ⚠️ PENDENTE (jornada Ingresso): o DM do negócio Ingresso estava
- * reestruturando a planilha Velocity (projetos IN* vs JI*). O de-para da
- * Ingresso abaixo (Captar=INCA; Consultoria Educação=JICE; Customer Sucess=
- * JICS; Ecomm=JIEC; Backoffice de Ingresso=JIBK) está SUJEITO A CONFIRMAÇÃO
- * com esse DM. Ajustar via UPDATE em times.projeto_key quando confirmado.
+ * Jornada Ingresso: de-para confirmado pelo DM do Ingresso (prefixo IN*).
+ * No banco, os times que se dividiram (Backoffice, Ecomm) herdaram a
+ * velocidade do time original até a planilha Velocity ser atualizada.
  */
 return [
     // ── Bloco 1: match direto confirmado ──────────────────────────────────
@@ -67,20 +65,24 @@ return [
     // ── Jornada Pós Graduação (confirmado) ────────────────────────────────
     // (PGCM e PGEX já mapeados acima no bloco 2)
 
-    // ── PENDENTE DE CONFIRMAÇÃO (deixar null até o usuário informar) ───────
-    // Jornada Ingresso — só 'Captar'=INCA é óbvio; os demais nomes comerciais
-    // da Velocity não casam 1:1 com os keys técnicos da Baseline:
-    //   keys livres: INAP(Aplicativos de Captação), INBI(Backoffice de
-    //   Inscrição), INBO(Backoffice de Ofertas), INFU(Funis e Área do
-    //   Candidato), INPV(Portais e Vitrines).
-    // Jornada Ingresso migrou de prefixo IN*→JI* na PI 4/26 (nomes novos):
-    'Agents'                        => 'JIAG',
-    'Backoffice de Ingresso'        => 'JIBK',
-    'Consultoria Educação'          => 'JICE',
-    'Customer Sucess'               => 'JICS',
-    'Ecomm'                         => 'JIEC',
-    // (keys sem time na Velocity 4/26: INBO 'Backoffice de Ofertas',
-    //  JIAC 'Área do Candidato' — não usados por ora.)
+    // ── Jornada Ingresso — versão CONFIRMADA PELO DM do Ingresso ───────────
+    // Reestruturação: Backoffice e Ecomm foram divididos em 2 times cada;
+    // Agents e Customer Success deixaram de existir; Consultoria Educação
+    // virou Aplicativos de Captação. Prefixo IN*.
+    // Nomes NOVOS (para quando a planilha Velocity for atualizada):
+    'Aplicativos de Captação'       => 'INAP',
+    'Backoffice de Inscrição'       => 'INBI',
+    'Backoffice de Ofertas'         => 'INBO',
+    'Funis e Área do Candidato'     => 'INFU',
+    'Portais e Vitrines'            => 'INPV',
+    'Cursos Técnicos'               => 'INCT',   // novo; sem dados na Velocity ainda
+    // Nomes ANTIGOS ainda presentes na Velocity (mapeados p/ o time sucessor;
+    // Agents e Customer Sucess não existem mais → null):
+    'Consultoria Educação'          => 'INAP',
+    'Backoffice de Ingresso'        => 'INBI',
+    'Ecomm'                         => 'INFU',
+    'Agents'                        => null,
+    'Customer Sucess'               => null,
 
     // Alexandria e Maia eram times separados até a PI 3/26 (JAAL/JAMA);
     // na PI 4/26 viraram um time único Alexandria/Maia = JAAM.

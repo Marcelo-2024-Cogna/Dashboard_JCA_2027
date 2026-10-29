@@ -36,6 +36,12 @@ return [
 
     // ── Sprints da PI corrente ────────────────────────────────────────────
     // Todas as sprints do ciclo, na ordem cronológica.
+    // ⚠️ PENDÊNCIA (v1.5): estas sprints são SEM o prefixo "SP ". Os métodos
+    // JqlBuilder::build/forCurrentPi/forClosing geram Sprint in ("26.4.1").
+    // Decidimos (validação JQL) que o Jira usa o formato COM prefixo
+    // ("SP 26.4.1"). Ao reativar esses métodos para os relatórios de
+    // épicos/sustentação, prefixar "SP " aqui ou no build(). O runner da 1.5
+    // (forSelection) já recebe o nome completo "SP 26.4.1" por parâmetro.
     'sprints' => ['26.4.1', '26.4.2', '26.4.3', '26.4.4', '26.4.5', '26.4.6'],
 
     // ── Sprint de fechamento (análise de evolução) ────────────────────────
