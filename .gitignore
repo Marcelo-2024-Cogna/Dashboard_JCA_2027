@@ -5,3 +5,8 @@ config/db.php
 # Logs de execução (mantém apenas o diretório versionado).
 data/logs/*.log
 data/logs/*.log.*
+
+# Artefatos de execução da fila de extração (a fonte de verdade é a tabela
+# extracao_agendamento) e log do notificador em modo stub.
+data/agendamentos/ordem_*.json
+data/notificacoes.log
