@@ -16,7 +16,11 @@ use PDO;
  * valida contra o catálogo do BANCO (InvalidArgumentException → HTTP 400),
  * resolve a JANELA de sprints e agrega por time + total:
  *
+ *   committed           = SUM(baseline.story_point_estimate) dos itens de valor planejados p/ a janela
+ *   delivered_planned   = SUM(extração.story_points ATUAIS) desses itens hoje entregues
  *   previsibilidade_pct = delivered_planned / NULLIF(committed, 0) * 100
+ *   variacao_estimativa = delivered_planned − SPE da baseline dos mesmos itens entregues
+ *   baldes              = destino do committed (transbordo), ver destino()
  *
  * JANELA
  *   - sprint informada → exatamente essa sprint (mesmo aberta), origem 'filtro';
@@ -70,13 +74,18 @@ class PrevisibilidadeRepository
         }
 
         if ($ctx['pi'] !== null && $ctx['sprints'] !== [] && $times !== []) {
-            $agg = $this->agregar($ctx['pi']['desc_pi'], $ctx['sprints'], array_column($times, 'projeto_key'), true);
+            $keys = array_column($times, 'projeto_key');
+            $agg  = $this->agregar($ctx['pi']['desc_pi'], $ctx['sprints'], $keys, true);
+            $dest = $this->destino($ctx['pi']['desc_pi'], $ctx['sprints'], $keys);
             foreach ($times as $t) {
                 $r = $agg[$t['projeto_key']] ?? null;
                 $porTime[] = ['jornada' => $t['jornada'], 'time' => $t['time'], 'projeto_key' => $t['projeto_key'],
-                              'tem_baseline' => $t['tem_baseline']] + $this->linha($r);
+                              'tem_baseline' => $t['tem_baseline']]
+                           + $this->linha($r, $dest[$t['projeto_key']] ?? $this->destinoVazio());
             }
-            $total = $this->linha($this->agregar($ctx['pi']['desc_pi'], $ctx['sprints'], array_column($times, 'projeto_key'), false)['*'] ?? null);
+            $destTotal = $this->destinoVazio();
+            foreach ($dest as $d) $destTotal = $this->somarDestino($destTotal, $d);
+            $total = $this->linha($this->agregar($ctx['pi']['desc_pi'], $ctx['sprints'], $keys, false)['*'] ?? null, $destTotal);
 
             $semBaseline = array_filter($porTime, fn($x) => !$x['tem_baseline']);
             if ($semBaseline) {
@@ -265,28 +274,24 @@ class PrevisibilidadeRepository
             $phB2[] = ":bb$i"; $par[":bb$i"] = $s;
         }
         foreach (array_values($projetoKeys) as $i => $k)  { $phK[] = ":k$i"; $par[":k$i"] = $k; }
-        $inB1 = implode(',', $phB1);
-        $inB2 = implode(',', $phB2);
+        $fora = fn(string $in) => '(sprint_ref_baseline IS NULL OR sprint_ref_baseline NOT IN (' . $in . '))';
 
         // ESCOPO ADICIONADO (semântica v1.0): item da extração na janela que não está
         // na baseline JANELADA = fora da baseline (scope_add_sp) + presente na baseline
         // mas com sprint de baseline fora da janela (scope_realocado_sp).
         $sql = 'SELECT ' . ($porTime ? 'projeto_key' : "'*' AS projeto_key") . ',
-                       SUM(committed_sp)          AS committed,
-                       SUM(committed_spe)         AS committed_spe,
+                       SUM(committed_spe)         AS committed,
                        SUM(delivered_planned_sp)  AS delivered_planned,
-                       SUM(scope_add_sp)          AS scope_add_fora_baseline,
-                       SUM(scope_add_sp)
-                         + SUM(CASE WHEN sprint_ref_baseline IS NULL OR sprint_ref_baseline NOT IN (' . $inB1 . ')
-                                    THEN scope_realocado_sp ELSE 0 END) AS scope_add,
+                       SUM(variacao_estimativa)   AS variacao_estimativa,
+                       SUM(scope_add_sp)          AS scope_sem_baseline,
+                       SUM(CASE WHEN ' . $fora(implode(',', $phB1)) . ' THEN scope_realocado_sp ELSE 0 END) AS scope_outra_sprint,
                        SUM(delivered_total_sp)    AS delivered_total,
                        SUM(committed_itens)         AS i_committed,
                        SUM(delivered_planned_itens) AS i_delivered_planned,
-                       SUM(scope_add_itens)
-                         + SUM(CASE WHEN sprint_ref_baseline IS NULL OR sprint_ref_baseline NOT IN (' . $inB2 . ')
-                                    THEN scope_realocado_itens ELSE 0 END) AS i_scope_add,
+                       SUM(scope_add_itens)         AS i_scope_sem_baseline,
+                       SUM(CASE WHEN ' . $fora(implode(',', $phB2)) . ' THEN scope_realocado_itens ELSE 0 END) AS i_scope_outra_sprint,
                        SUM(delivered_total_itens)   AS i_delivered_total,
-                       ROUND(SUM(delivered_planned_sp) / NULLIF(SUM(committed_sp), 0) * 100, 1) AS previsibilidade_pct
+                       ROUND(SUM(delivered_planned_sp) / NULLIF(SUM(committed_spe), 0) * 100, 1) AS previsibilidade_pct
                   FROM vw_previsibilidade
                  WHERE pi = :pi
                    AND sprint_ref IN (' . implode(',', $phS) . ')
@@ -301,33 +306,144 @@ class PrevisibilidadeRepository
         return $out;
     }
 
-    /** Formata uma linha agregada (ou zeros quando não há linhas). */
-    private function linha(?array $r): array
+    public const BALDES = [
+        'entregue_na_janela', 'entregue_apos_janela', 'transbordo_aberto',
+        'nao_concluido_na_janela', 'devolvido_backlog', 'cancelado', 'fora_da_extracao',
+    ];
+
+    /** 'SP 26.4.2' → [26,4,2] (comparação por TUPLA, não por texto); NULL se fora do formato. */
+    private static function tupla(?string $ref): ?array
     {
-        if ($r === null) return $this->vazio();
+        if ($ref === null || !preg_match('/(\d+)\.(\d+)\.(\d+)/', $ref, $m)) return null;
+        return [(int)$m[1], (int)$m[2], (int)$m[3]];
+    }
+
+    /**
+     * DESTINO DO COMMITTED por time (projeto_key): classifica cada item planejado
+     * (baseline de valor, sprint_ref_baseline na janela) pela situação ATUAL na
+     * extração, em baldes mutuamente excludentes (soma dos SPE = committed):
+     *   fora_da_extracao → cancelado → (entregue: na janela | após a janela)
+     *   → (não entregue: backlog | transbordo aberto | não concluído na janela).
+     * "Após a janela" = tupla ano.pi.seq do sprint_ref atual > maior sprint da janela;
+     * sprint atual igual/anterior à maior da janela conta como "na janela" e item
+     * entregue sem sprint cai em entregue_na_janela. Também devolve o diagnóstico
+     * dos entregues com story_points NULL/0 e SPE preenchido na extração (sem fallback).
+     */
+    private function destino(string $descPi, array $sprints, array $projetoKeys): array
+    {
+        $maxJanela = null;
+        foreach ($sprints as $s) {
+            $t = self::tupla($s);
+            if ($t !== null && ($maxJanela === null || $t > $maxJanela)) $maxJanela = $t;
+        }
+        $phS = []; $phK = []; $par = [':pi' => $descPi];
+        foreach (array_values($sprints) as $i => $s) { $phS[] = ":s$i"; $par[":s$i"] = $s; }
+        foreach (array_values($projetoKeys) as $i => $k) { $phK[] = ":k$i"; $par[":k$i"] = $k; }
+        $st = $this->pdo->prepare(
+            'SELECT projeto_key, chave, spe_baseline, na_extracao, status_atual, sprint_ref_atual,
+                    sp_atual, spe_atual, entregue_atual, cancelado_atual
+               FROM vw_previsibilidade_item
+              WHERE pi = :pi AND sprint_ref_baseline IN (' . implode(',', $phS) . ')
+                AND projeto_key IN (' . implode(',', $phK) . ')'
+        );
+        $st->execute($par);
+
+        $out = [];
+        foreach ($st->fetchAll() as $r) {
+            $d = &$out[$r['projeto_key']];
+            $d ??= $this->destinoVazio();
+            $spe = (float)$r['spe_baseline'];
+            $atual = self::tupla($r['sprint_ref_atual']);
+            $posterior = $atual !== null && $maxJanela !== null && $atual > $maxJanela;
+
+            if (!(int)$r['na_extracao'])        $b = 'fora_da_extracao';
+            elseif ((int)$r['cancelado_atual']) $b = 'cancelado';
+            elseif ((int)$r['entregue_atual'])  $b = $posterior ? 'entregue_apos_janela' : 'entregue_na_janela';
+            elseif ($r['sprint_ref_atual'] === null) $b = 'devolvido_backlog';
+            elseif ($posterior)                 $b = 'transbordo_aberto';
+            else                                $b = 'nao_concluido_na_janela';
+
+            $d['baldes'][$b]['sp_baseline'] += $spe;
+            $d['baldes'][$b]['itens']++;
+            if ((int)$r['entregue_atual']) {
+                $d['baldes'][$b]['sp_atual'] += (float)$r['sp_atual'];
+                if (((float)$r['sp_atual']) == 0.0 && (float)$r['spe_atual'] > 0) {
+                    $d['diagnostico_sp_nulo']['itens']++;
+                    $d['diagnostico_sp_nulo']['spe_extracao'] += (float)$r['spe_atual'];
+                    $d['diagnostico_sp_nulo']['spe_baseline'] += $spe;
+                }
+            }
+            unset($d);
+        }
+        return $out;
+    }
+
+    private function destinoVazio(): array
+    {
+        $baldes = [];
+        foreach (self::BALDES as $b) $baldes[$b] = ['sp_baseline' => 0.0, 'itens' => 0, 'sp_atual' => 0.0];
+        return ['baldes' => $baldes, 'diagnostico_sp_nulo' => ['itens' => 0, 'spe_extracao' => 0.0, 'spe_baseline' => 0.0]];
+    }
+
+    private function somarDestino(array $a, array $b): array
+    {
+        foreach (self::BALDES as $k) {
+            foreach (['sp_baseline', 'itens', 'sp_atual'] as $f) $a['baldes'][$k][$f] += $b['baldes'][$k][$f];
+        }
+        foreach (['itens', 'spe_extracao', 'spe_baseline'] as $f) $a['diagnostico_sp_nulo'][$f] += $b['diagnostico_sp_nulo'][$f];
+        return $a;
+    }
+
+    /** Formata uma linha agregada (ou zeros quando não há linhas). */
+    private function linha(?array $r, ?array $dest = null): array
+    {
+        $dest ??= $this->destinoVazio();
+        $r2 = fn($v) => round((float)$v, 2);
+
+        $baldes = [];
+        foreach (self::BALDES as $k) {
+            $x = $dest['baldes'][$k];
+            $baldes[$k] = ['sp_baseline' => $r2($x['sp_baseline']), 'itens' => (int)$x['itens']];
+            if ($k === 'entregue_na_janela' || $k === 'entregue_apos_janela') $baldes[$k]['sp_atual'] = $r2($x['sp_atual']);
+        }
+        $committed = $r === null ? 0.0 : $r2($r['committed']);
+        $tSp    = $baldes['entregue_apos_janela']['sp_baseline'] + $baldes['transbordo_aberto']['sp_baseline'];
+        $tItens = $baldes['entregue_apos_janela']['itens'] + $baldes['transbordo_aberto']['itens'];
+        $dg = $dest['diagnostico_sp_nulo'];
+
         return [
-            'committed'           => round((float)$r['committed'], 2),
-            'committed_spe'       => round((float)$r['committed_spe'], 2),
-            'delivered_planned'   => round((float)$r['delivered_planned'], 2),
-            'previsibilidade_pct' => $r['previsibilidade_pct'] === null ? null : (float)$r['previsibilidade_pct'],
-            'scope_add'           => round((float)$r['scope_add'], 2),
-            'scope_add_fora_baseline' => round((float)$r['scope_add_fora_baseline'], 2),
-            'delivered_total'     => round((float)$r['delivered_total'], 2),
+            'committed'           => $committed,
+            'delivered_planned'   => $r === null ? 0.0 : $r2($r['delivered_planned']),
+            'previsibilidade_pct' => $r === null || $r['previsibilidade_pct'] === null ? null : (float)$r['previsibilidade_pct'],
+            'variacao_estimativa' => $r === null ? 0.0 : $r2($r['variacao_estimativa']),
+            'delivered_total'     => $r === null ? 0.0 : $r2($r['delivered_total']),
             'itens' => [
-                'committed'         => (int)$r['i_committed'],
-                'delivered_planned' => (int)$r['i_delivered_planned'],
-                'scope_add'         => (int)$r['i_scope_add'],
-                'delivered_total'   => (int)$r['i_delivered_total'],
+                'committed'         => $r === null ? 0 : (int)$r['i_committed'],
+                'delivered_planned' => $r === null ? 0 : (int)$r['i_delivered_planned'],
+                'delivered_total'   => $r === null ? 0 : (int)$r['i_delivered_total'],
+            ],
+            'baldes' => $baldes,
+            'transbordo' => [
+                'sp_baseline' => round($tSp, 2), 'itens' => $tItens,
+                'pct' => $committed > 0 ? round($tSp / $committed * 100, 1) : null,
+            ],
+            'escopo_adicionado' => $r === null
+                ? ['sp' => 0.0, 'itens' => 0, 'sem_baseline' => ['sp' => 0.0, 'itens' => 0], 'baseline_outra_sprint' => ['sp' => 0.0, 'itens' => 0]]
+                : [
+                    'sp'    => $r2($r['scope_sem_baseline'] + $r['scope_outra_sprint']),
+                    'itens' => (int)$r['i_scope_sem_baseline'] + (int)$r['i_scope_outra_sprint'],
+                    'sem_baseline'          => ['sp' => $r2($r['scope_sem_baseline']), 'itens' => (int)$r['i_scope_sem_baseline']],
+                    'baseline_outra_sprint' => ['sp' => $r2($r['scope_outra_sprint']), 'itens' => (int)$r['i_scope_outra_sprint']],
+                ],
+            // PONTO EM ABERTO (sem fallback aplicado): entregues do planejado com SP NULL/0 e SPE > 0 na extração.
+            'diagnostico_sp_nulo' => [
+                'itens' => (int)$dg['itens'], 'spe_extracao' => $r2($dg['spe_extracao']), 'spe_baseline' => $r2($dg['spe_baseline']),
             ],
         ];
     }
 
     private function vazio(): array
     {
-        return [
-            'committed' => 0.0, 'committed_spe' => 0.0, 'delivered_planned' => 0.0,
-            'previsibilidade_pct' => null, 'scope_add' => 0.0, 'scope_add_fora_baseline' => 0.0, 'delivered_total' => 0.0,
-            'itens' => ['committed' => 0, 'delivered_planned' => 0, 'scope_add' => 0, 'delivered_total' => 0],
-        ];
+        return $this->linha(null);
     }
 }

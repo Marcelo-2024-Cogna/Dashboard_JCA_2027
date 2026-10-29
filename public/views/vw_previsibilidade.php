@@ -2,7 +2,7 @@
 /**
  * vw_previsibilidade.php — Previsibilidade por times
  * ───────────────────────────────────────────────────
- * Previsibilidade = SP entregue do planejado / SP comprometido (baseline) × 100,
+ * Previsibilidade = SP atuais entregues do planejado / committed (SPE da baseline) × 100,
  * por time, na janela de sprints (fechadas, ou a sprint escolhida no filtro).
  * Meta: 80%. Dados: GET /graficos/previsibilidade (lê as views do banco).
  * Filtros do header (jornada/time/versao/sprint) controlam a página.
@@ -94,14 +94,31 @@
     return box;
   }
 
+  // Destino do committed: ordem, rótulo e cor (distintas sobre fundo escuro).
+  const BALDES = [
+    ['entregue_na_janela',     'Entregue na janela',      '#10b981'],
+    ['entregue_apos_janela',   'Entregue após a janela',  '#22d3ee'],
+    ['transbordo_aberto',      'Transbordo aberto',       '#f59e0b'],
+    ['nao_concluido_na_janela','Não concluído na janela', '#f43f5e'],
+    ['devolvido_backlog',      'Devolvido ao backlog',    '#a78bfa'],
+    ['cancelado',              'Cancelado',               '#94a3b8'],
+    ['fora_da_extracao',       'Fora da extração',        '#6366f1'],
+  ];
+  const fmtVar = v => (v == null ? '—' : (v > 0 ? '+' : '') + nf0.format(v));
+  const bal = (t, k) => ((t.baldes || {})[k]) || { sp_baseline: 0, itens: 0 };
+
   function kpis(d) {
     const meta = d.meta || META_PADRAO, t = d.total || {};
     const fx = faixa(t.previsibilidade_pct, meta);
+    const tr = t.transbordo || {}, ca = bal(t, 'cancelado'), ea = t.escopo_adicionado || {};
     const cards = [
       { label: 'Previsibilidade', val: fmtPct(t.previsibilidade_pct), sub: 'meta ' + meta + '% · entregue do planejado / committed', ac: fx.cor },
-      { label: 'Committed', val: fmtSp(t.committed), sub: 'SP da baseline na janela (' + ((t.itens || {}).committed || 0) + ' itens)', ac: '#6366f1' },
-      { label: 'Entregue do planejado', val: fmtSp(t.delivered_planned), sub: 'SP da baseline hoje entregues (' + ((t.itens || {}).delivered_planned || 0) + ' itens)', ac: '#10b981' },
-      { label: 'Escopo adicionado', val: fmtSp(t.scope_add), sub: 'SP fora da baseline na janela (' + ((t.itens || {}).scope_add || 0) + ' itens)', ac: '#22d3ee' },
+      { label: 'Committed (SPE da baseline)', val: fmtSp(t.committed), sub: 'SPE planejado para a janela (' + ((t.itens || {}).committed || 0) + ' itens)', ac: '#6366f1' },
+      { label: 'Entregue do planejado (SP atuais)', val: fmtSp(t.delivered_planned), sub: 'SP atuais dos itens planejados hoje entregues (' + ((t.itens || {}).delivered_planned || 0) + ' itens)', ac: '#10b981' },
+      { label: 'Transbordo', val: fmtSp(tr.sp_baseline) + (tr.pct == null ? '' : ' · ' + fmtPct(tr.pct)), sub: 'SPE replanejado para sprint futura: entregue após a janela + aberto (' + (tr.itens || 0) + ' itens)', ac: '#f59e0b' },
+      { label: 'Variação de estimativa', val: fmtVar(t.variacao_estimativa), sub: 'SP atuais − SPE da baseline nos itens entregues do planejado', ac: '#a78bfa' },
+      { label: 'Cancelado', val: fmtSp(ca.sp_baseline), sub: 'SPE da baseline cancelado (' + (ca.itens || 0) + ' itens)', ac: '#94a3b8' },
+      { label: 'Escopo adicionado', val: fmtSp(ea.sp), sub: 'SP atuais na janela fora da baseline janelada (' + (ea.itens || 0) + ' itens)', ac: '#22d3ee' },
     ];
     const grid = el('div', 'kpi-grid');
     cards.forEach(c => {
@@ -139,7 +156,13 @@
         meta.data.forEach((bar, i) => {
           const v = valores[i];
           const xBase = v == null ? scales.x.getPixelForValue(0) : bar.x;
-          ctx.fillText(v == null ? 'sem committed' : nf1.format(v) + '%', xBase + 8, bar.y);
+          const txt = v == null ? 'sem committed' : nf1.format(v) + '%';
+          // Caixa com fundo da superfície: a linha tracejada da meta não corta o rótulo.
+          const w = ctx.measureText(txt).width;
+          ctx.fillStyle = '#1a1d27';
+          ctx.fillRect(xBase + 4, bar.y - 9, w + 8, 18);
+          ctx.fillStyle = '#e2e8f0';
+          ctx.fillText(txt, xBase + 8, bar.y);
         });
         ctx.restore();
       },
@@ -205,6 +228,74 @@
     return card;
   }
 
+  // Barras empilhadas: destino do committed (SPE da baseline) por time.
+  function graficoTransbordo(d) {
+    const times = d.por_time || [];
+    const card = el('div', 'ccard');
+    card.style.marginTop = '18px';
+    const h = el('h3', null, 'Destino do committed (transbordo) ');
+    h.appendChild(el('span', 'badge', 'SPE da baseline por situação atual'));
+    card.appendChild(h);
+    const wrap = el('div', 'cwrap');
+    wrap.style.height = Math.max(260, 46 * times.length + 110) + 'px';
+    const cv = document.createElement('canvas');
+    cv.id = 'prev-destino';
+    cv.setAttribute('role', 'img');
+    cv.setAttribute('aria-label', 'Barras horizontais empilhadas com o destino do committed de cada time: entregue na janela, entregue após a janela, transbordo aberto, não concluído, backlog, cancelado e fora da extração.');
+    wrap.appendChild(cv);
+    card.appendChild(wrap);
+
+    const leg = el('div', 'prev-legenda');
+    BALDES.forEach(([, nome, cor]) => {
+      const s = el('span'); const i = el('i'); i.style.background = cor; s.append(i, nome); leg.appendChild(s);
+    });
+    card.appendChild(leg);
+
+    const totais = times.map(t => t.committed || 0);
+    const pluginTotal = {
+      id: 'totalCommitted',
+      afterDatasetsDraw(chart) {
+        const { ctx, scales } = chart, m = chart.getDatasetMeta(chart.data.datasets.length - 1);
+        ctx.save();
+        ctx.font = '600 12px Segoe UI, sans-serif'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#e2e8f0';
+        m.data.forEach((bar, i) => ctx.fillText(fmtSp(totais[i]) + ' SPE', scales.x.getPixelForValue(totais[i]) + 8, bar.y));
+        ctx.restore();
+      },
+    };
+    card._draw = () => window.Charts.make('prev-destino', {
+      type: 'bar',
+      data: {
+        labels: times.map(t => t.time),
+        datasets: BALDES.map(([k, nome, cor]) => ({
+          label: nome, data: times.map(t => bal(t, k).sp_baseline),
+          backgroundColor: cor, borderColor: '#1a1d27', borderWidth: 1, barThickness: 24,
+        })),
+      },
+      options: {
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        layout: { padding: { right: 80 } },
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: {
+            label: ctx => {
+              const t = times[ctx.dataIndex], k = BALDES[ctx.datasetIndex][0], b = bal(t, k);
+              let s = ctx.dataset.label + ': ' + fmtSp(b.sp_baseline) + ' SPE · ' + b.itens + ' itens';
+              if (b.sp_atual != null) s += ' · ' + fmtSp(b.sp_atual) + ' SP atuais';
+              return s;
+            },
+            footer: items => { const t = times[items[0].dataIndex]; return 'Committed: ' + fmtSp(t.committed) + ' SPE · ' + ((t.itens || {}).committed || 0) + ' itens'; },
+          } },
+        },
+        scales: {
+          x: { stacked: true, min: 0, ticks: { precision: 0 }, title: { display: true, text: 'SPE da baseline (committed)' } },
+          y: { stacked: true, grid: { display: false } },
+        },
+      },
+      plugins: [pluginTotal],
+    });
+    return card;
+  }
+
   function tabela(d) {
     const meta = d.meta || META_PADRAO;
     const card = el('div', 'ccard');
@@ -212,15 +303,28 @@
     card.appendChild(el('h3', null, 'Números por time'));
     const w = el('div', 'twrap');
     const tb = el('table', 'prev-tbl');
-    const cap = el('caption', null, 'Committed, entregue do planejado, previsibilidade e escopo adicionado por time, em Story Points');
+    const cap = el('caption', null, 'Committed em SPE da baseline, entregue do planejado em SP atuais, previsibilidade, variação de estimativa, transbordo, cancelado, escopo adicionado e entregue total por time');
     cap.style.cssText = 'position:absolute;left:-9999px';
     tb.appendChild(cap);
     const thead = el('thead'); const trh = el('tr');
-    [['Time', ''], ['Jornada', ''], ['Committed (SP)', 'num'], ['Entregue do planejado (SP)', 'num'], ['Previsibilidade', 'num'],
+    [['Time', ''], ['Jornada', ''], ['Committed (SPE)', 'num'], ['Entregue do planejado (SP atuais)', 'num'], ['Previsibilidade', 'num'],
+     ['Variação de estimativa (SP)', 'num'], ['Transbordo (SPE)', 'num'], ['Cancelado (SPE)', 'num'],
      ['Escopo adicionado (SP)', 'num'], ['Entregue total (SP)', 'num']].forEach(([t, c]) => {
       const th = el('th', c, t); th.scope = 'col'; trh.appendChild(th);
     });
     thead.appendChild(trh); tb.appendChild(thead);
+
+    const celulas = (tr, t) => {
+      tr.appendChild(el('td', 'num', fmtSp(t.committed)));
+      tr.appendChild(el('td', 'num', fmtSp(t.delivered_planned)));
+      tr.appendChild(el('td', 'num ' + faixa(t.previsibilidade_pct, meta).cls, fmtPct(t.previsibilidade_pct)));
+      tr.appendChild(el('td', 'num', fmtVar(t.variacao_estimativa)));
+      const tt = t.transbordo || {};
+      tr.appendChild(el('td', 'num', fmtSp(tt.sp_baseline) + (tt.pct == null ? '' : ' (' + fmtPct(tt.pct) + ')')));
+      tr.appendChild(el('td', 'num', fmtSp(bal(t, 'cancelado').sp_baseline)));
+      tr.appendChild(el('td', 'num', fmtSp((t.escopo_adicionado || {}).sp)));
+      tr.appendChild(el('td', 'num', fmtSp(t.delivered_total)));
+    };
 
     const tbody = el('tbody');
     (d.por_time || []).forEach(t => {
@@ -229,24 +333,15 @@
       if (!t.tem_baseline) tdT.title = 'Sem baseline importada para este time';
       tr.appendChild(tdT);
       tr.appendChild(el('td', null, t.jornada));
-      tr.appendChild(el('td', 'num', fmtSp(t.committed)));
-      tr.appendChild(el('td', 'num', fmtSp(t.delivered_planned)));
-      tr.appendChild(el('td', 'num ' + faixa(t.previsibilidade_pct, meta).cls, fmtPct(t.previsibilidade_pct)));
-      tr.appendChild(el('td', 'num', fmtSp(t.scope_add)));
-      tr.appendChild(el('td', 'num', fmtSp(t.delivered_total)));
+      celulas(tr, t);
       tbody.appendChild(tr);
     });
     tb.appendChild(tbody);
 
-    const t = d.total || {};
     const tf = el('tfoot'); const trf = el('tr');
     trf.appendChild(el('td', null, 'Total da seleção'));
     trf.appendChild(el('td', null, ''));
-    trf.appendChild(el('td', 'num', fmtSp(t.committed)));
-    trf.appendChild(el('td', 'num', fmtSp(t.delivered_planned)));
-    trf.appendChild(el('td', 'num ' + faixa(t.previsibilidade_pct, meta).cls, fmtPct(t.previsibilidade_pct)));
-    trf.appendChild(el('td', 'num', fmtSp(t.scope_add)));
-    trf.appendChild(el('td', 'num', fmtSp(t.delivered_total)));
+    celulas(trf, d.total || {});
     tf.appendChild(trf); tb.appendChild(tf);
 
     w.appendChild(tb); card.appendChild(w);
@@ -288,6 +383,9 @@
     const g = grafico(d);
     root.appendChild(g);
     g._draw();
+    const g2 = graficoTransbordo(d);
+    root.appendChild(g2);
+    g2._draw();
     root.appendChild(tabela(d));
   }
 

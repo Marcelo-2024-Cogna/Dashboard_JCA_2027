@@ -311,6 +311,8 @@ tbody td { padding: 8px 13px; }
 .prev-avisos { margin: 0 0 14px; padding-left: 18px; font-size: .78rem; color: var(--amber); }
 .prev-legenda { display: flex; flex-wrap: wrap; gap: 14px; font-size: .72rem; color: var(--muted); margin-top: 10px; }
 .prev-legenda i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+.prev-tbl { min-width: 980px; }
+.prev-tbl th.num { white-space: normal; min-width: 92px; }
 .prev-tbl td.num, .prev-tbl th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .prev-tbl tfoot td { padding: 9px 13px; font-weight: 700; border-top: 2px solid var(--border); background: var(--surface2); }
 .prev-pct-ok   { color: #34d399; font-weight: 600; }

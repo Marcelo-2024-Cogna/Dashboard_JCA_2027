@@ -350,15 +350,23 @@ WHERE b.ativo = 'S';
 --    Semantica replicada de MetricsService::consolidateWindowed (v1.0),
 --    restrita aos itens de ENTREGA DE VALOR:
 --
---    LADO BASELINE (sprint_ref = sprint de referencia do item NA BASELINE):
---      committed_sp         = SUM(story_points) dos itens de valor da baseline
---                             (v1.0 usa story_points; a SPE vai em committed_spe)
---      committed_spe        = SUM(story_point_estimate) (informativo)
---      delivered_planned_sp = SUM(story_points da baseline) dos itens que,
---                             pelo status ATUAL da extracao (casamento por
---                             chave e PI; se o item nao estiver na extracao,
---                             vale o status congelado da baseline - v1.0),
---                             estao em status ENTREGUE
+--    REGRA v1.5 (decisao do usuario), LADO BASELINE (sprint_ref = sprint de
+--    referencia do item NA BASELINE; "planejado para a janela" = item de valor
+--    da baseline cujo sprint_ref esta na janela):
+--      committed_spe        = SUM(baseline.story_point_estimate)   [COMMITTED]
+--      delivered_planned_sp = SUM(extracao.story_points ATUAIS) dos itens
+--                             planejados hoje em status ENTREGUE (casamento
+--                             por chave + mesma PI). Item ausente da extracao
+--                             NAO conta como entregue (nao ha como confirmar).
+--      delivered_planned_spe_base = SUM(baseline.story_point_estimate) desses
+--                             mesmos itens entregues (base da variacao)
+--      variacao_estimativa  = delivered_planned_sp - delivered_planned_spe_base
+--                             (o que mudou entre PI Planning e Sprint Planning)
+--      previsibilidade %    = delivered_planned_sp / NULLIF(committed_spe,0)*100
+--                             (calculada na consulta, apos somar a janela)
+--    O DESTINO do committed (baldes de transbordo) e por item e depende de
+--    comparar sprints por TUPLA ano.pi.seq (nao por texto): ver
+--    vw_previsibilidade_item (4c) e PrevisibilidadeRepository.
 --    LADO EXTRACAO (sprint_ref = sprint de referencia do item NA EXTRACAO;
 --                   sprint_ref_baseline = sprint_ref do MESMO item na
 --                   baseline, NULL se ele nao esta na baseline):
@@ -382,9 +390,10 @@ SELECT
     m.pi,
     m.sprint_ref,
     m.sprint_ref_baseline,
-    SUM(m.committed_sp)                AS committed_sp,
     SUM(m.committed_spe)               AS committed_spe,
     SUM(m.delivered_planned_sp)        AS delivered_planned_sp,
+    SUM(m.delivered_planned_spe_base)  AS delivered_planned_spe_base,
+    SUM(m.delivered_planned_sp) - SUM(m.delivered_planned_spe_base) AS variacao_estimativa,
     SUM(m.scope_add_sp)                AS scope_add_sp,
     SUM(m.scope_realocado_sp)          AS scope_realocado_sp,
     SUM(m.delivered_total_sp)          AS delivered_total_sp,
@@ -398,15 +407,16 @@ FROM (
     SELECT
         b.projeto_key, b.jornada, b.time, b.pi, b.sprint_ref,
         b.sprint_ref AS sprint_ref_baseline,
-        COALESCE(b.story_points, 0)          AS committed_sp,
         COALESCE(b.story_point_estimate, 0)  AS committed_spe,
-        CASE WHEN COALESCE(e.status, b.status) IN ('Aceito','Pendente de Produção','Em produção')
-             THEN COALESCE(b.story_points, 0) ELSE 0 END AS delivered_planned_sp,
+        CASE WHEN e.status IN ('Aceito','Pendente de Produção','Em produção')
+             THEN COALESCE(e.story_points, 0) ELSE 0 END AS delivered_planned_sp,
+        CASE WHEN e.status IN ('Aceito','Pendente de Produção','Em produção')
+             THEN COALESCE(b.story_point_estimate, 0) ELSE 0 END AS delivered_planned_spe_base,
         0 AS scope_add_sp,
         0 AS scope_realocado_sp,
         0 AS delivered_total_sp,
         1 AS committed_itens,
-        CASE WHEN COALESCE(e.status, b.status) IN ('Aceito','Pendente de Produção','Em produção')
+        CASE WHEN e.status IN ('Aceito','Pendente de Produção','Em produção')
              THEN 1 ELSE 0 END AS delivered_planned_itens,
         0 AS scope_add_itens,
         0 AS scope_realocado_itens,
@@ -424,9 +434,9 @@ FROM (
     SELECT
         i.projeto_key, i.jornada, i.time, i.pi, i.sprint_ref,
         bl.sprint_ref AS sprint_ref_baseline,
-        0 AS committed_sp,
         0 AS committed_spe,
         0 AS delivered_planned_sp,
+        0 AS delivered_planned_spe_base,
         CASE WHEN bl.chave IS NULL     THEN COALESCE(i.story_points, 0) ELSE 0 END AS scope_add_sp,
         CASE WHEN bl.chave IS NOT NULL THEN COALESCE(i.story_points, 0) ELSE 0 END AS scope_realocado_sp,
         CASE WHEN i.entregue = 1       THEN COALESCE(i.story_points, 0) ELSE 0 END AS delivered_total_sp,
@@ -443,6 +453,44 @@ FROM (
     WHERE i.is_entrega_valor = 1
 ) m
 GROUP BY m.projeto_key, m.jornada, m.time, m.pi, m.sprint_ref, m.sprint_ref_baseline;
+
+-- ---------------------------------------------------------------------
+-- 4c. vw_previsibilidade_item  (grao: 1 linha por item de VALOR da baseline)
+--    Base do DESTINO DO COMMITTED (transbordo). Cada item planejado traz a
+--    sua situacao ATUAL na extracao (casamento por chave + mesma PI):
+--      sprint_ref_baseline / spe_baseline : o planejado (PI Planning)
+--      na_extracao                        : 0 = item ausente da extracao da PI
+--      status_atual, sprint_ref_atual     : situacao hoje (NULL se ausente)
+--      sp_atual, spe_atual                : story_points / SPE atuais
+--      entregue_atual, cancelado_atual    : flags (status ENTREGUE / 'Cancelado')
+--    A janela e a classificacao em baldes (entregue na janela, entregue apos,
+--    transbordo aberto, nao concluido, backlog, cancelado, fora da extracao)
+--    sao feitas no repositorio: "posterior a janela" exige comparar a TUPLA
+--    ano.pi.seq de sprint_ref, nao o texto.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE VIEW vw_previsibilidade_item AS
+SELECT
+    b.chave,
+    b.projeto_key,
+    b.jornada,
+    b.time,
+    b.pi,
+    b.sprint_ref                 AS sprint_ref_baseline,
+    COALESCE(b.story_point_estimate, 0) AS spe_baseline,
+    CASE WHEN e.chave IS NULL THEN 0 ELSE 1 END AS na_extracao,
+    e.status                     AS status_atual,
+    e.sprint_ref                 AS sprint_ref_atual,
+    e.story_points               AS sp_atual,
+    e.story_point_estimate       AS spe_atual,
+    CASE WHEN e.status IN ('Aceito','Pendente de Produção','Em produção')
+         THEN 1 ELSE 0 END       AS entregue_atual,
+    CASE WHEN e.status = 'Cancelado' THEN 1 ELSE 0 END AS cancelado_atual
+FROM vw_baseline_item b
+LEFT JOIN extracao_jira e
+       ON e.chave = b.chave
+      AND e.ativo = 'S'
+      AND e.configuracao_pi_id = b.configuracao_pi_id
+WHERE b.is_entrega_valor = 1;
 
 -- ---------------------------------------------------------------------
 -- 5. vw_produtividade

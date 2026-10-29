@@ -57,8 +57,9 @@ class MetricsRepository
     /**
      * Previsibilidade no grão da vw_previsibilidade (v1.5): uma linha por
      * projeto_key, jornada, time, pi e sprint_ref (nomes do CATÁLOGO).
-     * Colunas: projeto_key, jornada, time, pi, sprint_ref, committed_sp,
-     *          committed_spe, delivered_planned_sp, scope_add_sp,
+     * Colunas: projeto_key, jornada, time, pi, sprint_ref, committed_spe,
+     *          delivered_planned_sp, delivered_planned_spe_base,
+     *          variacao_estimativa, scope_add_sp,
      *          delivered_total_sp e as contagens *_itens.
      * Filtros opcionais: jornada, time, PI (desc_pi) e lista de sprint_ref
      * (a janela). A agregação por time/total e o % ficam em
