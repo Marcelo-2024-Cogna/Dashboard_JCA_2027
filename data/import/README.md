@@ -303,3 +303,11 @@ Entrega de valor sem épico / Entrega de valor com épico — épico = `pai`):
   correções passam a ser feitas por `bin/ajustar_baseline.php` (motivo e
   responsável obrigatórios). Um trigger no banco registra também qualquer
   `UPDATE` direto (origem `sql_direto`).
+
+### Decisões (28/10/2026, fim do dia)
+- **Suporte = Sustentação** (tipo `Suporte` passa a compor o cinza do Planejado x
+  Realizado). Ainda a aplicar no código.
+- **Sprint Planning fiel (snapshot no início da sprint)**: fica como está por
+  enquanto.
+- **Lead Time**: só itens de valor entregues com sprint de referência na janela;
+  a **ideação não entra no gráfico nem na conta do lead time**.
