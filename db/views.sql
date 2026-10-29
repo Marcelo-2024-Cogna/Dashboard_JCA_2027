@@ -373,9 +373,12 @@ WHERE b.ativo = 'S';
 --    1 linha por item, das duas origens:
 --      origem 'baseline' : snapshot do PI Planning (vw_baseline_item)
 --      origem 'extracao' : estado atual (vw_item)
---    categoria: 'sustentacao' | 'valor_sem_epico' | 'valor_com_epico';
---    NULL para os demais tipos (Incidente, Bug, ...), que ficam fora das
---    barras mas continuam visiveis para o diagnostico.
+--    categoria: 'valor_sem_epico' | 'valor_com_epico' | NULL.
+--    A categoria 'sustentacao' NAO e definida aqui: os tipos que contam como
+--    sustentacao ficam em config/baseline.php ('plan_real_sustentacao_types')
+--    e o PlanejadoRealizadoRepository os aplica sobre tipo_item. Itens nao
+--    valor e nao sustentacao (Incidente, Bug, ...) ficam fora das barras
+--    mas continuam visiveis para o diagnostico.
 --    entregue: status ∈ {Aceito, Pendente de Producao, Em producao}
 --    (sempre 0 na origem baseline). A janela e a agregacao sao feitas no
 --    PlanejadoRealizadoRepository.
@@ -385,8 +388,7 @@ SELECT
     'baseline'           AS origem,
     b.chave, b.projeto_key, b.jornada, b.time, b.pi,
     b.tipo_item, b.status, b.sprint_ref,
-    CASE WHEN b.tipo_item = 'Sustentação' THEN 'sustentacao'
-         WHEN b.is_entrega_valor = 1 AND b.pai IS NOT NULL AND b.pai <> '' THEN 'valor_com_epico'
+    CASE WHEN b.is_entrega_valor = 1 AND b.pai IS NOT NULL AND b.pai <> '' THEN 'valor_com_epico'
          WHEN b.is_entrega_valor = 1 THEN 'valor_sem_epico'
          ELSE NULL END   AS categoria,
     b.story_point_estimate AS spe,
@@ -398,8 +400,7 @@ SELECT
     'extracao'           AS origem,
     i.chave, i.projeto_key, i.jornada, i.time, i.pi,
     i.tipo_item, i.status, i.sprint_ref,
-    CASE WHEN i.tipo_item = 'Sustentação' THEN 'sustentacao'
-         WHEN i.is_entrega_valor = 1 AND i.pai IS NOT NULL AND i.pai <> '' THEN 'valor_com_epico'
+    CASE WHEN i.is_entrega_valor = 1 AND i.pai IS NOT NULL AND i.pai <> '' THEN 'valor_com_epico'
          WHEN i.is_entrega_valor = 1 THEN 'valor_sem_epico'
          ELSE NULL END   AS categoria,
     i.story_point_estimate AS spe,

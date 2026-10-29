@@ -302,6 +302,13 @@
       tbody.appendChild(tr);
     });
     tb.appendChild(tbody);
+    const tipos = d.tipos_sustentacao || [];
+    if (tipos.length) {
+      const nota = el('div', 'pr-sub', 'Sustentação inclui os tipos: ' + tipos.join(', '));
+      nota.style.margin = '8px 4px 0';
+      nota.title = 'Regra definida em config/baseline.php (plan_real_sustentacao_types)';
+      card.appendChild(nota);
+    }
     return card;
   }
 
@@ -363,7 +370,7 @@
       ul.appendChild(el('li', null, 'Nenhum tipo de item ficou fora das barras.'));
     }
     const st = g.status_sustentacao || [];
-    ul.appendChild(el('li', null, 'Status dos itens de Sustentação: ' + (st.length
+    ul.appendChild(el('li', null, 'Status dos itens de Sustentação (' + ((d.tipos_sustentacao || []).join(' + ') || '—') + '): ' + (st.length
       ? st.map(s => s.status + ' (' + s.itens + ' itens, ' + (s.considerado_entregue ? 'conta como entregue' : 'não conta como entregue') + ')').join('; ')
       : 'nenhum item')));
     const sn = g.sustentacao_sp_nulo || {};

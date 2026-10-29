@@ -16,8 +16,10 @@ use PDO;
  *   sprint_planning  = extração (SPE) com sprint_ref atual na janela e status <> 'Cancelado'
  *   entregues        = extração (SP atuais) com sprint_ref atual na janela e status ENTREGUE
  *
- * Categorias das barras (vw_planejado_realizado_item.categoria):
- *   sustentacao | valor_sem_epico | valor_com_epico (+ capacidade, só na velocidade).
+ * Categorias das barras: valor_sem_epico/valor_com_epico vêm da view
+ *   vw_planejado_realizado_item; 'sustentacao' é aplicada AQUI a partir de
+ *   config/baseline.php → plan_real_sustentacao_types (Sustentação, Suporte).
+ *   (+ capacidade, só na velocidade).
  *   Outros tipos (Incidente, Bug, ...) ficam fora; são reportados em diagnosticos.
  *
  * Filtros, PI, JANELA e times vêm de PrevisibilidadeRepository::resolverContexto()
@@ -32,10 +34,29 @@ class PlanejadoRealizadoRepository
     private PDO $pdo;
     private PrevisibilidadeRepository $base;
 
-    public function __construct(?PrevisibilidadeRepository $base = null, ?PDO $pdo = null)
+    /** Tipos de item tratados como sustentação (config/baseline.php → plan_real_sustentacao_types). */
+    private array $tiposSustentacao;
+
+    public function __construct(?PrevisibilidadeRepository $base = null, ?PDO $pdo = null, ?array $tiposSustentacao = null)
     {
         $this->pdo  = $pdo ?? Database::pdo();
         $this->base = $base ?? new PrevisibilidadeRepository($this->pdo);
+        $this->tiposSustentacao = $tiposSustentacao
+            ?? ((require dirname(__DIR__, 2) . '/config/baseline.php')['plan_real_sustentacao_types'] ?? ['Sustentação']);
+    }
+
+    /**
+     * Fonte dos itens com a categoria final: tipos da config → 'sustentacao';
+     * demais mantêm a categoria da view (valor com/sem épico ou NULL).
+     * Usa o prefixo $p para placeholders únicos dentro da query.
+     */
+    private function fonte(string $p, array &$par): string
+    {
+        $in = $this->in($p, $this->tiposSustentacao ?: [''], $par);
+        return "(SELECT v.origem, v.chave, v.projeto_key, v.jornada, v.time, v.pi, v.tipo_item, v.status,
+                        v.sprint_ref, v.spe, v.sp, v.entregue,
+                        CASE WHEN v.tipo_item IN ($in) THEN 'sustentacao' ELSE v.categoria END AS categoria
+                   FROM vw_planejado_realizado_item v) x";
     }
 
     /**
@@ -100,6 +121,7 @@ class PlanejadoRealizadoRepository
                 'detalhe' => $ctx['sprints_detalhe'],
             ],
             'filtros'  => $ctx['filtros'],
+            'tipos_sustentacao' => array_values($this->tiposSustentacao),
             'barras'   => $total['barras'],
             'deltas'   => $total['deltas'],
             'por_time' => $porTime,
@@ -201,9 +223,10 @@ class PlanejadoRealizadoRepository
         foreach ($regras as $barra => [$where, $col]) {
             $par = [':pi' => $descPi];
             $s = $this->in('ps', $sprints, $par); $k = $this->in('pk', $keys, $par);
+            $fonte = $this->fonte('pt', $par);
             $st = $this->pdo->prepare(
                 "SELECT projeto_key, categoria, SUM(COALESCE($col, 0)) AS pts
-                   FROM vw_planejado_realizado_item
+                   FROM $fonte
                   WHERE pi = :pi AND $where AND categoria IS NOT NULL
                     AND sprint_ref IN ($s) AND projeto_key IN ($k)
                   GROUP BY projeto_key, categoria"
@@ -231,8 +254,9 @@ class PlanejadoRealizadoRepository
         $base = function (string $extra, string $cols, string $group) use ($descPi, $sprints, $keys) {
             $par = [':pi' => $descPi];
             $s = $this->in('ds', $sprints, $par); $k = $this->in('dk', $keys, $par);
+            $fonte = $this->fonte('dt', $par);
             $st = $this->pdo->prepare(
-                "SELECT $cols FROM vw_planejado_realizado_item
+                "SELECT $cols FROM $fonte
                   WHERE pi = :pi AND sprint_ref IN ($s) AND projeto_key IN ($k) AND $extra $group"
             );
             $st->execute($par);
@@ -253,7 +277,7 @@ class PlanejadoRealizadoRepository
             }
         }
 
-        // Status dos itens de Sustentação na extração (existe outro "concluído" além dos 3?)
+        // Status dos itens de Sustentação (Sustentação + Suporte) na extração (existe outro "concluído" além dos 3?)
         foreach ($base("origem = 'extracao' AND categoria = 'sustentacao'",
                        "COALESCE(status, '(sem status)') AS status, MAX(entregue) AS entregue, COUNT(*) AS itens, SUM(COALESCE(spe, 0)) AS spe, SUM(COALESCE(sp, 0)) AS sp",
                        'GROUP BY status ORDER BY itens DESC') as $r) {

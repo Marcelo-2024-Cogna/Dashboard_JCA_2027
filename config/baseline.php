@@ -47,6 +47,17 @@ $rules = [
         'Sustentação',
     ],
 
+    // ── Gráfico Planejado x Realizado: tipos tratados como SUSTENTAÇÃO ───
+    // FONTE ÚNICA dessa regra (decisão do usuário, 28/10/2026: Suporte =
+    // Sustentação). Lida por PlanejadoRealizadoRepository, que classifica a
+    // categoria 'sustentacao' (a view SQL não conhece esses tipos).
+    // Obs.: 'sustentacao_types' acima é outro conceito (legado v1.0, usado
+    // pelo CapacityController) e foi mantido intacto.
+    'plan_real_sustentacao_types' => [
+        'Sustentação',
+        'Suporte',
+    ],
+
     // Meta de previsibilidade (%) — linha de referência nos gráficos.
     'predictability_target' => 80,
 

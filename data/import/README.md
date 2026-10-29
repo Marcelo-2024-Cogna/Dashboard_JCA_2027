@@ -306,7 +306,7 @@ Entrega de valor sem épico / Entrega de valor com épico — épico = `pai`):
 
 ### Decisões (28/10/2026, fim do dia)
 - **Suporte = Sustentação** (tipo `Suporte` passa a compor o cinza do Planejado x
-  Realizado). Ainda a aplicar no código.
+  Realizado). Regra aplicada no código (`plan_real_sustentacao_types` em `config/baseline.php`).
 - **Sprint Planning fiel (snapshot no início da sprint)**: fica como está por
   enquanto.
 - **Lead Time**: só itens de valor entregues com sprint de referência na janela;

@@ -36,8 +36,8 @@
 ## 3. Regras de negócio fechadas
 - **Entrega de valor**: História, Enabler, Débito Técnico, Spike, Teste, Segurança.
   **Entregue**: Aceito, Pendente de Produção, Em produção. **Com épico**: `pai` preenchido.
-- **Sustentação** = tipo `Sustentação` **e `Suporte`** (decidido 28/10; AINDA NÃO
-  aplicado no código — ver pendência 1).
+- **Sustentação** = tipo `Sustentação` **e `Suporte`** (decidido 28/10; aplicado
+  no código — tipos em `config/baseline.php` → `plan_real_sustentacao_types`).
 - **Ideação negativa vale 1** (item criado depois do ponto de compromisso).
 - **Escopo da extração**: só `fixVersion ~ "*PI x/yy*"` (sem `OR Sprint`).
 - **Janela**: sprints de tipo `valor` da PI com data_fim < hoje; filtro de sprint
@@ -55,9 +55,9 @@
   enquanto; ideia futura.
 
 ## 4. PRÓXIMOS PASSOS (ordem sugerida para amanhã)
-1. **Aplicar "Suporte = Sustentação"** no Planejado x Realizado (categoria e
-   diagnóstico `tipos_fora_das_barras`) e reconferir os números (hoje Suporte
-   deixa 13 SPE no PI Planning e 16 SP no Sprint Planning/Entregues fora das barras).
+1. ~~**Aplicar "Suporte = Sustentação"**~~ **CONCLUÍDA**: categoria sustentação
+   (Sustentação + Suporte) lida de `plan_real_sustentacao_types` e aplicada no
+   `PlanejadoRealizadoRepository`; Suporte saiu de `tipos_fora_das_barras`.
 2. **Gráfico de Lead Time** (`Template_Proposta_Grafico_Lead_time.png`): cycle time
    médio por time, barras empilhadas **Desenvolvimento / Homologação / Implantação**
    + tabela com **Média da Jornada**. Só itens de valor ENTREGUES com sprint de
