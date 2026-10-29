@@ -323,6 +323,10 @@ tbody td { padding: 8px 13px; }
 /* ── Planejado x Realizado ── */
 .pr-sub { font-size: .68rem; color: var(--muted); font-weight: 400; }
 .prev-tbl tr.pr-delta td { color: var(--muted); font-style: italic; border-top: 1px dashed var(--border); }
+/* ── Lead Time ── */
+.prev-tbl tr.lt-media td { font-weight: 700; background: var(--surface2); border-top: 2px solid var(--border); }
+.prev-tbl tr.lt-grupo td { color: var(--muted); font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; padding-top: 14px; }
+.prev-tbl td.lt-total { font-weight: 700; }
 .pr-diag { font-size: .78rem; color: var(--muted); }
 .pr-diag summary { cursor: pointer; color: var(--text); }
 .pr-diag ul { margin: 8px 0 0; padding-left: 18px; line-height: 1.6; }

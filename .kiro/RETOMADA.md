@@ -58,13 +58,16 @@
 1. ~~**Aplicar "Suporte = Sustentação"**~~ **CONCLUÍDA**: categoria sustentação
    (Sustentação + Suporte) lida de `plan_real_sustentacao_types` e aplicada no
    `PlanejadoRealizadoRepository`; Suporte saiu de `tipos_fora_das_barras`.
-2. **Gráfico de Lead Time** (`Template_Proposta_Grafico_Lead_time.png`): cycle time
-   médio por time, barras empilhadas **Desenvolvimento / Homologação / Implantação**
-   + tabela com **Média da Jornada**. Só itens de valor ENTREGUES com sprint de
-   referência na janela; ideação negativa = 1; **ideação fora do gráfico e fora
-   da conta do lead time** (confirmar amanhã: lead time = Dev + Homolog + Implant,
-   a partir do início do fluxo). Refazer `vw_cycle_time` por `projeto_key`, com PI
-   e sprint; filtros do header.
+2. ~~**Gráfico de Lead Time**~~ **CONCLUÍDO** (`/metricas/cycle-time`, endpoint
+   `/graficos/lead-time`, view `vw_lead_time_item`, `LeadTimeRepository`). Definição:
+   itens de valor ENTREGUES com sprint_ref na janela; lead time do item = Dev + Hom
+   + Impl (soma das etapas que o item tem; **sem ideação**); segmentos da barra =
+   contribuição da etapa (Σ etapa ÷ nº de itens), logo somam o lead time médio;
+   média da jornada = média de todos os itens da jornada (não das médias dos times).
+   Também no endpoint: média nos itens que têm a etapa (n), P50 e máx. por time
+   (outliers: dado apenas, sem tratamento). A `vw_cycle_time` antiga segue
+   existindo (usada por `MetricsRepository::cycleTime()`). Detalhes em
+   `data/import/README.md`.
 3. **Gráfico de Produtividade** (`Template_Proposta_Grafico_Produtividade.png`):
    horas para entregar 1 ponto — barra da jornada + colunas por time ao longo das
    PIs. **Atenção**: `produtividade_historico` está VAZIA e as extrações de PIs

@@ -202,6 +202,10 @@ switch (true) {
         (new \App\Controllers\GraficosController(new \App\Repositories\PrevisibilidadeRepository()))->planReal();
         break;
 
+    case $uri === '/graficos/lead-time':
+        (new \App\Controllers\GraficosController(new \App\Repositories\PrevisibilidadeRepository()))->leadTime();
+        break;
+
     // ── Home → Visão Geral ───────────────────────────────────────────────
     case $uri === '/' || $uri === '/index.html':
         $makeViewController()->render('overview');

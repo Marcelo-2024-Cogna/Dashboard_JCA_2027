@@ -409,6 +409,40 @@ SELECT
 FROM vw_item i;
 
 -- ---------------------------------------------------------------------
+-- 4b3. vw_lead_time_item  (base do grafico LEAD TIME / cycle time medio por etapas)
+--    1 linha por item de ENTREGA DE VALOR ENTREGUE (vw_item: extracao ativa,
+--    time/jornada do CATALOGO por projeto_key; etapas ja em dias uteis vindas
+--    de vw_extracao_calculada). SEM ideacao (decisao do usuario).
+--      lead_time_item = dias_desenvolvimento + dias_homologacao + dias_implantacao,
+--                       somando apenas as etapas PRESENTES (NULL = ausente);
+--                       NULL quando o item nao tem nenhuma etapa (qtd_etapas = 0).
+--      qtd_etapas     = quantas das 3 etapas o item possui.
+--    A regra de lead_time de vw_extracao_calculada (com ideacao, planilha) NAO
+--    muda. A janela de sprints e a agregacao por time/jornada ficam no
+--    LeadTimeRepository (filtra sprint_ref IN janela).
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE VIEW vw_lead_time_item AS
+SELECT
+    i.projeto_key,
+    i.jornada,
+    i.time,
+    i.pi,
+    i.sprint_ref,
+    i.chave,
+    i.tipo_item,
+    i.dias_desenvolvimento,
+    i.dias_homologacao,
+    i.dias_implantacao,
+    CASE WHEN i.dias_desenvolvimento IS NULL AND i.dias_homologacao IS NULL AND i.dias_implantacao IS NULL
+         THEN NULL
+         ELSE COALESCE(i.dias_desenvolvimento, 0) + COALESCE(i.dias_homologacao, 0) + COALESCE(i.dias_implantacao, 0)
+    END AS lead_time_item,
+    (i.dias_desenvolvimento IS NOT NULL) + (i.dias_homologacao IS NOT NULL) + (i.dias_implantacao IS NOT NULL) AS qtd_etapas
+FROM vw_item i
+WHERE i.is_entrega_valor = 1
+  AND i.entregue = 1;
+
+-- ---------------------------------------------------------------------
 -- 4. vw_previsibilidade  (REDEFINIDA - grao: projeto_key, jornada, time,
 --    pi, sprint_ref [+ sprint_ref_baseline, ver abaixo]). A janela de
 --    sprints e a agregacao por time/jornada/total sao feitas na CONSULTA

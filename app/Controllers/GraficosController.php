@@ -2,6 +2,7 @@
 
 namespace App\Controllers;
 
+use App\Repositories\LeadTimeRepository;
 use App\Repositories\PlanejadoRealizadoRepository;
 use App\Repositories\PrevisibilidadeRepository;
 use App\Services\Logger;
@@ -15,9 +16,10 @@ use Throwable;
  *
  *   GET /graficos/previsibilidade?jornada=&time=&versao=&sprint=
  *   GET /graficos/plan-real?jornada=&time=&versao=&sprint=
+ *   GET /graficos/lead-time?jornada=&time=&versao=&sprint=
  *
- * Os próximos gráficos (Lead Time, Produtividade)
- * entram aqui como novos métodos, reaproveitando os mesmos filtros.
+ * O próximo gráfico (Produtividade)
+ * entra aqui como novos métodos, reaproveitando os mesmos filtros.
  *
  * Respostas: 200 JSON · 400 filtro inválido/inexistente · 405 método ·
  * 500 falha interna (detalhe só no log, canal 'dashboard').
@@ -28,11 +30,16 @@ class GraficosController
 
     private PrevisibilidadeRepository $previsibilidade;
     private PlanejadoRealizadoRepository $planejadoRealizado;
+    private LeadTimeRepository $leadTime;
 
-    public function __construct(PrevisibilidadeRepository $previsibilidade, ?PlanejadoRealizadoRepository $planejadoRealizado = null)
-    {
+    public function __construct(
+        PrevisibilidadeRepository $previsibilidade,
+        ?PlanejadoRealizadoRepository $planejadoRealizado = null,
+        ?LeadTimeRepository $leadTime = null
+    ) {
         $this->previsibilidade    = $previsibilidade;
         $this->planejadoRealizado = $planejadoRealizado ?? new PlanejadoRealizadoRepository($previsibilidade);
+        $this->leadTime           = $leadTime ?? new LeadTimeRepository($previsibilidade);
     }
 
     // ── GET /graficos/plan-real ──────────────────────────────────────────
@@ -54,6 +61,28 @@ class GraficosController
         } catch (Throwable $e) {
             Logger::exception(Logger::CANAL_DASHBOARD, 'GET /graficos/plan-real: exceção', $e, ['query' => $_GET]);
             $this->respond(500, ['success' => false, 'erro' => 'Falha ao calcular o Planejado x Realizado.']);
+        }
+    }
+
+    // ── GET /graficos/lead-time ──────────────────────────────────────────
+    public function leadTime(): void
+    {
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
+            header('Allow: GET');
+            $this->respond(405, ['erro' => 'Use o método GET.']);
+            return;
+        }
+        try {
+            $filtros = $this->lerFiltros();
+            $this->respond(200, ['success' => true] + $this->leadTime->consultar($filtros));
+        } catch (InvalidArgumentException $e) {
+            Logger::warning(Logger::CANAL_DASHBOARD, 'GET /graficos/lead-time → 400: ' . $e->getMessage(), [
+                'query' => $_GET,
+            ]);
+            $this->respond(400, ['success' => false, 'erro' => $e->getMessage()]);
+        } catch (Throwable $e) {
+            Logger::exception(Logger::CANAL_DASHBOARD, 'GET /graficos/lead-time: exceção', $e, ['query' => $_GET]);
+            $this->respond(500, ['success' => false, 'erro' => 'Falha ao calcular o Lead Time.']);
         }
     }
 

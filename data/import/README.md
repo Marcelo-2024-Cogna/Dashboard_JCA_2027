@@ -311,3 +311,30 @@ Entrega de valor sem épico / Entrega de valor com épico — épico = `pai`):
   enquanto.
 - **Lead Time**: só itens de valor entregues com sprint de referência na janela;
   a **ideação não entra no gráfico nem na conta do lead time**.
+
+### Lead Time (cycle time médio por etapas) — definição implementada (29/10/2026)
+Página `/metricas/cycle-time`, endpoint `GET /graficos/lead-time`, view
+`vw_lead_time_item` (a regra de `lead_time` de `vw_extracao_calculada`, com
+ideação, não mudou: segue para os relatórios legados e a conferência).
+- **População**: itens de entrega de valor (História, Enabler, Débito Técnico,
+  Spike, Teste, Segurança) **entregues** (Aceito, Pendente de Produção, Em produção)
+  da extração (ativo, PI escolhida) com `sprint_ref` atual na **janela** (mesma
+  da Previsibilidade: sprints de valor fechadas ou a sprint do filtro).
+  Sustentação, Suporte, Incidente, Solicitação, Bug, Liderança e Epic ficam fora
+  (contados em `diagnosticos.itens_fora_por_tipo`).
+- **Etapas** (dias úteis, de `vw_extracao_calculada`): Desenvolvimento,
+  Homologação, Implantação; qualquer uma pode ser vazia. **Sem ideação.**
+- **Lead time do item** = soma das etapas que ele TEM. Item sem nenhuma etapa
+  fica fora das médias (`itens_sem_etapa`).
+- **Média do time** = média do lead time dos itens do time. **Média da jornada**
+  = média sobre TODOS os itens da jornada (não a média das médias dos times).
+- **Segmentos da barra = contribuição** da etapa = Σ etapa (vazio = 0) ÷ nº de
+  itens do time; Dev + Hom + Impl = lead time médio. Informação adicional:
+  `media_nos_itens` (Σ etapa ÷ itens que têm a etapa, `n`) — o modo da planilha
+  (tabela dinâmica ignora células vazias), além de P50 (mediana) e máximo do
+  lead time por time, só como dado para avaliar outliers (sem tratamento).
+- **Planilha** (`Cycle Time (Novo)`): tabela dinâmica sobre toda a aba de extração
+  (todas as sprints da aba, só História/Enabler/Débito Técnico entregues, com
+  ideação). Diferenças para o nosso gráfico: inclui ideação, restringe tipos,
+  não filtra janela e é um snapshot. `Lead Time (Novo)` é só um exemplo com
+  números fixos (SQUAD A..H), sem fórmula sobre a extração.
