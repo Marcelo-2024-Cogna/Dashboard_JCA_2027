@@ -169,6 +169,32 @@ CREATE TABLE IF NOT EXISTS baseline (
         FOREIGN KEY (configuracao_pi_id) REFERENCES configuracao_pi (id_versao_corrigida)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 7b. baseline_ajuste -------------------------------------------------
+-- TRILHA DE AUDITORIA da baseline (snapshot imutável por PI). Cada linha é um
+-- campo alterado em um item. Alimentada pelo trigger trg_baseline_audit_upd
+-- (db/triggers.sql) e pelo caminho formal (App\Services\BaselineAjusteService).
+-- Sem FK em baseline_id/configuracao_pi_id: o histórico deve sobreviver a
+-- reimportação (--substituir) e exclusão da baseline. Nunca apagar linhas.
+--   origem: 'formal' (motivo+responsável) | 'sql_direto' (detectado pelo
+--           trigger) | 'regularizado' (UPDATE anterior à trilha, registrado depois)
+CREATE TABLE IF NOT EXISTS baseline_ajuste (
+    id_ajuste            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    baseline_id          BIGINT UNSIGNED NULL,
+    configuracao_pi_id   INT UNSIGNED NULL,
+    chave                VARCHAR(50) NULL,
+    campo                VARCHAR(40) NULL,
+    valor_anterior       TEXT NULL,
+    valor_novo           TEXT NULL,
+    motivo               VARCHAR(500) NULL,
+    usuario              VARCHAR(100) NULL,
+    origem               VARCHAR(20) NOT NULL,
+    criado_em            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id_ajuste),
+    KEY idx_baseline_ajuste_chave (chave),
+    KEY idx_baseline_ajuste_pi_chave (configuracao_pi_id, chave),
+    KEY idx_baseline_ajuste_criado_em (criado_em)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- 8. extracao_agendamento ---------------------------------------------
 CREATE TABLE IF NOT EXISTS extracao_agendamento (
     id_agendamento   BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,

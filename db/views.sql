@@ -493,6 +493,34 @@ LEFT JOIN extracao_jira e
 WHERE b.is_entrega_valor = 1;
 
 -- ---------------------------------------------------------------------
+-- 4d. vw_baseline_ajuste  (trilha de auditoria da baseline, p/ tela futura)
+--    baseline_ajuste enriquecida com a PI (desc_pi) e o CATALOGO (time e
+--    jornada por projeto_key = prefixo da chave). LEFT JOIN: a trilha nunca
+--    perde linhas, mesmo se o item/time sair do catalogo ou da baseline.
+--    origem: 'formal' | 'sql_direto' | 'regularizado'.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE VIEW vw_baseline_ajuste AS
+SELECT
+    a.id_ajuste,
+    p.desc_pi                              AS pi,
+    a.chave,
+    SUBSTRING_INDEX(a.chave, '-', 1)       AS projeto_key,
+    t.nome                                 AS time,
+    j.nome                                 AS jornada,
+    a.campo,
+    a.valor_anterior,
+    a.valor_novo,
+    a.motivo,
+    a.usuario,
+    a.origem,
+    a.criado_em
+FROM baseline_ajuste a
+LEFT JOIN configuracao_pi p ON p.id_versao_corrigida = a.configuracao_pi_id
+LEFT JOIN times t           ON t.projeto_key = SUBSTRING_INDEX(a.chave, '-', 1)
+                           AND t.ativo = 'S'
+LEFT JOIN jornada j         ON j.id_jornada = t.jornada_id;
+
+-- ---------------------------------------------------------------------
 -- 5. vw_produtividade
 --    Por time, ao vivo da extracao_jira (itens de valor ENTREGUES):
 --      horas_gastas    = SUM(soma_tempo_gasto)/3600

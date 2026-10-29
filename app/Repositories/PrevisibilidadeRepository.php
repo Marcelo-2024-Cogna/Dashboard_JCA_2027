@@ -91,6 +91,10 @@ class PrevisibilidadeRepository
             if ($semBaseline) {
                 $avisos[] = 'Sem baseline importada para: ' . implode(', ', array_column($semBaseline, 'time')) . '.';
             }
+            $ajustados = $this->itensAjustados((int)$ctx['pi']['id'], $ctx['pi']['desc_pi'], $ctx['sprints'], $keys);
+            if ($ajustados > 0) {
+                $avisos[] = $ajustados . ' item(ns) da baseline desta seleção foram ajustados após a carga (ver trilha de auditoria).';
+            }
             if ($total['committed'] == 0) {
                 $avisos[] = 'Sem itens comprometidos (baseline) na janela para a seleção; a previsibilidade não pode ser calculada.';
             }
@@ -304,6 +308,29 @@ class PrevisibilidadeRepository
             if ($r['projeto_key'] !== null) $out[$r['projeto_key']] = $r;
         }
         return $out;
+    }
+
+    /**
+     * Transparência: quantos itens de VALOR da baseline planejados para a janela
+     * (mesmo universo do committed) têm registro na trilha baseline_ajuste
+     * (qualquer origem: formal, sql_direto ou regularizado). Casamento por PI + chave.
+     * Não altera nenhum número da previsibilidade; só alimenta o campo 'avisos'.
+     */
+    private function itensAjustados(int $piId, string $descPi, array $sprints, array $projetoKeys): int
+    {
+        $phS = []; $phK = []; $par = [':pi' => $descPi, ':pid' => $piId];
+        foreach (array_values($sprints) as $i => $s) { $phS[] = ":s$i"; $par[":s$i"] = $s; }
+        foreach (array_values($projetoKeys) as $i => $k) { $phK[] = ":k$i"; $par[":k$i"] = $k; }
+        $st = $this->pdo->prepare(
+            'SELECT COUNT(DISTINCT v.chave)
+               FROM vw_previsibilidade_item v
+              WHERE v.pi = :pi
+                AND v.sprint_ref_baseline IN (' . implode(',', $phS) . ')
+                AND v.projeto_key IN (' . implode(',', $phK) . ')
+                AND EXISTS (SELECT 1 FROM baseline_ajuste a WHERE a.configuracao_pi_id = :pid AND a.chave = v.chave)'
+        );
+        $st->execute($par);
+        return (int)$st->fetchColumn();
     }
 
     public const BALDES = [

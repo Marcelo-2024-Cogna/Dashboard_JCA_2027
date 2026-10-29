@@ -49,6 +49,77 @@ sem alterar nada** (exit 3). Com `--substituir`, apaga as linhas da PI e
 recarrega na mesma transação (não duplica). Falha na carga = rollback + ERROR
 no log (exit 4). Exit 1 = parâmetros/arquivo/PI; 2 = cabeçalho divergente.
 
+## Ajuste de baseline (trilha de auditoria)
+
+A baseline é um **snapshot imutável por PI**: depois da carga, o valor de um
+item só muda por um **ajuste formal**, com **motivo** (mínimo 10 caracteres) e
+**responsável** obrigatórios. Toda alteração fica em `baseline_ajuste`
+(nunca é apagada), visível na view `vw_baseline_ajuste`.
+
+### CLI — `bin/ajustar_baseline.php`
+
+```
+# ajustar (campos: story_point_estimate, story_points, sprint, status, tipo_item, pai)
+php bin/ajustar_baseline.php --pi="PI 4/26" --chave=APAP-12467 --campo=story_point_estimate \
+    --valor=5 --motivo="Estimativa corrigida após refinamento" --usuario=marcelo.doliveira
+
+# listar a trilha (filtros opcionais)
+php bin/ajustar_baseline.php --listar
+php bin/ajustar_baseline.php --listar --pi="PI 4/26" --chave=SGGS-18004 --origem=regularizado
+
+# reverter: reaplica o valor anterior como NOVO ajuste formal (o histórico permanece)
+php bin/ajustar_baseline.php --reverter=17 --motivo="Ajuste feito por engano" --usuario=marcelo.doliveira
+```
+
+Valores numéricos devem ser ≥ 0; o valor precisa diferir do atual (senão: "sem
+alteração", exit 0). Ajustar `sprint` recalcula `sprint_ref` no mesmo UPDATE.
+Exit: 0 ok · 1 uso incorreto · 2 falha de validação · 4 falha de execução (rollback).
+O serviço (`App\Services\BaselineAjusteService`) faz tudo numa transação e
+**desfaz o ajuste se a trilha não for gravada** (trigger ausente).
+
+### O que o trigger registra — `db/triggers.sql`
+
+`trg_baseline_audit_upd` (AFTER UPDATE em `baseline`) grava **uma linha por
+coluna alterada** entre: `story_point_estimate`, `story_points`, `sprint`,
+`sprint_ref`, `tipo_item`, `status`, `pai`, `projeto`, `ativo`.
+
+| origem | quando | motivo / usuário |
+|---|---|---|
+| `formal` | via serviço/CLI (variáveis de sessão `@ajuste_motivo`/`@ajuste_usuario`) | informados |
+| `sql_direto` | qualquer outro `UPDATE` (cliente SQL, script) | motivo vazio; usuário = `USER()` do MySQL |
+| `regularizado` | UPDATE anterior ao trigger, registrado depois (`bin/regularizar_ajustes_baseline.php`) | informados no script |
+
+**UPDATE direto é DETECTADO, não bloqueado.** `DELETE`/`INSERT` não são
+auditados (reimportação com `--substituir` é um evento da carga, no log
+`importacao`). A previsibilidade exibe o aviso "N item(ns) da baseline desta
+seleção foram ajustados após a carga" quando algum item planejado para a
+janela tem registro na trilha (os números não mudam).
+
+### Regularização dos ajustes feitos antes da trilha
+
+`php bin/regularizar_ajustes_baseline.php [--dry-run]` compara o JSON de
+auditoria da carga (valor anterior) com a baseline atual e insere as
+diferenças como `regularizado`. Idempotente (não duplica PI+chave+campo) e
+**não altera `baseline`** (confere um hash antes/depois). Hoje: 10 campos em 8
+itens do SGGS (UPDATE direto de 28/10/2026 ~21:12).
+
+### Aplicação em produção (CentOS) — conta privilegiada
+
+Com `log_bin` ligado, criar trigger exige `SUPER` (ou
+`log_bin_trust_function_creators=1`) além de `TRIGGER`; o usuário de aplicação
+(`metricas_jca`) recebe erro 1419. O **DBA aplica `db/triggers.sql` com uma conta
+privilegiada**, depois de `db/schema.sql`:
+
+```
+mysql -u <conta_privilegiada> -p metricas_agil < db/triggers.sql
+```
+
+O app **não recebe `TRIGGER`** (não precisa em runtime; sem ele não consegue
+remover a auditoria). O trigger usa `DEFINER` da conta que o criou: ela deve
+existir no servidor. Reaplicar o arquivo é seguro (`DROP TRIGGER IF EXISTS`).
+Scripts que atualizam `baseline` (ex.: `bin/backfill_sprint_ref.php`) passam a
+gerar linhas `sql_direto` quando alteram valores.
+
 ## Conferência planilha x banco — `bin/conferir_planilha.php` (implementado)
 
 Somente leitura. Compara a aba `Extração Jira - Itens` da planilha *Template
@@ -179,3 +250,56 @@ existir no catálogo; divergência vai para `data/logs/importacao.log`).
 - **Baseline: projetos sem time no catálogo** (hoje DFCR, DFOC, DFFA, JAES,
   JACM, JASA, PGBS, VGFE) são rejeitados e reportados; cadastrar os times na
   Velocity/`config/team_keys.php` e rodar `--substituir`.
+
+### Regras acordadas (28/10/2026)
+- **Ideação negativa** (item criado depois do ponto de compromisso): vale **1**.
+  A planilha mostra o valor negativo; a divergência é esperada.
+- **Escopo da extração**: somente `fixVersion ~ "*PI x/yy*"` (sem `OR Sprint`).
+  Carry-over de PI anterior e itens sem versão ficam de fora; revisitar no
+  relatório de Sustentação (pausado). Evita duplicar o mesmo item em duas PIs.
+
+### Planejado: modal de VALIDAÇÃO + importação (antes da PI 1/27)
+Tela (Painel) para subir Baseline e Velocity, rodar a validação (dry-run) e só
+então confirmar a carga. Validação **síncrona**; carga com confirmação explícita.
+Checagens: nomes de jornadas e de times (Velocity x Baseline x catálogo),
+`projeto_key` órfão nos dois lados, PIs e sprints existentes no calendário,
+fixVersions inesperadas e valores negativos. Relatório separa **bloqueios** de
+**avisos**. Upload: validar extensão/tipo/tamanho, nome aleatório, log de
+auditoria em `importacao.log`; baseline continua imutável por padrão.
+Depende dos importadores da aba Apoio e da Velocity (ainda não implementados).
+
+### Previsibilidade e Planejado x Realizado — definições (28/10/2026)
+**Previsibilidade** (itens de VALOR, sprints FECHADAS ou a sprint filtrada):
+- Denominador (committed) = **Story Point Estimate da baseline** dos itens
+  planejados para as sprints da janela (sprint_ref da baseline).
+- Numerador = **Story Points atuais** (extração) desses mesmos itens que hoje
+  estão em status entregue (Aceito, Pendente de Produção, Em produção).
+- A diferença estimate x story points mostra o que mudou entre PI Planning e
+  Sprint Planning.
+- **Transbordo** é mostrado explicitamente: item planejado para a sprint da
+  janela que hoje está em sprint posterior (entregue depois ou ainda aberto),
+  devolvido ao backlog, cancelado ou fora da extração. Escopo adicionado =
+  itens da janela que não estavam na baseline.
+
+**Planejado x Realizado** (4 barras, cada uma dividida em Sustentação /
+Entrega de valor sem épico / Entrega de valor com épico — épico = `pai`):
+1. **Velocidade** = Sustentação (média da PI passada) + Capacidade
+   (velocity − sustentação), somadas nas sprints da janela.
+2. **PI Planning** = o que foi comprometido na baseline (Story Point Estimate).
+3. **Sprint Planning** = PI Planning ± novas histórias e cancelamentos
+   durante as sprints (estado atual da extração nas sprints da janela).
+4. **Entregues** = pontos entregues no review.
+
+### Decisões (28/10/2026, noite)
+- **Previsibilidade: sem fallback ao Story Point Estimate.** Se o Story Points
+  atual de um item entregue estiver vazio, ele conta 0 no numerador (o
+  diagnóstico `diagnostico_sp_nulo` continua visível na tela/API).
+- **Ajustes manuais na baseline (fase de testes)**: 10 campos em 8 itens do SGGS
+  foram editados por `UPDATE` direto em 28/10 ~21:12 (por marcelo.doliveira).
+  Ficam mantidos por enquanto; serão regularizados na trilha de auditoria.
+  Quando houver o modal de importação, a base será **zerada e reimportada**
+  para uma carga fiel às planilhas.
+- **Ajuste de baseline com trilha de auditoria**: a baseline é imutável por PI;
+  correções passam a ser feitas por `bin/ajustar_baseline.php` (motivo e
+  responsável obrigatórios). Um trigger no banco registra também qualquer
+  `UPDATE` direto (origem `sql_direto`).
