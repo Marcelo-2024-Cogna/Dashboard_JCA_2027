@@ -338,3 +338,20 @@ ideação, não mudou: segue para os relatórios legados e a conferência).
   ideação). Diferenças para o nosso gráfico: inclui ideação, restringe tipos,
   não filtra janela e é um snapshot. `Lead Time (Novo)` é só um exemplo com
   números fixos (SQUAD A..H), sem fórmula sobre a extração.
+
+### Produtividade por PI (29/10/2026)
+- **Definição (horas para entregar 1 ponto)**, por time e PI: itens de VALOR
+  ENTREGUES da PI (`extracao_jira.configuracao_pi_id`);
+  `produtividade = Σ(soma_tempo_gasto)/3600 ÷ Σ(story_points)`. Sem fallback para
+  o estimate quando o SP está vazio (`itens_sp_nulo` fica visível na view).
+- **PI corrente** = ao vivo (`vw_produtividade_pi`); **PIs fechadas** = consolidadas
+  em `produtividade_historico` por `bin/consolidar_produtividade.php --pi="PI 1/26"`
+  (idempotente; recusa a PI corrente sem `--forcar`; `--dry-run`).
+- Para ter histórico é preciso extrair a PI passada antes (runner CLI com
+  `--pi="PI x/yy"`); a mesma chave pode aparecer em duas PIs (ver cuidado de JOIN).
+
+### Lead Time: implantação pendente (29/10/2026)
+Itens "Pendente de Produção" contam como entregues, mas muitos ainda não têm fim de
+implantação; o lead time soma só as etapas que o item tem. A tela sinaliza
+"Implantação concluída x de n" (⚠ quando pendente). Times com muitos pendentes
+aparecem com a Implantação subestimada e não são diretamente comparáveis.

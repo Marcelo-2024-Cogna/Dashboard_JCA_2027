@@ -263,6 +263,7 @@ CREATE TABLE IF NOT EXISTS produtividade_historico (
     data_consolidacao    DATETIME NULL,
     ativo                CHAR(1) NOT NULL DEFAULT 'S',
     PRIMARY KEY (id_produtividade),
+    UNIQUE KEY uq_produtividade_historico_time_pi (times_id, configuracao_pi_id),
     KEY idx_produtividade_historico_times_id (times_id),
     KEY idx_produtividade_historico_configuracao_pi_id (configuracao_pi_id),
     CONSTRAINT fk_produtividade_historico_times
@@ -270,6 +271,17 @@ CREATE TABLE IF NOT EXISTS produtividade_historico (
     CONSTRAINT fk_produtividade_historico_configuracao_pi
         FOREIGN KEY (configuracao_pi_id) REFERENCES configuracao_pi (id_versao_corrigida)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 10b. Migração idempotente (v1.5): chave lógica time + PI (bin/consolidar_produtividade.php).
+SET @idx := (SELECT COUNT(*) FROM information_schema.STATISTICS
+              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'produtividade_historico'
+                AND INDEX_NAME = 'uq_produtividade_historico_time_pi');
+SET @sql := IF(@idx = 0,
+    'ALTER TABLE produtividade_historico ADD UNIQUE KEY uq_produtividade_historico_time_pi (times_id, configuracao_pi_id)',
+    'SELECT 1');
+PREPARE stmt_mig FROM @sql;
+EXECUTE stmt_mig;
+DEALLOCATE PREPARE stmt_mig;
 
 -- 11. sustentacao_historico -------------------------------------------
 -- Histórico de pontos de sustentação por time, PI e sprint. Fonte: coluna

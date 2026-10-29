@@ -47,7 +47,7 @@ foreach (array_slice($argv, 1) as $a) {
 }
 function uso(string $msg): never
 {
-    fwrite(STDERR, "ERRO: $msg\n\nUso: php bin/conferir_planilha.php --projetos=SGGU,SGSE [--planilha=ARQ.xlsx] [--aba=NOME] [--sprints=26.4.1,26.4.2]\n");
+    fwrite(STDERR, "ERRO: $msg\n\nUso: php bin/conferir_planilha.php --projetos=SGGU,SGSE [--planilha=ARQ.xlsx] [--aba=NOME] [--sprints=26.4.1,26.4.2] [--pi=\"PI 4/26\"]\n");
     exit(1);
 }
 
@@ -188,17 +188,25 @@ foreach ($rows as $n => $r) {
 // ── 2. Lê o banco (somente SELECT) ──────────────────────────────────────────
 $pdo = Database::pdo();
 $in  = implode(',', array_fill(0, count($projetos), '?'));
+// extracao_jira guarda VARIAS PIs e a mesma chave pode existir em mais de uma (item com 2 fixVersions):
+// o mapa por chave precisa ser restrito a UMA PI (--pi=; padrão = PI corrente, a que contém hoje).
+$piAlvo = trim((string)($opt['pi'] ?? ''));
+if ($piAlvo === '') {
+    $piAlvo = (string)$pdo->query("SELECT desc_pi FROM configuracao_pi WHERE ativo = 'S'
+                                    ORDER BY (CURDATE() BETWEEN data_ini AND data_fim) DESC, data_fim DESC LIMIT 1")->fetchColumn();
+}
 $st  = $pdo->prepare("SELECT v.*, p.desc_pi FROM vw_extracao_calculada v
-                      LEFT JOIN configuracao_pi p ON p.id_versao_corrigida = v.configuracao_pi_id
+                      JOIN configuracao_pi p ON p.id_versao_corrigida = v.configuracao_pi_id AND p.desc_pi = ?
                       WHERE SUBSTRING_INDEX(v.chave, '-', 1) IN ($in)");
-$st->execute($projetos);
+$st->execute(array_merge([$piAlvo], $projetos));
 $dbTodos = [];   // prefixo => [chave => linha]  (ativo='S', sem filtro de sprint)
 foreach ($st->fetchAll() as $r) $dbTodos[prefixo($r['chave'])][$r['chave']] = $r;
 
 // Chaves inativas (ativo<>'S') — só para explicar "só na planilha".
-$st = $pdo->prepare("SELECT chave, ativo FROM extracao_jira
-                     WHERE ativo <> 'S' AND SUBSTRING_INDEX(chave, '-', 1) IN ($in)");
-$st->execute($projetos);
+$st = $pdo->prepare("SELECT e.chave, e.ativo FROM extracao_jira e
+                     JOIN configuracao_pi p ON p.id_versao_corrigida = e.configuracao_pi_id AND p.desc_pi = ?
+                     WHERE e.ativo <> 'S' AND SUBSTRING_INDEX(e.chave, '-', 1) IN ($in)");
+$st->execute(array_merge([$piAlvo], $projetos));
 $dbInativos = [];
 foreach ($st->fetchAll() as $r) $dbInativos[$r['chave']] = $r['ativo'];
 

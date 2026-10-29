@@ -20,8 +20,16 @@
 - **Extração Jira → MySQL**: `ExtractionService`, `bin/extract_runner.php`,
   fila (`/extracao/catalogo|agendar|fila`), `bin/queue_worker.php` (cron),
   modal "Extrair do Jira" no header, e-mail em modo STUB.
-- **Dados hoje (PI 4/26)**: `extracao_jira` 1374 itens (Secretaria: SGGU, SGSE,
-  SGGS, SGTB) · `baseline` 3807 · `baseline_ajuste` 10 (regularizados).
+- **Dados hoje**: `extracao_jira` 8665 itens da Secretaria (SGGU, SGSE, SGGS, SGTB)
+  em 4 PIs — PI 1/26 2624 · PI 2/26 2317 · PI 3/26 2350 · PI 4/26 1374 ·
+  `baseline` 3807 (só PI 4/26; telas de Previsibilidade das PIs passadas avisam
+  "sem baseline") · `baseline_ajuste` 10 (regularizados) ·
+  `produtividade_historico` 11.
+- **CUIDADO com chaves repetidas entre PIs**: um item com duas fixVersions existe
+  em 2 linhas de `extracao_jira` (hoje 7 chaves). Todo JOIN/mapa por `chave` deve
+  incluir a PI (`configuracao_pi_id`) — já ajustado em `bin/conferir_planilha.php`
+  (`--pi=`, padrão = PI corrente) e nas views de PI; `vw_cycle_time` e
+  `vw_produtividade` (ANTIGAS, páginas legadas) foram restritas à PI corrente.
 - **Importação**: `bin/import_baseline.php` (imutável por PI), `bin/seed_catalogo.php`,
   `bin/seed_sustentacao.php`, `bin/backfill_sprint_ref.php`.
 - **Conferência**: `bin/conferir_planilha.php` (planilha x banco, relatório em
@@ -68,11 +76,24 @@
    (outliers: dado apenas, sem tratamento). A `vw_cycle_time` antiga segue
    existindo (usada por `MetricsRepository::cycleTime()`). Detalhes em
    `data/import/README.md`.
-3. **Gráfico de Produtividade** (`Template_Proposta_Grafico_Produtividade.png`):
-   horas para entregar 1 ponto — barra da jornada + colunas por time ao longo das
-   PIs. **Atenção**: `produtividade_historico` está VAZIA e as extrações de PIs
-   passadas não existem no banco; definir a fonte do histórico (planilha Velocity,
-   aba 2026_Produtividade / pivot) e criar o carregamento.
+   **Implantação pendente (29/10)**: o endpoint traz `implantacao_resumo` e a página
+   mostra "Implantação concluída x de n ⚠ N pend." + card; números do lead time
+   inalterados. Na janela padrão: 17 de 77 itens têm fim de implantação; dos 60
+   restantes, 37 são "Pendente de Produção" e 23 são "Aceito" (sem a data
+   preenchida — possível ajuste de qualidade de dado no Jira).
+3. **Gráfico de Produtividade** (`Template_Proposta_Grafico_Produtividade.png`) —
+   **PRÓXIMO**. Horas para entregar 1 ponto: barra da jornada + colunas por time
+   ao longo das PIs (1/26, 2/26, 3/26 do histórico; 4/26 AO VIVO). Dados prontos:
+   `extracao_jira` tem PIs 1/26–4/26 da Secretaria; view `vw_produtividade_pi`
+   (ao vivo, por time x PI); `produtividade_historico` tem 11 linhas (PIs 1/26–3/26,
+   gravadas por `bin/consolidar_produtividade.php --pi="PI x/yy"`; recusa a PI
+   corrente sem `--forcar`; `--dry-run` disponível). Definição: Σ horas gastas ÷
+   Σ story points dos itens de VALOR ENTREGUES da PI; sem fallback para estimate.
+   Resultado (h/ponto): PI 1/26 SGSE 4,80 · SGGU 6,41 · SGGS 6,01 (SGTB não existia);
+   PI 2/26 SGTB 6,17 · SGSE 6,63 · SGGU 6,29 · SGGS 7,09; PI 3/26 SGTB 6,50 ·
+   SGSE 6,95 · SGGU 6,63 · SGGS 6,52 — coerente com o template (5–7). Decidir:
+   média da jornada ponderada (Σh/Σpts) ou simples; e se a produtividade média da
+   PI passada alimenta `times_composicao.media_produtividade_pi` da PI seguinte.
 4. Ajustes visuais da Previsibilidade: 7º card quebra de linha; coluna "Jornada"
    redundante nas tabelas quando há uma só jornada.
 

@@ -185,6 +185,12 @@ SELECT
     COUNT(*)                          AS qtd_itens
 FROM vw_extracao_calculada c
 WHERE c.is_entrega_valor = 1
+  -- v1.5: so a PI CORRENTE (extracao_jira passou a guardar varias PIs; antes so havia a corrente)
+  AND c.configuracao_pi_id = (
+      SELECT cp.id_versao_corrigida FROM configuracao_pi cp
+       WHERE cp.ativo = 'S'
+       ORDER BY (CURDATE() BETWEEN cp.data_ini AND cp.data_fim) DESC, cp.data_fim DESC
+       LIMIT 1)
 GROUP BY
     TRIM(SUBSTRING_INDEX(SUBSTRING_INDEX(c.projeto, ']', 1), '[', -1)),
     TRIM(SUBSTRING_INDEX(c.projeto, '] ', -1));
@@ -643,9 +649,43 @@ FROM extracao_jira e
 WHERE e.ativo = 'S'
   AND e.status IN ('Aceito','Pendente de Produção','Em produção')
   AND e.tipo_item IN ('História','Enabler','Débito Técnico','Spike','Teste','Segurança')
+  -- v1.5: so a PI CORRENTE (extracao_jira passou a guardar varias PIs; antes so havia a corrente).
+  -- O historico por PI vem de vw_produtividade_pi / produtividade_historico.
+  AND e.configuracao_pi_id = (
+      SELECT cp.id_versao_corrigida FROM configuracao_pi cp
+       WHERE cp.ativo = 'S'
+       ORDER BY (CURDATE() BETWEEN cp.data_ini AND cp.data_fim) DESC, cp.data_fim DESC
+       LIMIT 1)
 GROUP BY
     TRIM(SUBSTRING_INDEX(SUBSTRING_INDEX(e.projeto, ']', 1), '[', -1)),
     TRIM(SUBSTRING_INDEX(e.projeto, '] ', -1));
+
+-- ---------------------------------------------------------------------
+-- 5b. vw_produtividade_pi  (PRODUTIVIDADE POR PI = horas para entregar 1 ponto)
+--    Grao: time (projeto_key, CATALOGO) x PI, AO VIVO de extracao_jira.
+--    Itens de ENTREGA DE VALOR ENTREGUES (vw_item) da PI (configuracao_pi_id):
+--      horas_gastas     = SUM(soma_tempo_gasto)/3600
+--      pontos_entregues = SUM(story_points)   (SP nulo NAO usa estimate; entra em itens_sp_nulo)
+--      produtividade    = horas_gastas / NULLIF(pontos_entregues, 0)
+--    Fonte do consolidado bin/consolidar_produtividade.php -> produtividade_historico.
+--    NAO substitui vw_produtividade (antiga, PI corrente por nome do Jira).
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE VIEW vw_produtividade_pi AS
+SELECT
+    i.projeto_key,
+    i.jornada,
+    i.time,
+    i.pi,
+    i.configuracao_pi_id,
+    SUM(i.soma_tempo_gasto) / 3600                                       AS horas_gastas,
+    SUM(i.story_points)                                                  AS pontos_entregues,
+    (SUM(i.soma_tempo_gasto) / 3600) / NULLIF(SUM(i.story_points), 0)    AS produtividade,
+    COUNT(*)                                                             AS itens,
+    SUM(i.story_points IS NULL)                                          AS itens_sp_nulo
+FROM vw_item i
+WHERE i.is_entrega_valor = 1
+  AND i.entregue = 1
+GROUP BY i.projeto_key, i.jornada, i.time, i.pi, i.configuracao_pi_id;
 
 -- ---------------------------------------------------------------------
 -- 6. vw_config_sprints_por_pi
