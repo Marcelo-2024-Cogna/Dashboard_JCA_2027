@@ -2,6 +2,7 @@
 
 namespace App\Controllers;
 
+use App\Repositories\PlanejadoRealizadoRepository;
 use App\Repositories\PrevisibilidadeRepository;
 use App\Services\Logger;
 use InvalidArgumentException;
@@ -13,8 +14,9 @@ use Throwable;
  * Endpoints JSON dos gráficos (v1.5), lendo do BANCO (views).
  *
  *   GET /graficos/previsibilidade?jornada=&time=&versao=&sprint=
+ *   GET /graficos/plan-real?jornada=&time=&versao=&sprint=
  *
- * Os próximos gráficos (Planejado x Realizado, Lead Time, Produtividade)
+ * Os próximos gráficos (Lead Time, Produtividade)
  * entram aqui como novos métodos, reaproveitando os mesmos filtros.
  *
  * Respostas: 200 JSON · 400 filtro inválido/inexistente · 405 método ·
@@ -25,10 +27,34 @@ class GraficosController
     private const FILTROS = ['jornada', 'time', 'versao', 'sprint'];
 
     private PrevisibilidadeRepository $previsibilidade;
+    private PlanejadoRealizadoRepository $planejadoRealizado;
 
-    public function __construct(PrevisibilidadeRepository $previsibilidade)
+    public function __construct(PrevisibilidadeRepository $previsibilidade, ?PlanejadoRealizadoRepository $planejadoRealizado = null)
     {
-        $this->previsibilidade = $previsibilidade;
+        $this->previsibilidade    = $previsibilidade;
+        $this->planejadoRealizado = $planejadoRealizado ?? new PlanejadoRealizadoRepository($previsibilidade);
+    }
+
+    // ── GET /graficos/plan-real ──────────────────────────────────────────
+    public function planReal(): void
+    {
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
+            header('Allow: GET');
+            $this->respond(405, ['erro' => 'Use o método GET.']);
+            return;
+        }
+        try {
+            $filtros = $this->lerFiltros();
+            $this->respond(200, ['success' => true] + $this->planejadoRealizado->consultar($filtros));
+        } catch (InvalidArgumentException $e) {
+            Logger::warning(Logger::CANAL_DASHBOARD, 'GET /graficos/plan-real → 400: ' . $e->getMessage(), [
+                'query' => $_GET,
+            ]);
+            $this->respond(400, ['success' => false, 'erro' => $e->getMessage()]);
+        } catch (Throwable $e) {
+            Logger::exception(Logger::CANAL_DASHBOARD, 'GET /graficos/plan-real: exceção', $e, ['query' => $_GET]);
+            $this->respond(500, ['success' => false, 'erro' => 'Falha ao calcular o Planejado x Realizado.']);
+        }
     }
 
     // ── GET /graficos/previsibilidade ────────────────────────────────────

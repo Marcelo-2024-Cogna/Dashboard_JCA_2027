@@ -1,270 +1,418 @@
 <?php
 /**
- * vw_plan_real.php — Planejado x Realizado + Previsibilidade + Scope Creep
- * ──────────────────────────────────────────────────────────────────────────
- * Visão-destaque. Consome GET /metrics (committed/delivered/previsibilidade/
- * scope creep). Se não houver baseline capturada, exibe call-to-action.
+ * vw_plan_real.php — Planejado x Realizado
+ * ─────────────────────────────────────────
+ * 4 barras horizontais empilhadas (de cima para baixo):
+ *   Velocidade | PI Planning | Sprint Planning  → grupo "Planejado"
+ *   Entregues                                    → grupo "Entregue"
+ * Segmentos: Sustentação · Entrega de Valor (sem épico) · Entrega de Valor (com épico)
+ * · Capacidade (só na Velocidade). Dados: GET /graficos/plan-real (lê as views do banco).
+ * Os filtros do header (jornada/time/versao/sprint) controlam a página; a janela
+ * de sprints é a mesma da Previsibilidade.
  *
- * Fórmula da Previsibilidade:
- *   (Story Points entregues / Story Point Estimate na Baseline) × 100
+ * Todo texto vindo do servidor entra no DOM via textContent (sem innerHTML).
  */
 ?>
 <div id="pr-root">
-  <div class="loading"><div class="spinner"></div> Carregando métricas...</div>
+  <div class="loading"><div class="spinner"></div> Carregando planejado x realizado...</div>
 </div>
-
-<!-- Template do estado "sem baseline" -->
-<template id="pr-empty-tpl">
-  <div class="alert alert-info">
-    <strong>Baseline ainda não capturada para esta PI.</strong><br>
-    O Planejado x Realizado compara a <em>baseline congelada</em> (início da PI)
-    com o estado atual. Capture a baseline para habilitar os indicadores.
-    <div style="margin-top:12px">
-      <button class="btn btn-primary" id="pr-capture">📸 Capturar Baseline da PI</button>
-      <span id="pr-capture-msg" style="font-size:.78rem;color:var(--muted);margin-left:10px"></span>
-    </div>
-  </div>
-</template>
-
-<!-- Template dos gráficos (estado com dados) -->
-<template id="pr-charts-tpl">
-  <div class="stitle">Resumo da PI</div>
-  <div class="kpi-grid" id="pr-kpis"></div>
-
-  <div class="stitle" style="margin-top:22px">Planejado x Realizado</div>
-  <div class="cgrid c1">
-    <div class="ccard">
-      <h3>Committed vs Delivered <span class="badge">Story Points por time</span></h3>
-      <div class="cwrap tall"><canvas id="pr-cvd"></canvas></div>
-    </div>
-  </div>
-
-  <div class="stitle" style="margin-top:22px">Taxa de Previsibilidade</div>
-  <div class="cgrid c2">
-    <div class="ccard">
-      <h3>Previsibilidade por Time <span class="badge">% · meta 80%</span></h3>
-      <div class="cwrap tall"><canvas id="pr-prev"></canvas></div>
-    </div>
-    <div class="ccard">
-      <h3>Previsibilidade Geral <span class="badge">média da PI</span></h3>
-      <div class="cwrap tall"><canvas id="pr-gauge"></canvas></div>
-    </div>
-  </div>
-
-  <div class="stitle" style="margin-top:22px">Mudança de Escopo (Scope Creep)</div>
-  <div class="cgrid c2">
-    <div class="ccard">
-      <h3>Adicionado vs Removido <span class="badge">SP pós-baseline</span></h3>
-      <div class="cwrap tall"><canvas id="pr-scope"></canvas></div>
-    </div>
-    <div class="ccard">
-      <h3>Variação de Escopo <span class="badge">% sobre o committed</span></h3>
-      <div class="cwrap tall"><canvas id="pr-variation"></canvas></div>
-    </div>
-  </div>
-</template>
 
 <script>
 (function () {
-  const { Api, Util, BASE } = window.App || {};
   const root = document.getElementById('pr-root');
-  if (!Api) { root.innerHTML = '<div class="alert alert-error">Erro: núcleo JS não carregou.</div>'; return; }
+  const BASE = window.APP_BASE || '';
 
-  const DONE = ['Aceito','Em produção','Pendente de Produção'];
+  // ── helpers de DOM (sempre textContent) ───────────────────────────────
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  const nf = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 });
+  const nf1 = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  const fmt = v => (v == null ? '—' : nf.format(v));
+  const fmtD = v => (v == null ? '—' : (v > 0 ? '+' : v < 0 ? '−' : '') + nf.format(Math.abs(v)));
+
+  // Barras e segmentos (ordem = ordem de empilhamento e da legenda)
+  const BARRAS = [
+    ['velocidade',      'Velocidade'],
+    ['pi_planning',     'PI Planning'],
+    ['sprint_planning', 'Sprint Planning'],
+    ['entregues',       'Entregues'],
+  ];
+  const SEGS = [
+    { k: 'sustentacao',     nome: 'Sustentação',                 cor: '#cbd5e1', txt: '#1e293b' },
+    { k: 'valor_sem_epico', nome: 'Entrega de Valor (sem épico)', cor: '#9333ea', txt: '#fbbf24' },
+    { k: 'valor_com_epico', nome: 'Entrega de Valor (com épico)', cor: '#8f9bff', txt: '#ffffff' },
+    { k: 'capacidade',      nome: 'Capacidade',                  cor: '#0072c6', txt: '#ffffff' },
+  ];
+
+  function mensagem(tipo, titulo, texto) {
+    root.textContent = '';
+    const a = el('div', 'alert alert-' + tipo);
+    a.setAttribute('role', tipo === 'error' ? 'alert' : 'status');
+    a.appendChild(el('strong', null, titulo));
+    if (texto) { a.appendChild(document.createElement('br')); a.appendChild(el('span', null, texto)); }
+    root.appendChild(a);
+  }
+
+  async function buscar() {
+    const f = window.App.Filters.read();
+    const qs = new URLSearchParams();
+    ['jornada', 'time', 'versao', 'sprint'].forEach(k => { if (f[k]) qs.set(k, f[k]); });
+    let res;
+    try {
+      res = await fetch(BASE + '/graficos/plan-real' + (qs.toString() ? '?' + qs : ''), { headers: { Accept: 'application/json' } });
+    } catch (e) {
+      throw new Error('Não foi possível contatar o servidor. Verifique a conexão e tente novamente.');
+    }
+    let json = null;
+    try { json = await res.json(); } catch (e) { /* corpo não-JSON */ }
+    if (!res.ok) {
+      if (res.status === 400) throw new Error((json && json.erro) || 'Filtros inválidos para esta consulta.');
+      throw new Error('Não foi possível calcular o planejado x realizado agora (erro ' + res.status + '). Tente novamente; se persistir, consulte o log do dashboard.');
+    }
+    if (!json || json.success !== true) throw new Error('Resposta inesperada do servidor.');
+    return json;
+  }
+
+  function faixaJanela(d) {
+    const j = d.janela || {};
+    const box = el('div', 'alert alert-info prev-janela');
+    box.setAttribute('role', 'status');
+    box.appendChild(el('strong', null, 'Sprints consideradas: '));
+    if (!j.sprints || !j.sprints.length) {
+      box.appendChild(document.createTextNode('nenhuma'));
+    } else {
+      const det = {}; (j.detalhe || []).forEach(s => { det[s.nome] = s; });
+      box.appendChild(document.createTextNode(j.sprints.join(', ')));
+      const abertas = j.sprints.filter(n => det[n] && !det[n].fechada);
+      const rotulo = j.origem === 'filtro'
+        ? (abertas.length ? ' — escolhida no filtro (sprint em andamento ou futura)' : ' — escolhida no filtro (fechada)')
+        : ' — fechadas';
+      box.appendChild(document.createTextNode(rotulo));
+    }
+    const fa = d.filtros || {};
+    const partes = [];
+    if (j.pi) partes.push(j.pi + (fa.versao_padrao ? ' (PI corrente)' : ''));
+    if (fa.jornada) partes.push('Jornada: ' + fa.jornada);
+    if (fa.time) partes.push('Time: ' + fa.time);
+    if (partes.length) box.appendChild(el('div', 'kpi-sub', partes.join(' · ')));
+    return box;
+  }
+
+  function kpis(d) {
+    const b = d.barras, dl = d.deltas;
+    const pct = (a, t) => (t > 0 ? nf1.format(a / t * 100) + '%' : '—');
+    const cards = [
+      { label: 'Velocidade', val: fmt(b.velocidade.total),
+        sub: 'sustentação ' + fmt(b.velocidade.sustentacao) + ' · capacidade ' + fmt(b.velocidade.capacidade), ac: '#0072c6' },
+      { label: 'Comprometido no PI Planning', val: fmt(b.pi_planning.total),
+        sub: pct(b.pi_planning.total, b.velocidade.total) + ' da velocidade (SPE da baseline)', ac: '#8f9bff' },
+      { label: 'Sprint Planning', val: fmt(b.sprint_planning.total),
+        sub: 'Δ ' + fmtD(dl.pi_planning_para_sprint_planning.total) + ' vs PI Planning (novas histórias, cancelamentos, remanejamentos)', ac: '#9333ea' },
+      { label: 'Entregue', val: fmt(b.entregues.total),
+        sub: 'Δ ' + fmtD(dl.sprint_planning_para_entregues.total) + ' vs Sprint Planning · ' + pct(b.entregues.total, b.sprint_planning.total) + ' do Sprint Planning', ac: '#10b981' },
+    ];
+    const grid = el('div', 'kpi-grid');
+    cards.forEach(c => {
+      const k = el('div', 'kpi'); k.style.setProperty('--ac', c.ac);
+      k.append(el('div', 'kpi-label', c.label), el('div', 'kpi-val', c.val), el('div', 'kpi-sub', c.sub));
+      grid.appendChild(k);
+    });
+    return grid;
+  }
+
+  // ── Plugins locais: rótulos nos segmentos, total (+Δ) à direita, grupos ──
+  function pluginRotulos(d) {
+    return {
+      id: 'prRotulos',
+      afterDatasetsDraw(chart) {
+        const { ctx, scales } = chart;
+        ctx.save();
+        ctx.textBaseline = 'middle';
+        // valor dentro de cada segmento (omitido quando estreito demais)
+        chart.data.datasets.forEach((ds, di) => {
+          const seg = SEGS[di];
+          chart.getDatasetMeta(di).data.forEach((bar, i) => {
+            const v = ds.data[i];
+            if (!v) return;
+            const txt = nf.format(v);
+            ctx.font = '700 13px Segoe UI, sans-serif';
+            const w = ctx.measureText(txt).width;
+            const x0 = scales.x.getPixelForValue(bar.$ini), x1 = scales.x.getPixelForValue(bar.$fim);
+            if (x1 - x0 < w + 6) return;
+            ctx.fillStyle = seg.txt; ctx.textAlign = 'center';
+            ctx.fillText(txt, (x0 + x1) / 2, bar.y);
+          });
+        });
+        // total à direita de cada barra (+ Δ nas barras de planejamento/entrega)
+        const m0 = chart.getDatasetMeta(0);
+        const dl = d.deltas;
+        const deltas = [null, null, dl.pi_planning_para_sprint_planning.total, dl.sprint_planning_para_entregues.total];
+        BARRAS.forEach(([k], i) => {
+          const tot = d.barras[k].total;
+          const x = scales.x.getPixelForValue(tot) + 8, y = m0.data[i].y;
+          ctx.font = '700 14px Segoe UI, sans-serif'; ctx.textAlign = 'left'; ctx.fillStyle = '#e2e8f0';
+          const txt = nf.format(tot);
+          ctx.fillText(txt, x, y);
+          if (deltas[i] != null && deltas[i] !== 0) {
+            ctx.font = '600 11px Segoe UI, sans-serif';
+            ctx.fillStyle = deltas[i] > 0 ? '#34d399' : '#fda4af';
+            ctx.fillText('Δ ' + fmtD(deltas[i]), x + ctx.measureText(txt).width + 12, y);
+          }
+        });
+        ctx.restore();
+      },
+    };
+  }
+
+  // Rótulos de grupo (Planejado / Entregue) à esquerda, com divisórias
+  function pluginGrupos() {
+    return {
+      id: 'prGrupos',
+      afterDraw(chart) {
+        const { ctx, chartArea } = chart;
+        const m = chart.getDatasetMeta(0).data;
+        if (m.length < 4) return;
+        const passo = m[1].y - m[0].y, meia = passo / 2;
+        const topo = m[0].y - meia, meio = (m[2].y + m[3].y) / 2, base = m[3].y + meia;
+        ctx.save();
+        ctx.strokeStyle = '#2e3349'; ctx.lineWidth = 1;
+        [topo, meio, base].forEach(y => { ctx.beginPath(); ctx.moveTo(2, y); ctx.lineTo(chartArea.left, y); ctx.stroke(); });
+        ctx.beginPath(); ctx.moveTo(chartArea.left, topo); ctx.lineTo(chartArea.left, base); ctx.stroke();
+        ctx.fillStyle = '#e2e8f0'; ctx.font = '600 12px Segoe UI, sans-serif';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        [['Planejado', (topo + meio) / 2], ['Entregue', (meio + base) / 2]].forEach(([t, y]) => {
+          ctx.save(); ctx.translate(12, y); ctx.rotate(-Math.PI / 2); ctx.fillText(t, 0, 0); ctx.restore();
+        });
+        ctx.restore();
+      },
+    };
+  }
+
+  function grafico(d) {
+    const card = el('div', 'ccard');
+    const h = el('h3', null, 'Planejado x Realizado ');
+    h.appendChild(el('span', 'badge', 'pontos por categoria'));
+    card.appendChild(h);
+    const wrap = el('div', 'cwrap');
+    wrap.style.height = '380px';
+    const cv = document.createElement('canvas');
+    cv.id = 'pr-chart';
+    cv.setAttribute('role', 'img');
+    const b = d.barras;
+    cv.setAttribute('aria-label', 'Barras horizontais empilhadas: Velocidade ' + fmt(b.velocidade.total)
+      + ', PI Planning ' + fmt(b.pi_planning.total) + ', Sprint Planning ' + fmt(b.sprint_planning.total)
+      + ' e Entregues ' + fmt(b.entregues.total) + ' pontos. Detalhes na tabela abaixo.');
+    wrap.appendChild(cv);
+    card.appendChild(wrap);
+
+    const leg = el('div', 'prev-legenda');
+    leg.style.justifyContent = 'center';
+    SEGS.forEach(s => { const sp = el('span'); const i = el('i'); i.style.background = s.cor; sp.append(i, s.nome); leg.appendChild(sp); });
+    card.appendChild(leg);
+
+    // Datasets por segmento; guarda início/fim de cada barra p/ posicionar o rótulo.
+    const datasets = SEGS.map(s => ({
+      label: s.nome, backgroundColor: s.cor, borderColor: '#1a1d27', borderWidth: 1, barThickness: 40,
+      data: BARRAS.map(([k]) => (b[k][s.k] == null ? 0 : b[k][s.k])),
+    }));
+    const marca = {
+      id: 'prMarca',
+      afterUpdate(chart) {
+        const acum = BARRAS.map(() => 0);
+        chart.data.datasets.forEach((ds, di) => {
+          chart.getDatasetMeta(di).data.forEach((bar, i) => { bar.$ini = acum[i]; acum[i] += ds.data[i] || 0; bar.$fim = acum[i]; });
+        });
+      },
+    };
+    card._draw = () => window.Charts.make('pr-chart', {
+      type: 'bar',
+      data: { labels: BARRAS.map(([, n]) => n), datasets },
+      options: {
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        layout: { padding: { left: 30, right: 120, top: 6 } },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            filter: it => it.raw > 0,
+            callbacks: {
+              label: ctx => {
+                const k = BARRAS[ctx.dataIndex][0], tot = b[k].total;
+                return ctx.dataset.label + ': ' + fmt(ctx.raw) + ' (' + (tot > 0 ? nf1.format(ctx.raw / tot * 100) : '0,0') + '%)';
+              },
+              footer: items => 'Total: ' + fmt(b[BARRAS[items[0].dataIndex][0]].total),
+            },
+          },
+        },
+        scales: {
+          x: { stacked: true, min: 0, ticks: { precision: 0 }, grid: { color: '#22263a' } },
+          y: { stacked: true, grid: { display: false }, ticks: { color: '#e2e8f0', font: { size: 13 } } },
+        },
+      },
+      plugins: [marca, pluginRotulos(d), pluginGrupos()],
+    });
+    return card;
+  }
+
+  function tabelaBase(titulo, legenda) {
+    const card = el('div', 'ccard');
+    card.style.marginTop = '18px';
+    card.appendChild(el('h3', null, titulo));
+    const w = el('div', 'twrap');
+    const tb = el('table', 'prev-tbl');
+    const cap = el('caption', null, legenda);
+    cap.style.cssText = 'position:absolute;left:-9999px';
+    tb.appendChild(cap);
+    w.appendChild(tb); card.appendChild(w);
+    return { card, tb };
+  }
+  function cabecalho(tb, cols) {
+    const thead = el('thead'); const trh = el('tr');
+    cols.forEach(([t, c]) => { const th = el('th', c, t); th.scope = 'col'; trh.appendChild(th); });
+    thead.appendChild(trh); tb.appendChild(thead);
+  }
+
+  function tabelaPontos(d) {
+    const { card, tb } = tabelaBase('Pontos por barra', 'Pontos de cada barra por categoria, com os deltas entre barras');
+    tb.style.minWidth = '720px';
+    cabecalho(tb, [['Barra', ''], ['Sustentação', 'num'], ['Valor sem épico', 'num'], ['Valor com épico', 'num'], ['Capacidade', 'num'], ['Total', 'num']]);
+    const tbody = el('tbody');
+    BARRAS.forEach(([k, nome]) => {
+      const x = d.barras[k], tr = el('tr');
+      tr.appendChild(el('td', null, nome));
+      tr.appendChild(el('td', 'num', fmt(x.sustentacao)));
+      tr.appendChild(el('td', 'num', k === 'velocidade' ? '—' : fmt(x.valor_sem_epico)));
+      tr.appendChild(el('td', 'num', k === 'velocidade' ? '—' : fmt(x.valor_com_epico)));
+      tr.appendChild(el('td', 'num', k === 'velocidade' ? fmt(x.capacidade) : '—'));
+      tr.appendChild(el('td', 'num', fmt(x.total)));
+      tbody.appendChild(tr);
+    });
+    [['Δ PI Planning → Sprint Planning', d.deltas.pi_planning_para_sprint_planning],
+     ['Δ Sprint Planning → Entregues', d.deltas.sprint_planning_para_entregues]].forEach(([nome, x]) => {
+      const tr = el('tr', 'pr-delta');
+      tr.appendChild(el('td', null, nome));
+      tr.appendChild(el('td', 'num', fmtD(x.sustentacao)));
+      tr.appendChild(el('td', 'num', fmtD(x.valor_sem_epico)));
+      tr.appendChild(el('td', 'num', fmtD(x.valor_com_epico)));
+      tr.appendChild(el('td', 'num', '—'));
+      tr.appendChild(el('td', 'num', fmtD(x.total)));
+      tbody.appendChild(tr);
+    });
+    tb.appendChild(tbody);
+    return card;
+  }
+
+  function tabelaTimes(d) {
+    const { card, tb } = tabelaBase('Pontos por time', 'Total de cada barra e deltas por time; abaixo do total, o detalhe sustentação, valor sem épico e valor com épico');
+    cabecalho(tb, [['Time', ''], ['Jornada', ''], ['Velocidade', 'num'], ['PI Planning', 'num'], ['Sprint Planning', 'num'],
+                   ['Entregues', 'num'], ['Δ PI → Sprint Planning', 'num'], ['Δ Sprint Planning → Entregues', 'num']]);
+    const celBarra = (x, vel) => {
+      const td = el('td', 'num');
+      td.appendChild(el('div', null, fmt(x.total)));
+      td.appendChild(el('div', 'pr-sub', vel
+        ? 'S ' + fmt(x.sustentacao) + ' · C ' + fmt(x.capacidade)
+        : 'S ' + fmt(x.sustentacao) + ' · SE ' + fmt(x.valor_sem_epico) + ' · CE ' + fmt(x.valor_com_epico)));
+      return td;
+    };
+    const linha = (tr, x) => {
+      tr.appendChild(celBarra(x.barras.velocidade, true));
+      tr.appendChild(celBarra(x.barras.pi_planning, false));
+      tr.appendChild(celBarra(x.barras.sprint_planning, false));
+      tr.appendChild(celBarra(x.barras.entregues, false));
+      tr.appendChild(el('td', 'num', fmtD(x.deltas.pi_planning_para_sprint_planning.total)));
+      tr.appendChild(el('td', 'num', fmtD(x.deltas.sprint_planning_para_entregues.total)));
+    };
+    const tbody = el('tbody');
+    (d.por_time || []).forEach(t => {
+      const tr = el('tr');
+      const tdT = el('td', null, t.time);
+      if (!t.tem_baseline) tdT.title = 'Sem baseline importada para este time';
+      tr.appendChild(tdT);
+      tr.appendChild(el('td', null, t.jornada));
+      linha(tr, t);
+      tbody.appendChild(tr);
+    });
+    tb.appendChild(tbody);
+    const tf = el('tfoot'); const trf = el('tr');
+    trf.appendChild(el('td', null, 'Total da seleção'));
+    trf.appendChild(el('td', null, ''));
+    linha(trf, d);
+    tf.appendChild(trf); tb.appendChild(tf);
+    const nota = el('div', 'pr-sub', 'S = sustentação · SE = valor sem épico · CE = valor com épico · C = capacidade');
+    nota.style.margin = '8px 4px 0';
+    card.appendChild(nota);
+    return card;
+  }
+
+  function diagnosticos(d) {
+    const g = d.diagnosticos || {};
+    const det = el('details', 'pr-diag');
+    det.style.marginTop = '18px';
+    det.appendChild(el('summary', null, 'Diagnósticos dos dados'));
+    const ul = el('ul');
+    const fora = g.tipos_fora_das_barras || [];
+    const rot = { pi_planning: 'PI Planning', sprint_planning: 'Sprint Planning', entregues: 'Entregues' };
+    if (fora.length) {
+      const porBarra = {};
+      fora.forEach(f => { (porBarra[f.barra] = porBarra[f.barra] || []).push(f.tipo_item + ': ' + fmt(f.pontos) + ' pts (' + f.itens + ' itens)'); });
+      Object.keys(porBarra).forEach(k => ul.appendChild(el('li', null, 'Tipos fora das barras em ' + (rot[k] || k) + ' → ' + porBarra[k].join('; '))));
+    } else {
+      ul.appendChild(el('li', null, 'Nenhum tipo de item ficou fora das barras.'));
+    }
+    const st = g.status_sustentacao || [];
+    ul.appendChild(el('li', null, 'Status dos itens de Sustentação: ' + (st.length
+      ? st.map(s => s.status + ' (' + s.itens + ' itens, ' + (s.considerado_entregue ? 'conta como entregue' : 'não conta como entregue') + ')').join('; ')
+      : 'nenhum item')));
+    const sn = g.sustentacao_sp_nulo || {};
+    ul.appendChild(el('li', null, 'Sustentação com SP nulo e SPE > 0: ' + ((sn.janela || {}).itens || 0) + ' itens (' + fmt((sn.janela || {}).spe || 0)
+      + ' SPE), dos quais entregues: ' + ((sn.entregues || {}).itens || 0) + '. Nenhum fallback é aplicado.'));
+    const vn = g.valor_sp_nulo_entregues || {};
+    ul.appendChild(el('li', null, 'Valor entregue com SP nulo e SPE > 0: ' + (vn.itens || 0) + ' itens (' + fmt(vn.spe || 0) + ' SPE).'));
+    det.appendChild(ul);
+    return det;
+  }
+
+  function render(d) {
+    root.textContent = '';
+    root.appendChild(faixaJanela(d));
+
+    if (d.avisos && d.avisos.length) {
+      const ul = el('ul', 'prev-avisos');
+      d.avisos.forEach(a => ul.appendChild(el('li', null, a)));
+      root.appendChild(ul);
+    }
+
+    const temDados = (d.por_time || []).length > 0 && d.janela && d.janela.sprints && d.janela.sprints.length > 0;
+    if (!temDados) {
+      const a = el('div', 'alert alert-info');
+      a.setAttribute('role', 'status');
+      a.appendChild(el('strong', null, 'Sem dados para a seleção.'));
+      a.appendChild(document.createElement('br'));
+      a.appendChild(el('span', null, 'Não há extração do Jira para os filtros e a janela escolhidos. '
+        + 'Ajuste jornada, time, versão ou sprint no cabeçalho.'));
+      root.appendChild(a);
+      return;
+    }
+
+    root.appendChild(kpis(d));
+    root.appendChild(el('div', 'stitle', 'Planejado x Realizado'));
+    const g = grafico(d);
+    root.appendChild(g);
+    g._draw();
+    root.appendChild(tabelaPontos(d));
+    root.appendChild(tabelaTimes(d));
+    root.appendChild(diagnosticos(d));
+  }
 
   async function load() {
     try {
-      // Passa os filtros globais (jornada/time/sprint) ao /metrics para
-      // recortar a janela de sprints fechadas, a jornada e o time.
-      const f = App.Filters.read();
-      const params = {};
-      if (f.jornada) params.jornada = f.jornada;
-      if (f.time)    params.time    = f.time;
-      if (f.sprint)  params.sprint  = f.sprint;
-
-      const m = await Api.get('/metrics', params);
-      if (!m || !m.data) { renderEmpty(m && m.warning); return; }
-      renderCharts(m.data);
-      // Mostra qual janela está sendo considerada (transparência), após montar os gráficos
-      renderWindowInfo(m);
+      render(await buscar());
     } catch (e) {
-      Util.error(root, e.message);
+      mensagem('error', 'Não foi possível exibir o planejado x realizado.', e.message);
     }
-  }
-
-  function renderWindowInfo(m) {
-    if (!m.window || !m.window.length) return;
-    const info = document.createElement('div');
-    info.className = 'alert alert-info';
-    info.style.marginBottom = '14px';
-    info.innerHTML = `<strong>Janela considerada:</strong> sprints fechadas `
-      + `<code>${m.window.join(', ')}</code>`
-      + (m.closing_sprint ? ` · fechamento: <code>${m.closing_sprint}</code>` : '')
-      + `. Itens de sprints futuras não entram no cálculo (crescem conforme a PI avança).`;
-    root.prepend(info);
-  }
-
-  // ── Estado vazio: call-to-action para capturar baseline ───────────────
-  function renderEmpty(warning) {
-    root.innerHTML = '';
-    root.appendChild(document.getElementById('pr-empty-tpl').content.cloneNode(true));
-    const btn = document.getElementById('pr-capture');
-    const msg = document.getElementById('pr-capture-msg');
-    if (warning) msg.textContent = warning;
-
-    btn.addEventListener('click', async () => {
-      if (!confirm('Capturar a baseline congela o estado atual como "início da PI". '
-        + 'A extração dos projetos pode levar 1-2 min. Continuar?')) return;
-      btn.disabled = true; btn.classList.add('btn-busy');
-      btn.textContent = '📸 Capturando (pode levar 1-2 min)...';
-      try {
-        const r = await fetch(`${BASE}/baseline/capture`, { headers:{'Accept':'application/json'} }).then(x=>x.json());
-        if (r.success) {
-          msg.textContent = `✓ Baseline capturada: ${r.teams} times, ${r.snapshots?.reduce((a,s)=>a+s.total_items,0) ?? ''} itens.`;
-          setTimeout(() => location.reload(), 1200);
-        } else if (r.blocked) {
-          msg.textContent = r.message; // já existe baseline
-          btn.disabled = false; btn.classList.remove('btn-busy'); btn.textContent = '📸 Capturar Baseline da PI';
-        } else {
-          throw new Error(r.error || 'erro');
-        }
-      } catch (e) {
-        msg.textContent = 'Falha: ' + e.message;
-        btn.disabled = false; btn.classList.remove('btn-busy'); btn.textContent = '📸 Capturar Baseline da PI';
-      }
-    });
-  }
-
-  // ── Estado com dados: renderiza os gráficos ───────────────────────────
-  function renderCharts(d) {
-    root.innerHTML = '';
-    root.appendChild(document.getElementById('pr-charts-tpl').content.cloneNode(true));
-
-    renderKpis(d);
-    renderCvd(d.committed_vs_delivered);
-    renderPrev(d.predictability);
-    renderGauge(d.predictability);
-    renderScope(d.scope_creep);
-    renderVariation(d.scope_creep);
-  }
-
-  function renderKpis(d) {
-    const cvd = d.committed_vs_delivered || {};
-    const committed = (cvd.committed || []).reduce((a,b)=>a+(b||0),0);
-    const delivered = (cvd.delivered || []).reduce((a,b)=>a+(b||0),0);
-    const prevArr = (d.predictability?.pct || []).filter(v=>v!=null);
-    const prevAvg = prevArr.length ? (prevArr.reduce((a,b)=>a+b,0)/prevArr.length) : 0;
-    const addSp  = (d.scope_creep?.scope_add || []).reduce((a,b)=>a+(b||0),0);
-    const meta   = d.predictability?.meta ?? 80;
-
-    const cards = [
-      { label:'Previsibilidade (média)', val: prevAvg.toFixed(1)+'%', sub:`meta ${meta}%`, ac: prevAvg>=meta ? '#10b981' : '#f59e0b' },
-      { label:'Committed (SP)',          val: committed,              sub:'planejado na baseline', ac:'#6366f1' },
-      { label:'Delivered (SP)',          val: delivered,              sub:'entregue do planejado', ac:'#22d3ee' },
-      { label:'Scope Add (SP)',          val: addSp,                  sub:'adicionado pós-baseline', ac:'#f97316' },
-    ];
-    document.getElementById('pr-kpis').innerHTML = cards.map(k=>`
-      <div class="kpi" style="--ac:${k.ac}">
-        <div class="kpi-label">${k.label}</div>
-        <div class="kpi-val">${k.val}</div>
-        <div class="kpi-sub">${k.sub}</div>
-      </div>`).join('');
-  }
-
-  // Committed vs Delivered (barras agrupadas por time)
-  function renderCvd(c) {
-    if (!c) return;
-    Charts.make('pr-cvd', {
-      type:'bar',
-      data:{ labels:c.labels, datasets:[
-        { label:'Committed (baseline)', data:c.committed, backgroundColor:Charts.fill(0,.55), borderColor:Charts.color(0), borderWidth:1.5, borderRadius:4 },
-        { label:'Delivered (entregue)', data:c.delivered, backgroundColor:Charts.color(2), borderRadius:4 },
-      ]},
-      options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}},
-        scales:{ y:{beginAtZero:true, title:{display:true,text:'Story Points'}}, x:{ticks:{maxRotation:30}} } }
-    });
-  }
-
-  // Previsibilidade por time (barras com cor condicional à meta)
-  function renderPrev(p) {
-    if (!p) return;
-    const meta = p.meta ?? 80;
-    Charts.make('pr-prev', {
-      type:'bar',
-      data:{ labels:p.labels, datasets:[{
-        label:'Previsibilidade %', data:p.pct,
-        backgroundColor:(p.pct||[]).map(v => v>=meta ? Charts.color(2) : (v>=meta*0.75 ? Charts.color(3) : Charts.color(4))),
-        borderRadius:4,
-      }]},
-      options:{ responsive:true, maintainAspectRatio:false, indexAxis:'y',
-        plugins:{ legend:{display:false},
-          annotation:undefined,
-          tooltip:{ callbacks:{ label:ctx=>` ${ctx.parsed.x}% (meta ${meta}%)` } } },
-        scales:{ x:{beginAtZero:true, max:120, title:{display:true,text:'%'},
-          grid:{ color:ctx=>ctx.tick.value===meta?'#f59e0b':'#2e3349' } } } }
-    });
-  }
-
-  // Gauge de previsibilidade geral (doughnut semicircular)
-  function renderGauge(p) {
-    if (!p) return;
-    const arr = (p.pct||[]).filter(v=>v!=null);
-    const avg = arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : 0;
-    const meta = p.meta ?? 80;
-    const val = Math.min(avg, 100);
-    const color = avg>=meta ? Charts.color(2) : (avg>=meta*0.75 ? Charts.color(3) : Charts.color(4));
-    Charts.make('pr-gauge', {
-      type:'doughnut',
-      data:{ labels:['Previsibilidade','Restante'], datasets:[{
-        data:[val, Math.max(0,100-val)],
-        backgroundColor:[color,'#22263a'], borderColor:'#1a1d27', borderWidth:2, circumference:180, rotation:270,
-      }]},
-      options:{ responsive:true, maintainAspectRatio:false, cutout:'72%',
-        plugins:{ legend:{display:false}, tooltip:{enabled:false} } },
-      plugins:[{
-        id:'gaugeText',
-        afterDraw(chart){
-          const {ctx, chartArea:{width,height,top}} = chart;
-          ctx.save();
-          ctx.textAlign='center';
-          ctx.fillStyle = color;
-          ctx.font='700 32px Segoe UI';
-          ctx.fillText(avg.toFixed(1)+'%', width/2, top+height*0.75);
-          ctx.fillStyle='#7c8aaa'; ctx.font='12px Segoe UI';
-          ctx.fillText('média · meta '+meta+'%', width/2, top+height*0.75+22);
-          ctx.restore();
-        }
-      }]
-    });
-  }
-
-  // Scope Creep: barra divergente (add positivo, drop negativo)
-  function renderScope(s) {
-    if (!s) return;
-    Charts.make('pr-scope', {
-      type:'bar',
-      data:{ labels:s.labels, datasets:[
-        { label:'Adicionado (+)', data:s.scope_add, backgroundColor:Charts.color(6), borderRadius:4 },
-        { label:'Removido (−)',   data:s.scope_drop, backgroundColor:Charts.color(4), borderRadius:4 },
-      ]},
-      options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}},
-        scales:{ y:{title:{display:true,text:'Story Points'}}, x:{ticks:{maxRotation:30}} } }
-    });
-  }
-
-  // Variação de Escopo % por time
-  function renderVariation(s) {
-    if (!s) return;
-    Charts.make('pr-variation', {
-      type:'bar',
-      data:{ labels:s.labels, datasets:[{
-        label:'Variação de Escopo %', data:s.variation_pct,
-        backgroundColor:(s.variation_pct||[]).map((_,i)=>Charts.fill(5,.8)), borderColor:Charts.color(5), borderWidth:1.5, borderRadius:4,
-      }]},
-      options:{ responsive:true, maintainAspectRatio:false, indexAxis:'y',
-        plugins:{ legend:{display:false}, tooltip:{callbacks:{label:ctx=>` ${ctx.parsed.x}%`}} },
-        scales:{ x:{beginAtZero:true, title:{display:true,text:'% adicionado sobre o committed'}} } }
-    });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load);

@@ -316,7 +316,7 @@ class PrevisibilidadeRepository
      * (qualquer origem: formal, sql_direto ou regularizado). Casamento por PI + chave.
      * Não altera nenhum número da previsibilidade; só alimenta o campo 'avisos'.
      */
-    private function itensAjustados(int $piId, string $descPi, array $sprints, array $projetoKeys): int
+    public function itensAjustados(int $piId, string $descPi, array $sprints, array $projetoKeys): int
     {
         $phS = []; $phK = []; $par = [':pi' => $descPi, ':pid' => $piId];
         foreach (array_values($sprints) as $i => $s) { $phS[] = ":s$i"; $par[":s$i"] = $s; }

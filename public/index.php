@@ -198,6 +198,10 @@ switch (true) {
         (new \App\Controllers\GraficosController(new \App\Repositories\PrevisibilidadeRepository()))->previsibilidade();
         break;
 
+    case $uri === '/graficos/plan-real':
+        (new \App\Controllers\GraficosController(new \App\Repositories\PrevisibilidadeRepository()))->planReal();
+        break;
+
     // ── Home → Visão Geral ───────────────────────────────────────────────
     case $uri === '/' || $uri === '/index.html':
         $makeViewController()->render('overview');

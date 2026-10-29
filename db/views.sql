@@ -212,47 +212,73 @@ GROUP BY
 --      dias_uteis_pi= SUM(dias_uteis_sprint das sprints de valor)
 --    Só times de jornada ativa, time ativo e composição ativa.
 -- ---------------------------------------------------------------------
+--
+--    v1.5 (Planejado x Realizado): a conta POR SPRINT passou para
+--    vw_velocidade_sprint (3a) e vw_velocidade e agora a agregacao dela para
+--    a PI CORRENTE (a que contem hoje; senao a de maior data_fim), sem PI fixa.
+--    Colunas inalteradas (jornada, time, projeto_key, dias_uteis_pi, velocity,
+--    sustentacao, capacity) para nao quebrar MetricsRepository.
+-- ---------------------------------------------------------------------
+-- 3a. vw_velocidade_sprint  (grao: time x sprint, TODAS as PIs/sprints)
+--      velocity    = ROUND(qtde_dev * horas_dev * dias_uteis / media_produtividade_pi)
+--      sustentacao = sustentacao_historico (time + PI + sprint_nome); 0 se nao houver
+--      capacity    = velocity - sustentacao   (velocity = sustentacao + capacity)
+--    `tipo` (valor | sustentacao) permite filtrar as sprints de valor.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE VIEW vw_velocidade_sprint AS
+SELECT
+    t.projeto_key,
+    j.nome                                  AS jornada,
+    t.nome                                  AS time,
+    p.desc_pi                               AS pi,
+    s.nome                                  AS sprint,
+    s.dias_uteis,
+    v.velocity,
+    COALESCE(sh.pts_sustentacao, 0)         AS sustentacao,
+    v.velocity - COALESCE(sh.pts_sustentacao, 0) AS capacity,
+    s.tipo,
+    -- capacity no arredondamento da planilha (ROUND de velocity_bruta - sustentacao);
+    -- so para manter vw_velocidade identica a versao anterior quando a sustentacao e fracionaria.
+    ROUND(v.bruta - COALESCE(sh.pts_sustentacao, 0), 0) AS capacity_planilha
+FROM times t
+JOIN jornada j           ON j.id_jornada = t.jornada_id
+JOIN times_composicao tc ON tc.times_id = t.id_time AND tc.ativo = 'S'
+JOIN configuracao_pi p   ON p.ativo = 'S'
+JOIN sprints s           ON s.configuracao_pi_id = p.id_versao_corrigida
+                        AND s.ativo = 'S'
+LEFT JOIN sustentacao_historico sh
+                         ON sh.times_id = t.id_time
+                        AND sh.configuracao_pi_id = p.id_versao_corrigida
+                        AND sh.sprint_nome = s.nome
+                        AND sh.ativo = 'S'
+JOIN LATERAL (
+    SELECT CASE WHEN tc.media_produtividade_pi > 0
+                THEN (tc.qtde_dev * tc.horas_dev * s.dias_uteis) / tc.media_produtividade_pi
+                ELSE NULL END AS bruta,
+           CASE WHEN tc.media_produtividade_pi > 0
+                THEN ROUND((tc.qtde_dev * tc.horas_dev * s.dias_uteis) / tc.media_produtividade_pi, 0)
+                ELSE NULL END AS velocity
+) v ON TRUE
+WHERE t.ativo = 'S'
+  AND j.ativo = 'S';
+
 CREATE OR REPLACE VIEW vw_velocidade AS
 SELECT
-    sp.jornada,
-    sp.time,
-    sp.projeto_key,
-    SUM(sp.dias_uteis)                 AS dias_uteis_pi,
-    SUM(ROUND(sp.velocity_sprint, 0))  AS velocity,
-    SUM(sp.sustentacao_sprint)         AS sustentacao,
-    SUM(ROUND(sp.capacity_sprint, 0))  AS capacity
-FROM (
-    SELECT
-        j.nome                                            AS jornada,
-        t.nome                                            AS time,
-        t.projeto_key,
-        s.nome                                            AS sprint_nome,
-        s.dias_uteis,
-        CASE WHEN tc.media_produtividade_pi > 0
-             THEN (tc.qtde_dev * tc.horas_dev * s.dias_uteis) / tc.media_produtividade_pi
-             ELSE NULL
-        END                                               AS velocity_sprint,
-        COALESCE(sh.pts_sustentacao, 0)                   AS sustentacao_sprint,
-        CASE WHEN tc.media_produtividade_pi > 0
-             THEN ((tc.qtde_dev * tc.horas_dev * s.dias_uteis) / tc.media_produtividade_pi)
-                  - COALESCE(sh.pts_sustentacao, 0)
-             ELSE NULL
-        END                                               AS capacity_sprint
-    FROM times t
-    JOIN jornada j           ON j.id_jornada = t.jornada_id
-    JOIN times_composicao tc ON tc.times_id = t.id_time AND tc.ativo = 'S'
-    JOIN configuracao_pi p   ON p.desc_pi = 'PI 4/26'
-    JOIN sprints s           ON s.configuracao_pi_id = p.id_versao_corrigida
-                            AND s.tipo = 'valor'
-    LEFT JOIN sustentacao_historico sh
-                             ON sh.times_id = t.id_time
-                            AND sh.configuracao_pi_id = p.id_versao_corrigida
-                            AND sh.sprint_nome = s.nome
-                            AND sh.ativo = 'S'
-    WHERE t.ativo = 'S'
-      AND j.ativo = 'S'
-) sp
-GROUP BY sp.jornada, sp.time, sp.projeto_key;
+    vs.jornada,
+    vs.time,
+    vs.projeto_key,
+    SUM(vs.dias_uteis)    AS dias_uteis_pi,
+    SUM(vs.velocity)      AS velocity,
+    SUM(vs.sustentacao)   AS sustentacao,
+    SUM(vs.capacity_planilha) AS capacity
+FROM vw_velocidade_sprint vs
+WHERE vs.tipo = 'valor'
+  AND vs.pi = (
+      SELECT cp.desc_pi FROM configuracao_pi cp
+       WHERE cp.ativo = 'S'
+       ORDER BY (CURDATE() BETWEEN cp.data_ini AND cp.data_fim) DESC, cp.data_fim DESC
+       LIMIT 1)
+GROUP BY vs.jornada, vs.time, vs.projeto_key;
 
 -- ---------------------------------------------------------------------
 -- 4a. vw_item  (BASE para os graficos: Previsibilidade, Planejado x
@@ -341,6 +367,45 @@ JOIN jornada j ON j.id_jornada = t.jornada_id
               AND j.ativo = 'S'
 LEFT JOIN configuracao_pi p ON p.id_versao_corrigida = b.configuracao_pi_id
 WHERE b.ativo = 'S';
+
+-- ---------------------------------------------------------------------
+-- 4b2. vw_planejado_realizado_item  (base do grafico Planejado x Realizado)
+--    1 linha por item, das duas origens:
+--      origem 'baseline' : snapshot do PI Planning (vw_baseline_item)
+--      origem 'extracao' : estado atual (vw_item)
+--    categoria: 'sustentacao' | 'valor_sem_epico' | 'valor_com_epico';
+--    NULL para os demais tipos (Incidente, Bug, ...), que ficam fora das
+--    barras mas continuam visiveis para o diagnostico.
+--    entregue: status ∈ {Aceito, Pendente de Producao, Em producao}
+--    (sempre 0 na origem baseline). A janela e a agregacao sao feitas no
+--    PlanejadoRealizadoRepository.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE VIEW vw_planejado_realizado_item AS
+SELECT
+    'baseline'           AS origem,
+    b.chave, b.projeto_key, b.jornada, b.time, b.pi,
+    b.tipo_item, b.status, b.sprint_ref,
+    CASE WHEN b.tipo_item = 'Sustentação' THEN 'sustentacao'
+         WHEN b.is_entrega_valor = 1 AND b.pai IS NOT NULL AND b.pai <> '' THEN 'valor_com_epico'
+         WHEN b.is_entrega_valor = 1 THEN 'valor_sem_epico'
+         ELSE NULL END   AS categoria,
+    b.story_point_estimate AS spe,
+    b.story_points         AS sp,
+    0                      AS entregue
+FROM vw_baseline_item b
+UNION ALL
+SELECT
+    'extracao'           AS origem,
+    i.chave, i.projeto_key, i.jornada, i.time, i.pi,
+    i.tipo_item, i.status, i.sprint_ref,
+    CASE WHEN i.tipo_item = 'Sustentação' THEN 'sustentacao'
+         WHEN i.is_entrega_valor = 1 AND i.pai IS NOT NULL AND i.pai <> '' THEN 'valor_com_epico'
+         WHEN i.is_entrega_valor = 1 THEN 'valor_sem_epico'
+         ELSE NULL END   AS categoria,
+    i.story_point_estimate AS spe,
+    i.story_points         AS sp,
+    i.entregue             AS entregue
+FROM vw_item i;
 
 -- ---------------------------------------------------------------------
 -- 4. vw_previsibilidade  (REDEFINIDA - grao: projeto_key, jornada, time,
