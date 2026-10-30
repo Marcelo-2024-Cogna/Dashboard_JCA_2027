@@ -20,11 +20,32 @@
 - **Extração Jira → MySQL**: `ExtractionService`, `bin/extract_runner.php`,
   fila (`/extracao/catalogo|agendar|fila`), `bin/queue_worker.php` (cron),
   modal "Extrair do Jira" no header, e-mail em modo STUB.
-- **Dados hoje**: `extracao_jira` 8665 itens da Secretaria (SGGU, SGSE, SGGS, SGTB)
-  em 4 PIs — PI 1/26 2624 · PI 2/26 2317 · PI 3/26 2350 · PI 4/26 1374 ·
+- **Dados hoje (29/10, cobertura de dados)**: `extracao_jira` **14119** itens —
+  PI 1/26 2624 · PI 2/26 2317 · PI 3/26 2350 (só Secretaria) · **PI 4/26 6828**
+  (TODAS as 10 jornadas, PI inteira, sem filtro de sprint). PI 4/26 por jornada:
+  Secretaria 1374 · Aprendizagem Digital 1295 · Ingresso 1122 · Atendimento e Serviços 819
+  (reextraído pela PI inteira; antes 409 só das SP 26.4.1/2) · Jornada Acadêmica 507 ·
+  Financeiro 478 · Voomp 404 · Pós Graduação 340 · Saber 302 · Inteligência Artificial 187.
   `baseline` 3807 (só PI 4/26; telas de Previsibilidade das PIs passadas avisam
   "sem baseline") · `baseline_ajuste` 10 (regularizados) ·
   `produtividade_historico` 11.
+  - **Projetos sem itens na PI 4/26** (chave aceita pelo Jira, sem item com fixVersion PI 4/26;
+    decisão de de-para é do usuário): JFTR (Financeiro/Triforce), JAAM (Acadêmica/Alexandria-Maia),
+    VAPP (Voomp/APP). JFSP (Sparta) tem 1 item e JFTS concentra o que parece ser "Triforce & Sparta".
+    Nenhuma `projeto_key` do catálogo falhou (nenhum HTTP 400).
+  - **Cobertura baixa vs baseline** (<80%): a baseline traz itens cuja fixVersion NÃO inclui
+    PI 4/26 (ex.: só "[PGCM] PI 3/26"), que a JQL `fixVersion ~ "*PI 4/26*"` não devolve
+    (PGCM 13,9% · APAP 39,3% · VBEP 44,4% · PGEX 53,8% · ASAT 59,4% · JAMO 59,5% ·
+    INBI 69,5% · SADV 72,7% · VADM 72,9% · APAV 78,4% · VPLY 50%). Causa a confirmar com o usuário.
+  - **Jornadas ainda SEM histórico de PIs 1/26–3/26** (extração pendente de decisão):
+    todas exceto Secretaria — Aprendizagem Digital, Atendimento e Serviços, Financeiro, Ingresso,
+    Inteligência Artificial, Jornada Acadêmica, Pós Graduação, Saber, Voomp.
+  - **Fila**: a ordem #15 (Aprendizagem + Acadêmica, só SP 26.4.1/2, criada pelo usuário às
+    19:12) foi **CANCELADA a pedido do usuário** ("por enquanto"; reativável com
+    `UPDATE extracao_agendamento SET status='pendente' WHERE id_agendamento=15`, só se ele pedir).
+    Motivo: o DELETE do recorte trocaria a PI inteira já extraída por só 2 sprints. Estado:
+    #13 cancelado · #14 concluído (Atendimento) · #15 cancelado → nenhuma ordem pendente.
+    Atendimento foi REEXTRAÍDO pela PI inteira (não há mais a limitação a 2 sprints).
 - **CUIDADO com chaves repetidas entre PIs**: um item com duas fixVersions existe
   em 2 linhas de `extracao_jira` (hoje 7 chaves). Todo JOIN/mapa por `chave` deve
   incluir a PI (`configuracao_pi_id`) — já ajustado em `bin/conferir_planilha.php`
@@ -63,6 +84,10 @@
   enquanto; ideia futura.
 
 ## 4. PRÓXIMOS PASSOS (ordem sugerida para amanhã)
+> **Git ao encerrar 29/10**: local à frente do `origin/main` por 1 commit (`f537366`, checklist
+> do deploy) + este arquivo modificado e sem commit. O usuário pediu: **commitar o checklist
+> junto com o próximo lote (Velocidade) e então fazer o push**. A pasta
+> `Plataforma-Engenharia-Performance/` é do usuário (não rastrear/commitar).
 1. ~~**Aplicar "Suporte = Sustentação"**~~ **CONCLUÍDA**: categoria sustentação
    (Sustentação + Suporte) lida de `plan_real_sustentacao_types` e aplicada no
    `PlanejadoRealizadoRepository`; Suporte saiu de `tipos_fora_das_barras`.
@@ -104,6 +129,34 @@
    SGSE 6,95 · SGGU 6,63 · SGGS 6,52 — coerente com o template (5–7). Decidir:
    média da jornada ponderada (Σh/Σpts) ou simples; e se a produtividade média da
    PI passada alimenta `times_composicao.media_produtividade_pi` da PI seguinte.
+3a. **PRÓXIMO — Velocidade refeita** (`/metricas/velocidade`, hoje legada da v1.0: lê o
+   cache antigo `data/items.json`/`/metrics`, 31 times). Pedido do usuário (29/10): os gráficos
+   passam a usar os rótulos **"Story Points Estimate"** e **"Story Points entregues"**, e os
+   números **precisam bater com o Planejado x Realizado**. Interpretação adotada (confirmar
+   se o usuário preferir outra): Estimate = barra **PI Planning** (SPE da baseline dos itens
+   planejados para a janela, incl. sustentação; Secretaria 435) e entregues = barra
+   **Entregues** (SP atuais; Secretaria 396); gráfico de capacidade usa velocity/capacity da
+   mesma janela (Secretaria velocity 412 = 86 sust. + 326 capacidade). Implementar lendo do
+   MESMO repositório (`PlanejadoRealizadoRepository`/`/graficos/plan-real`, `por_time`), para
+   os totais baterem por construção, e provar com cálculo independente. Alternativa em
+   aberto: usar Sprint Planning (410) em vez de PI Planning como "Estimate".
+3b. **Visão Geral: o usuário está preparando outra proposta — NÃO alterar até ele trazer.**
+3c. **Decisões em aberto da cobertura de dados (29/10, noite)** — o usuário ainda vai decidir:
+   1. **Escopo da extração**: manter só `fixVersion ~ "*PI x/yy*"` ou acrescentar `OR Sprint in
+      (sprints da PI)`. Medido: 108 itens de valor da baseline (325 de 2964 SPE = 11%) ficam fora da
+      extração da PI 4/26 — 61 itens/187 SPE rotulados "PI 3/26" (carry-over; APAP sozinho 30),
+      34 itens/113 SPE que contêm PI 4/26 mas não vieram, 9 sem versão, 4 outra. Afeta
+      previsibilidade e lead time do APAP (39% de cobertura). Oferta: comparar as duas formas no
+      APAP SEM gravar antes de decidir.
+   2. **Time "Pós" (PGPO)** está no catálogo dentro da jornada **Voomp** (veio da Velocity), mas na
+      baseline/Jira PGPO é da "Jornada Pós Graduação" (104 itens inflam o Voomp). Descobrir a chave
+      real do "Pós" da Voomp ou mover PGPO para Pos Graduação.
+   3. **Times sem itens na PI 4/26**: JAAM (Alexandria/Maia), SGTH, SGTP, VAPP (sem baseline);
+      JFTR e JFSP são pré-fusão (sugestão: inativar, só geram aviso). Conferir se a chave JAAM está certa.
+   4. Extrair PIs 1/26–3/26 das demais jornadas para histórico de produtividade (estimativa
+      ~25–35 mil linhas, ~8–15 min no total) — ainda não pedido.
+   Registro de correção: o 48,7% do ASKB na previsibilidade é REAL (17 SPE de transbordo aberto);
+   a extração limitada a 2 sprints só o classificava como "fora da extração".
 4. Ajustes visuais da Previsibilidade: 7º card quebra de linha; coluna "Jornada"
    redundante nas tabelas quando há uma só jornada.
 

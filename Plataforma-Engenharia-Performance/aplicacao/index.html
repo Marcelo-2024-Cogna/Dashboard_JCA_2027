@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PEP - Plataforma de Engenharia de Performance</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    
+    <!-- Styles -->
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+    <!-- HEADER -->
+    <header class="header">
+        <div class="header-content">
+            <div class="header-left">
+                <div class="logo">⚡ PEP</div>
+                <div class="header-subtitle">Plataforma de Engenharia de Performance</div>
+            </div>
+            <div class="header-right">
+                <div class="sprint-badge" id="sprint-info">Sprint 12 - Jul/2025</div>
+            </div>
+        </div>
+    </header>
+
+    <!--
+        BANNER DE SIMULAÇÃO (Task 29 / Requirement 25.6) — deixa explícito que o
+        controle por Perfil é uma simulação de visibilidade (sem autenticação de
+        servidor). Preserva o tema escuro.
+    -->
+    <div class="profile-sim-banner" id="profile-sim-banner" role="note">
+        <span class="profile-sim-banner-icon" aria-hidden="true">ℹ️</span>
+        <span class="profile-sim-banner-text">
+            Controle por <strong>Perfil</strong> é uma <strong>simulação de visibilidade</strong>
+            (sem autenticação de servidor). Não constitui segurança real.
+        </span>
+    </div>
+
+    <!--
+        NAV TOOLBAR (Task 29) — Seletor de Perfil + Seletor de Mês + MENU em
+        duas seções ("Dashboards e Configurações" / "Gestão e Configuração"),
+        renderizado por app.js a partir de Rbac.menuFor(AppState.getProfile()).
+        Só aparecem as entradas permitidas ao perfil atual. Acessível em todas
+        as visões; preserva o tema escuro e o padrão de UX.
+    -->
+    <div class="toolbar nav-toolbar">
+        <div class="toolbar-content nav-toolbar-content">
+            <nav class="view-tabs" id="view-tabs" role="tablist" aria-label="Abas de visões do Score">
+                <!-- preenchido por app.js: abas de Score (AppState.VIEWS) + Retrospectiva de PI -->
+            </nav>
+            <!--
+                MENU POR PERFIL (Task 29 / Requirement 26) — duas seções
+                ("Dashboards e Configurações" / "Gestão e Configuração"),
+                renderizado por app.js a partir de Rbac.menuFor(AppState.getProfile()).
+                Só aparecem as telas permitidas ao perfil atual (nega por omissão).
+                Container PRÓPRIO para não conflitar com as abas de Score (#view-tabs).
+            -->
+            <nav class="profile-menu" id="profile-menu" role="navigation" aria-label="Menu de navegação por perfil">
+                <!-- preenchido por app.js: duas seções a partir de Rbac.menuFor(perfil) -->
+            </nav>
+            <!--
+                SINALIZAÇÃO DE ACESSO NEGADO (Task 29 / Requirement 25.5) — exibida
+                quando o usuário tenta abrir uma tela não permitida ao perfil atual
+                e é redirecionado para a tela inicial. app.js alterna `hidden`.
+            -->
+            <div class="menu-access-denied" id="menu-access-denied" role="alert" aria-live="assertive" hidden>
+                <span class="menu-access-denied-icon" aria-hidden="true">🚫</span>
+                <span class="menu-access-denied-text"></span>
+            </div>
+            <div class="nav-toolbar-selectors">
+                <div class="profile-selector" id="profile-selector-wrap">
+                    <label for="profile-selector">Perfil:</label>
+                    <select id="profile-selector" aria-label="Perfil de acesso (simulação de visibilidade)">
+                        <!-- preenchido por app.js (Rbac.PROFILE_LABEL) -->
+                    </select>
+                </div>
+                <div class="month-selector" id="month-selector-wrap">
+                    <label for="month-selector">Mês:</label>
+                    <select id="month-selector" aria-label="Mês de referência">
+                        <!-- preenchido por app.js (Jan–Dez) -->
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!--
+        TOOLBAR DE RETROSPECTIVA DE PI (tarefa 16) — sub-abas dos 8 painéis +
+        Seletor de PI (independente do Seletor de Mês do Score). Exibida apenas
+        quando a aba agrupadora "Retrospectiva de PI" está ativa (app.js alterna
+        o atributo `hidden`). Os renderizadores dos painéis vêm das tarefas
+        17/18/19; até lá, app.js mostra um placeholder "em construção".
+    -->
+    <div class="toolbar retro-toolbar-nav" id="retro-toolbar" hidden>
+        <div class="toolbar-content retro-toolbar-content">
+            <nav class="retro-subtabs" id="retro-subtabs" role="tablist" aria-label="Painéis de Retrospectiva de PI">
+                <!-- preenchido por app.js (AppState.RETRO_VIEWS) -->
+            </nav>
+            <div class="pi-selector">
+                <label for="pi-selector">PI:</label>
+                <select id="pi-selector" aria-label="PI de referência">
+                    <!-- preenchido por app.js (PEPRetroData.getPIs()) -->
+                </select>
+            </div>
+        </div>
+        <!-- Filtros (Jornada/Squad) + uploads (extração do Jira e baseline).
+             O filtro de Sprint foi removido: cada painel usa a dimensão
+             pertinente (PI nos painéis de Retrospectiva; Mês no Score). -->
+        <div class="toolbar-content retro-filters-bar">
+            <div class="retro-filter">
+                <label for="retro-filter-jornada">Jornada:</label>
+                <select id="retro-filter-jornada" aria-label="Filtrar por Jornada"></select>
+            </div>
+            <div class="retro-filter">
+                <label for="retro-filter-squad">Squad:</label>
+                <select id="retro-filter-squad" aria-label="Filtrar por Squad"></select>
+            </div>
+            <div class="retro-uploads">
+                <label class="btn btn-secondary retro-upload-btn" for="retro-upload-jira" title="Importar extração do Jira (CSV/JSON)">
+                    📥 Extração do Jira
+                    <input type="file" id="retro-upload-jira" accept=".csv,.json" hidden>
+                </label>
+                <label class="btn btn-secondary retro-upload-btn" for="retro-upload-baseline" title="Carregar baseline do PI (.xlsx/CSV)">
+                    📋 Baseline do PI
+                    <input type="file" id="retro-upload-baseline" accept=".xlsx,.csv" hidden>
+                </label>
+                <span class="retro-upload-status" id="retro-upload-status" role="status" aria-live="polite"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN CONTENT -->
+    <main class="main">
+
+        <!-- VISÃO GERAL (tarefa 9) -->
+        <section class="view-container" id="view-geral" role="tabpanel" aria-labelledby="tab-geral" hidden></section>
+
+        <!-- VISÃO DE JORNADAS (tarefa 9) -->
+        <section class="view-container" id="view-jornadas" role="tabpanel" aria-labelledby="tab-jornadas" hidden></section>
+
+        <!-- VISÃO DE MÉTRICAS (tarefa 9) -->
+        <section class="view-container" id="view-metricas" role="tabpanel" aria-labelledby="tab-metricas" hidden></section>
+
+        <!-- EVOLUÇÃO & METAS (unificado) — compõe os renders de evolução e metas -->
+        <section class="view-container" id="view-evolucaoMetas" role="tabpanel" aria-labelledby="tab-evolucaoMetas" hidden></section>
+
+        <!--
+            PAINÉIS DE RETROSPECTIVA DE PI (tarefa 16: containers + navegação).
+            Os renderizadores são registrados em window.PEPViews pelas tarefas
+            17/18/19; até lá, app.js despacha render(container, { pi }) de forma
+            defensiva (placeholder "em construção").
+        -->
+        <section class="view-container retro-view" id="view-retroPontos" role="tabpanel" aria-labelledby="subtab-retroPontos" hidden></section>
+        <section class="view-container retro-view" id="view-retroProdutividade" role="tabpanel" aria-labelledby="subtab-retroProdutividade" hidden></section>
+        <section class="view-container retro-view" id="view-retroEpicos" role="tabpanel" aria-labelledby="subtab-retroEpicos" hidden></section>
+        <section class="view-container retro-view" id="view-retroCycleTime" role="tabpanel" aria-labelledby="subtab-retroCycleTime" hidden></section>
+        <section class="view-container retro-view" id="view-retroLeadTime" role="tabpanel" aria-labelledby="subtab-retroLeadTime" hidden></section>
+        <section class="view-container retro-view" id="view-retroDebito" role="tabpanel" aria-labelledby="subtab-retroDebito" hidden></section>
+        <section class="view-container retro-view" id="view-retroSustentacao" role="tabpanel" aria-labelledby="subtab-retroSustentacao" hidden></section>
+        <section class="view-container retro-view" id="view-retroExtras" role="tabpanel" aria-labelledby="subtab-retroExtras" hidden></section>
+
+        <!--
+            TELAS POR PERFIL (Task 29) — containers das telas do Rbac mapeadas
+            para views ainda não implementadas (tarefas 30–33). Até lá, app.js
+            despacha o placeholder "em construção" de forma defensiva. Os ids
+            seguem o padrão `view-<screenId>` do Rbac.SCREENS.
+        -->
+        <section class="view-container" id="view-execSquad" role="tabpanel" aria-labelledby="menu-execSquad" hidden></section>
+        <section class="view-container" id="view-apresentacao" role="tabpanel" aria-labelledby="menu-apresentacao" hidden></section>
+        <section class="view-container" id="view-excecao" role="tabpanel" aria-labelledby="menu-excecao" hidden></section>
+        <section class="view-container" id="view-cfgIntegracao" role="tabpanel" aria-labelledby="menu-cfgIntegracao" hidden></section>
+        <section class="view-container" id="view-gestPerfis" role="tabpanel" aria-labelledby="menu-gestPerfis" hidden></section>
+        <section class="view-container" id="view-gestTribosSquads" role="tabpanel" aria-labelledby="menu-gestTribosSquads" hidden></section>
+        <!-- Parametrização de métricas (gestão). A entrada manual de métricas é
+             exibida no modal "Entrada de Dados" da tela Operacional/Times. -->
+        <section class="view-container" id="view-cfgParametrizacao" role="tabpanel" aria-labelledby="menu-cfgParametrizacao" hidden></section>
+
+        <!-- LEGADO: Operacional/Times (dashboard preservado) -->
+        <section class="view-container" id="view-legado" role="tabpanel" aria-labelledby="tab-legado" hidden>
+
+            <!-- Legacy toolbar: filtros + ações (preservados) -->
+            <div class="toolbar legacy-toolbar">
+                <div class="toolbar-content">
+                    <div class="filters">
+                        <div class="filter-group">
+                            <label for="filter-jornada">Jornada:</label>
+                            <select id="filter-jornada">
+                                <option value="all">Todas as Jornadas</option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label for="filter-team">Time:</label>
+                            <select id="filter-team">
+                                <option value="all">Todos os Times</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="toolbar-actions">
+                        <button class="btn btn-secondary" id="btn-input-data">
+                            📝 Entrada de Dados
+                        </button>
+                        <button class="btn btn-primary" id="btn-export">
+                            📥 Exportar CSV
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- KPI Cards -->
+            <section class="kpi-section">
+                <div id="kpi-cards"></div>
+            </section>
+
+            <!-- Performance Bands Legend -->
+            <section>
+                <div class="bands-legend" id="bands-legend"></div>
+            </section>
+
+            <!-- Charts -->
+            <section class="charts-grid">
+                <div class="chart-card">
+                    <h3>📊 Score Geral - Performance</h3>
+                    <div class="chart-container">
+                        <canvas id="gauge-chart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <h3>🎯 Categorias (4 Ps) - Radar</h3>
+                    <div class="chart-container">
+                        <canvas id="dimension-chart"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <section class="charts-grid">
+                <div class="chart-card" style="grid-column: 1 / -1;">
+                    <h3>🏆 Comparativo por Jornada</h3>
+                    <div class="chart-container" style="height: 350px;">
+                        <canvas id="journey-chart"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Ranking -->
+            <section class="ranking-section">
+                <div class="section-title">🏅 Ranking de Times</div>
+                <div class="ranking-list" id="ranking-list"></div>
+            </section>
+
+            <!-- Metric Details -->
+            <section class="metrics-section">
+                <div class="section-title">📈 Detalhamento por Métrica</div>
+                <div id="metric-details"></div>
+            </section>
+
+        </section>
+
+    </main>
+
+    <!-- MODAL -->
+    <div class="modal-overlay" id="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="modal-title">Detalhamento</h3>
+                <button class="modal-close" id="modal-close">&times;</button>
+            </div>
+            <div class="modal-body" id="modal-body"></div>
+        </div>
+    </div>
+
+    <!-- TOAST -->
+    <div class="toast" id="toast"></div>
+
+    <!-- SCRIPTS -->
+    <!-- SheetJS (XLSX) via CDN — leitura client-side de .xlsx do baseline (Fase 2) -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+    <script src="js/scoring-engine.js"></script>
+    <script src="js/data.js"></script>
+    <!-- Identificação canônica Jornada/Squad (compartilhada Score ↔ Retro) -->
+    <script src="js/identity.js"></script>
+    <!-- Retrospectiva de PI (módulo independente do Score) -->
+    <script src="js/retro-data.js"></script>
+    <script src="js/retro-aggregation.js"></script>
+    <script src="js/retro-import.js"></script>
+    <!-- Fase 2: filtros, ingestão do Jira, baseline e ponte com o Operacional -->
+    <script src="js/retro-filters.js"></script>
+    <script src="js/jira-mapping.js"></script>
+    <script src="js/jira-ingest.js"></script>
+    <script src="js/baseline-loader.js"></script>
+    <script src="js/ops-bridge.js"></script>
+    <!-- RBAC: fonte única de permissões por perfil (simulação de UX client-side) -->
+    <script src="js/rbac.js"></script>
+    <script src="js/app-state.js"></script>
+    <script src="js/data-import.js"></script>
+    <script src="js/targets.js"></script>
+    <script src="js/aggregation.js"></script>
+    <script src="js/dashboard.js"></script>
+    <!--
+        Visões executivas (tarefa 9) registradas em `window.PEPViews` por
+        `js/views/*.js`. Para as views ainda não implementadas, `app.js`
+        renderiza um placeholder "em construção" de forma defensiva.
+    -->
+    <script src="js/views/view-geral.js"></script>
+    <script src="js/views/view-jornadas.js"></script>
+    <script src="js/views/view-metricas.js"></script>
+    <script src="js/views/view-metas.js"></script>
+    <script src="js/views/view-evolucao.js"></script>
+    <!-- Visão unificada Evolução & Metas (compõe as duas acima). Carrega depois. -->
+    <script src="js/views/view-evolucao-metas.js"></script>
+    <!-- Dashboard Executivo por Squad (Task 30, Req 28) — reutiliza
+         scoring-engine, identity (identidade canônica) e targets (Farol). -->
+    <script src="js/views/view-exec-squad.js"></script>
+    <!-- Dashboard de Apresentação Executiva (Task 31, Req 29) — reutiliza os
+         dados do Operacional/Times via aggregation/targets; navegação sequencial
+         entre jornadas em layout de apresentação (tema escuro). -->
+    <script src="js/views/view-apresentacao.js"></script>
+    <!-- Fluxo de Exceção com aprovação (Task 32, Req 30) — store de exceções
+         (localStorage) + view; respeita as permissões de ação do RBAC
+         (excecao:solicitar / excecao:aprovar). O store carrega antes da view. -->
+    <script src="js/excecoes-store.js"></script>
+    <script src="js/views/view-excecoes.js"></script>
+
+    <!-- Telas de Gestão (Task 33, Req 31) — store CRUD client-side das coleções
+         (usuários/perfis/tribos-squads/KPIs/OKRs/comunicação/integração) em
+         localStorage, com import/export CSV/JSON reversível (Property 37). As
+         views de gestão (Task 33.2) carregam depois deste store. -->
+    <script src="js/admin-store.js"></script>
+    <!-- Parametrização de métricas (origem por métrica + fechamento por PI +
+         definição das fotos mensal/PI). Depende de scoring-engine.js e
+         retro-data.js (já carregados acima); carrega antes das views e de app.js. -->
+    <script src="js/metric-config.js"></script>
+    <!-- Store de entrada manual das métricas de origem não-Jira (alimenta a Foto
+         Mensal). localStorage com fallback em memória; carrega antes das views. -->
+    <script src="js/manual-metrics-store.js"></script>
+    <!-- Telas de gestão por coleção (Task 33.2, Req 31.1–31.7, 31.9) — cada view
+         registra-se em window.PEPViews e reutiliza admin-store (CRUD + import/
+         export), rbac (Matriz de Permissões) e identity (identidade canônica).
+         Carregam após admin-store.js e antes de app.js (dispatch do render). -->
+    <script src="js/views/admin-perfis.js"></script>
+    <script src="js/views/admin-tribos-squads.js"></script>
+    <script src="js/views/admin-integracao.js"></script>
+    <!-- Telas de parametrização/entrada manual/comparativo (parametrização de
+         métricas). Dependem de metric-config.js, manual-metrics-store.js,
+         scoring-engine.js, data.js e retro-data.js (carregados acima). -->
+    <script src="js/views/cfg-parametrizacao.js"></script>
+    <script src="js/views/entrada-manual.js"></script>
+    <!--
+        Painéis de Retrospectiva de PI (tarefas 17/18/19) registrados em
+        `window.PEPViews`. Carregam após retro-data.js/retro-aggregation.js
+        (dependências) e antes de app.js (que faz o dispatch do render).
+    -->
+    <script src="js/views/retro-pontos.js"></script>
+    <script src="js/views/retro-produtividade.js"></script>
+    <script src="js/views/retro-epicos.js"></script>
+    <script src="js/views/retro-cycle-time.js"></script>
+    <script src="js/views/retro-lead-time.js"></script>
+    <script src="js/views/retro-debito.js"></script>
+    <script src="js/views/retro-sustentacao.js"></script>
+    <script src="js/views/retro-extras.js"></script>
+    <script src="js/app.js"></script>
+
+</body>
+</html>

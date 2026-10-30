@@ -1,0 +1,6 @@
+id;nome;permissoes
+;Administrador;execGeral|execSquad|detJornada|detSquad|apresentacao|produtividade|excecao|cfgIntegracao|gestPerfis|gestUsuarios|gestTribosSquads|gestOKRs|gestKPIs|cfgComunicacao
+;Delivery Manager;execGeral|execSquad|detJornada|detSquad|apresentacao|produtividade|excecao|cfgIntegracao|gestPerfis|gestUsuarios|gestTribosSquads|gestOKRs|gestKPIs|cfgComunicacao
+;Tech Manager;execGeral|detJornada|detSquad|apresentacao|produtividade|excecao|gestUsuarios
+;Group Product Manager;execGeral|detJornada|detSquad|apresentacao
+;Tech Lead;execSquad|detJornada|detSquad|produtividade|gestUsuarios
