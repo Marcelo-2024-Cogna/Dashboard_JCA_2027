@@ -142,6 +142,24 @@ php bin/conferir_planilha.php --projetos=SGGU,SGSE,SGGS,SGTB [--sprints=26.4.1,2
   x view (valores **negativos** da planilha sinalizados) e totais (itens, SP, SP
   de valor entregue, estimate). Resumo no log `importacao`.
 
+## Histórico de produtividade das jornadas (`produtividade_historico`)
+
+Preenchido por `bin/consolidar_produtividade.php --pi="PI x/yy"` a partir de
+`vw_produtividade_pi` (ao vivo de `extracao_jira`): por time e PI grava
+`horas_gastas = Σ tempo_gasto/3600`, `pontos_entregues = Σ story_points` (itens de
+**entrega de valor entregues** — Aceito / Pendente de Produção / Em produção; SP
+nulo **não** cai para o estimate) e `produtividade = horas/pontos`. Chave lógica
+UNIQUE (`times_id`, `configuracao_pi_id`); idempotente. A média **ponderada** da
+jornada é `Σhoras / Σpontos` (não a média das produtividades por time).
+
+Estado (04/11/2026): PIs 1/26–3/26 consolidadas para **8 jornadas** com dados
+(101 linhas), além da PI 4/26 corrente ao vivo. Secretaria: 5,89 / 6,58 / 6,65 /
+6,33 (PIs 1→4). **Ingresso sem histórico**: nas PIs antigas as chaves são `JI*`,
+não `IN*` — pendente o de-para para extrair/consolidar.
+
+> Não reexecutar `bin/seed_catalogo.php`: ele recria `times` e deixa
+> `produtividade_historico` / `sustentacao_historico` órfãs.
+
 ## Visão geral do pipeline
 
 ```

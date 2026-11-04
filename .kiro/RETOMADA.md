@@ -84,10 +84,17 @@
   enquanto; ideia futura.
 
 ## 4. PRÓXIMOS PASSOS (ordem sugerida para amanhã)
-> **Git ao encerrar 29/10**: local à frente do `origin/main` por 1 commit (`f537366`, checklist
-> do deploy) + este arquivo modificado e sem commit. O usuário pediu: **commitar o checklist
-> junto com o próximo lote (Velocidade) e então fazer o push**. A pasta
-> `Plataforma-Engenharia-Performance/` é do usuário (não rastrear/commitar).
+> **Git (atualizado em 04/11)**: o usuário commitou e fez push em 30/10 (`af81878`
+> "Nova Estrutura - Jessica"), levando junto o checklist do deploy (`f537366`) e o estado do
+> handoff; `origin/main` == local. Esse commit também **passou a rastrear** a pasta
+> `Plataforma-Engenharia-Performance/` (141 arquivos; app estático separado — "PEP", Score de
+> Performance — trazido pelo usuário; não faz parte deste dashboard e não foi alterado por mim).
+> Não há mais "commit pendente do checklist".
+> **ATENÇÃO — dados e janela (04/11)**: a última extração é de 29/10 (dados com ~6 dias). A
+> SP 26.4.3 termina em **06/11**; a partir de 07/11 a janela padrão "sprints fechadas" passa a
+> incluir a SP 26.4.3 e TODOS os números de referência usados nas conferências (Secretaria:
+> 331/235 = 71,0%; 412/435/410/396; lead time 77 itens/7,64; produtividade 6,33) mudam POR
+> DESENHO. Antes de validar a Velocidade, decidir se reextrai a PI 4/26 (não há cron; manual).
 1. ~~**Aplicar "Suporte = Sustentação"**~~ **CONCLUÍDA**: categoria sustentação
    (Sustentação + Suporte) lida de `plan_real_sustentacao_types` e aplicada no
    `PlanejadoRealizadoRepository`; Suporte saiu de `tipos_fora_das_barras`.
@@ -129,6 +136,47 @@
    SGSE 6,95 · SGGU 6,63 · SGGS 6,52 — coerente com o template (5–7). Decidir:
    média da jornada ponderada (Σh/Σpts) ou simples; e se a produtividade média da
    PI passada alimenta `times_composicao.media_produtividade_pi` da PI seguinte.
+### DECISÕES DO USUÁRIO — 04/11/2026 (respostas às pendências de 29/10)
+1. **Escopo da extração: manter SÓ `fixVersion ~ "*PI x/yy*"`** (NÃO recuperar carry-over por
+   sprint). Os ~11% de itens da baseline fora da extração permanecem fora.
+2. **PGPO ("Pós") segue o Jira → jornada `Pos Graduação`** (movido no banco em 04/11).
+3. **Inativados em 04/11** (`times.ativo='N'`): JAAM, SGTH, SGTP, VAPP, JFTR, JFSP (fusões/sem
+   dados). JFTR/JFSP têm histórico nas PIs 1/26–2/26 que não aparece enquanto inativos
+   (reativável por UPDATE). Registro em `config/catalogo_overrides.php` — **nada o lê ainda;
+   NÃO reexecutar `bin/seed_catalogo.php`** (apaga/recria `times` e deixa
+   `produtividade_historico`/`sustentacao_historico` órfãs, além de desfazer estas correções);
+   o futuro motor de importação deve honrá-lo.
+4. **Histórico de produtividade** das demais jornadas (PIs 1/26–3/26): necessário (comparativo).
+   **CONCLUÍDO em 04/11**: extraído do Jira real e consolidado em `produtividade_historico`
+   (101 linhas, 8 jornadas com dados). Médias ponderadas (Σh/Σpts) conferidas; Secretaria
+   permanece 5,89 / 6,58 / 6,65 (sem regressão). **Ingresso ficou sem histórico**: nas PIs
+   antigas os itens estão sob chaves `JI*`, não `IN*` — falta o de-para do usuário para extrair.
+   Outlier a conferir: Inteligência Artificial com time até 11,2 h/ponto na PI 1/26.
+5. **Visão Geral = igual ao dashboard Jira** `https://cogna.atlassian.net/jira/dashboards/22395`
+   (replicar os gadgets). Levantamento somente-leitura via API **CONCLUÍDO** (13 gadgets,
+   relatório em `data/exports/jira_dashboard_22395.md`). Decisões do usuário (04/11): visão
+   **por jornada** consolidando vários projetos/times, filtros descem ao time (ADSE==SGSE = mesmo
+   time); **seletor Sprint ativa | PI inteira** com sprints dinâmicas; Burndown/CFD/Tempo-por-status
+   em **versões aproximadas por datas de fluxo** (rotuladas); gadgets de Sustentação ficam para o
+   **módulo independente** (o ÷5 do Jira = produtividade: média da jornada p/ jornada, média do time
+   p/ time). Construção da página em andamento (workflow de desenho aprovado).
+6. **Painel de Controle será reestruturado** (antes da PI 1/27): interface única com
+   (a) Modal de Extração Jira, (b) Modal do Motor de Importação (Velocidade, Baseline,
+   Calendários), (c) Motor de configurações de exceções, (d) Modal de configurações de PI e
+   Times. Substitui o Painel atual (JSON da v1.0).
+7. **Sustentação** vira **módulo independente** (o usuário identificou regras próprias que vai
+   detalhar). Segue PAUSADO.
+8. **Velocidade = widget Jira "Team Velocity"**: por sprint, Escopo Inicial, Escopo Final,
+   Concluído, Velocidade Média (linha), Mudança de Escopo, Adicionado, Removido.
+   **CONCLUÍDO e verificado em 04/11** (ver 3a). `app/Repositories/VelocidadeRepository.php`,
+   `GET /graficos/velocidade`, página `/metricas/velocidade` reescrita no formato do widget.
+   Secretaria PI 4/26: totais 435 / 410 / 396 (= PI Planning / Sprint Planning / Entregues do
+   Planejado x Realizado), resíduo da identidade 0 em todas as sprints e times, Velocidade Média
+   198 sobre as 2 sprints fechadas. SP 26.4.3 exibida em andamento (hachurada, fora da média).
+   Semântica adotada: Escopo Inicial = SPE baseline (PI Planning filtrado na sprint); Escopo Final =
+   SPE extração sem Cancelado (Sprint Planning); Concluído = SP atuais (Entregues);
+   Adicionado/Removido/Mudança de Escopo pela diferença de conjuntos baseline×extração.
+
 3a. **PRÓXIMO — Velocidade refeita** (`/metricas/velocidade`, hoje legada da v1.0: lê o
    cache antigo `data/items.json`/`/metrics`, 31 times). Pedido do usuário (29/10): os gráficos
    passam a usar os rótulos **"Story Points Estimate"** e **"Story Points entregues"**, e os
@@ -141,7 +189,7 @@
    os totais baterem por construção, e provar com cálculo independente. Alternativa em
    aberto: usar Sprint Planning (410) em vez de PI Planning como "Estimate".
 3b. **Visão Geral: o usuário está preparando outra proposta — NÃO alterar até ele trazer.**
-3c. **Decisões em aberto da cobertura de dados (29/10, noite)** — o usuário ainda vai decidir:
+3c. **Decisões da cobertura de dados (29/10, noite)** — RESPONDIDAS em 04/11 (ver bloco acima; a lista abaixo fica como histórico):
    1. **Escopo da extração**: manter só `fixVersion ~ "*PI x/yy*"` ou acrescentar `OR Sprint in
       (sprints da PI)`. Medido: 108 itens de valor da baseline (325 de 2964 SPE = 11%) ficam fora da
       extração da PI 4/26 — 61 itens/187 SPE rotulados "PI 3/26" (carry-over; APAP sozinho 30),
