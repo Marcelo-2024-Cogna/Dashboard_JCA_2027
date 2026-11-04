@@ -206,6 +206,10 @@ switch (true) {
         (new \App\Controllers\GraficosController(new \App\Repositories\PrevisibilidadeRepository()))->leadTime();
         break;
 
+    case $uri === '/graficos/velocidade':
+        (new \App\Controllers\GraficosController(new \App\Repositories\PrevisibilidadeRepository()))->velocidade();
+        break;
+
     case $uri === '/graficos/produtividade':
         (new \App\Controllers\GraficosController(new \App\Repositories\PrevisibilidadeRepository()))->produtividade();
         break;
