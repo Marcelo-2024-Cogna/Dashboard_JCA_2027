@@ -9,6 +9,125 @@
 ?>
 <div id="painel-alert"></div>
 
+<!-- ══ MÓDULO 1 — Motor de Extração Jira (único funcional) ══════════════ -->
+<div class="stitle">Motor de Extração Jira</div>
+<div class="ccard">
+  <p style="font-size:.82rem; color:var(--muted); margin-bottom:14px">
+    Agende uma extração do Jira por jornada, PI, sprint e time — e acompanhe a fila de execuções.
+  </p>
+  <button type="button" class="btn btn-primary" id="btn-extrair" aria-haspopup="dialog" title="Agendar uma extração do Jira por jornada, PI, sprint e time (e acompanhar a fila)">⬇ Extrair do Jira</button>
+</div>
+
+<!-- ── Modal de extração do Jira (elemento nativo <dialog>) ── -->
+<dialog id="dlg-extracao" class="modal" aria-labelledby="ext-titulo">
+  <form method="dialog" class="modal-form" id="ext-form" novalidate>
+    <header class="modal-head">
+      <h3 id="ext-titulo">Extrair do Jira</h3>
+      <button type="button" class="btn btn-ghost modal-x" id="ext-fechar" aria-label="Fechar">✕</button>
+    </header>
+
+    <div class="modal-tabs" role="tablist" aria-label="Seções da extração">
+      <button type="button" class="tab is-active" role="tab" id="tab-nova" aria-controls="painel-nova" aria-selected="true">Nova extração</button>
+      <button type="button" class="tab" role="tab" id="tab-fila" aria-controls="painel-fila" aria-selected="false" tabindex="-1">Fila de extrações</button>
+    </div>
+
+    <div class="modal-body">
+      <!-- Aba 1: nova extração -->
+      <section id="painel-nova" role="tabpanel" aria-labelledby="tab-nova">
+        <div id="ext-carregando" class="loading" role="status">Carregando catálogo…</div>
+        <div id="ext-campos" hidden>
+          <div class="ext-grid">
+            <fieldset class="ext-box" id="box-jornadas">
+              <legend>Jornadas <span class="req" aria-hidden="true">*</span></legend>
+              <div class="ext-tools">
+                <button type="button" class="link-btn" data-sel="all" data-alvo="jornadas">Selecionar todos</button>
+                <button type="button" class="link-btn" data-sel="none" data-alvo="jornadas">Limpar</button>
+              </div>
+              <div class="ext-list" id="lst-jornadas"></div>
+            </fieldset>
+
+            <fieldset class="ext-box" id="box-pis">
+              <legend>Versões Corrigidas / PIs <span class="req" aria-hidden="true">*</span></legend>
+              <div class="ext-tools">
+                <button type="button" class="link-btn" data-sel="all" data-alvo="pis">Selecionar todos</button>
+                <button type="button" class="link-btn" data-sel="none" data-alvo="pis">Limpar</button>
+              </div>
+              <div class="ext-list" id="lst-pis"></div>
+            </fieldset>
+
+            <fieldset class="ext-box" id="box-sprints">
+              <legend>Sprints</legend>
+              <div class="ext-tools">
+                <button type="button" class="link-btn" data-sel="none" data-alvo="sprints" title="Equivale a não filtrar por sprint">Todas as sprints da PI</button>
+                <button type="button" class="link-btn" data-sel="all" data-alvo="sprints">Selecionar todos</button>
+                <button type="button" class="link-btn" data-sel="none" data-alvo="sprints">Limpar</button>
+              </div>
+              <div class="ext-list" id="lst-sprints"></div>
+              <p class="ext-hint">Nenhuma marcada = todas as sprints das PIs escolhidas.</p>
+            </fieldset>
+
+            <fieldset class="ext-box" id="box-times">
+              <legend>Times</legend>
+              <div class="ext-tools">
+                <button type="button" class="link-btn" data-sel="all" data-alvo="times">Selecionar todos</button>
+                <button type="button" class="link-btn" data-sel="none" data-alvo="times">Limpar</button>
+              </div>
+              <div class="ext-list" id="lst-times"></div>
+              <p class="ext-hint">Nenhum marcado = todos os times das jornadas escolhidas.</p>
+            </fieldset>
+          </div>
+
+          <div class="field ext-email">
+            <label for="ext-email">E-mail para notificação</label>
+            <input type="email" id="ext-email" autocomplete="email" placeholder="nome@empresa.com" aria-describedby="ext-email-erro" />
+            <span id="ext-email-erro" class="ext-field-erro" role="alert"></span>
+          </div>
+
+          <p class="ext-resumo" id="ext-resumo" aria-live="polite"></p>
+          <p class="ext-hint">A extração é disparada em ~10 minutos após o agendamento.</p>
+        </div>
+      </section>
+
+      <!-- Aba 2: fila -->
+      <section id="painel-fila" role="tabpanel" aria-labelledby="tab-fila" hidden>
+        <div class="fila-tools">
+          <button type="button" class="btn btn-ghost" id="fila-atualizar">↻ Atualizar</button>
+          <span class="ext-hint" id="fila-quando"></span>
+        </div>
+        <div id="fila-lista" aria-live="polite"></div>
+      </section>
+
+      <!-- Mensagens (sucesso / erro / aviso de duplicidade) -->
+      <div id="ext-msg" class="ext-msg" role="status" aria-live="polite"></div>
+    </div>
+
+    <footer class="modal-foot">
+      <button type="button" class="btn btn-ghost" id="ext-cancelar">Cancelar</button>
+      <button type="button" class="btn btn-ghost" id="ext-confirmar" hidden>Confirmar e substituir</button>
+      <button type="submit" class="btn btn-primary" id="ext-agendar" disabled>Agendar extração</button>
+    </footer>
+  </form>
+</dialog>
+
+<!-- ══ MÓDULOS 2–4 — Placeholders (em breve) ═══════════════════════════ -->
+<div class="stitle" style="margin-top:24px">Motor de Importação</div>
+<div class="ccard vg-placeholder">
+  <h3>Motor de Importação — em breve</h3>
+  <p style="font-size:.82rem; color:var(--muted)">Velocidade, Baseline e Calendários. Módulo em construção.</p>
+</div>
+
+<div class="stitle" style="margin-top:24px">Motor de Configurações de Exceções</div>
+<div class="ccard vg-placeholder">
+  <h3>Configurações de Exceções — em breve</h3>
+  <p style="font-size:.82rem; color:var(--muted)">Regras de exceção para o cálculo de métricas. Módulo em construção.</p>
+</div>
+
+<div class="stitle" style="margin-top:24px">Configurações de PI e Times</div>
+<div class="ccard vg-placeholder">
+  <h3>Configurações de PI e Times — em breve</h3>
+  <p style="font-size:.82rem; color:var(--muted)">Parametrização avançada de PIs e times. Módulo em construção.</p>
+</div>
+
 <!-- ══ BLOCO 1 — Parâmetros da PI ═══════════════════════════════════════ -->
 <div class="stitle">Parâmetros da PI</div>
 <div class="ccard">

@@ -243,45 +243,9 @@
     });
   }
 
-  // ── Exportação (carrega libs sob demanda via CDN) ────────────────────────
-  async function exportPdf() {
-    await loadScript('https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js');
-    const el = document.getElementById('main-content');
-    window.html2pdf().set({
-      margin: 8, filename: `metricas-${location.pathname.split('/').pop() || 'home'}.pdf`,
-      image: { type: 'jpeg', quality: 0.95 },
-      html2canvas: { scale: 2, backgroundColor: '#0f1117' },
-      jsPDF: { orientation: 'landscape', unit: 'mm', format: 'a4' },
-    }).from(el).save();
-  }
-
-  async function exportXlsx() {
-    await loadScript('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js');
-    // Exporta as tabelas presentes na página (se houver)
-    const tables = document.querySelectorAll('table');
-    if (!tables.length) { alert('Nenhuma tabela para exportar nesta tela.'); return; }
-    const wb = window.XLSX.utils.book_new();
-    tables.forEach((t, i) => {
-      const ws = window.XLSX.utils.table_to_sheet(t);
-      window.XLSX.utils.book_append_sheet(wb, ws, `Tabela${i + 1}`);
-    });
-    window.XLSX.writeFile(wb, `metricas-${location.pathname.split('/').pop() || 'home'}.xlsx`);
-  }
-
-  function loadScript(src) {
-    return new Promise((resolve, reject) => {
-      if (document.querySelector(`script[src="${src}"]`)) return resolve();
-      const s = document.createElement('script');
-      s.src = src; s.onload = resolve; s.onerror = () => reject(new Error('Falha ao carregar ' + src));
-      document.head.appendChild(s);
-    });
-  }
-
   // ── Bootstrap da página ──────────────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', () => {
     initFilters();
-    document.getElementById('btn-export-pdf')?.addEventListener('click', exportPdf);
-    document.getElementById('btn-export-xlsx')?.addEventListener('click', exportXlsx);
   });
 
   // Exporta para as views usarem
