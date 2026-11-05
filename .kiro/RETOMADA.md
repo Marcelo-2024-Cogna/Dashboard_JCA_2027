@@ -90,6 +90,10 @@
 > `Plataforma-Engenharia-Performance/` (141 arquivos; app estático separado — "PEP", Score de
 > Performance — trazido pelo usuário; não faz parte deste dashboard e não foi alterado por mim).
 > Não há mais "commit pendente do checklist".
+> **Commits desde `af81878` (feitos e com push por mim, 04–05/11)**: `0dfcc21` Velocidade ·
+> `ed67df5` docs (histórico produtividade, overrides, levantamento 22395) · `e14f160` Visão
+> Geral · `2fb6fd9` ignora `.agents/` · `3ce2067` filtros universais + Extração movida ao Painel
+> · `9be4dd6` segurança (remove credenciais do versionamento). `origin/main` == local em `9be4dd6`.
 > **ATENÇÃO — dados e janela (04/11)**: a última extração é de 29/10 (dados com ~6 dias). A
 > SP 26.4.3 termina em **06/11**; a partir de 07/11 a janela padrão "sprints fechadas" passa a
 > incluir a SP 26.4.3 e TODOS os números de referência usados nas conferências (Secretaria:
@@ -248,24 +252,31 @@
 
 ## 8. CHECKLIST DO DIA DO DEPLOY (ambiente interno)
 > Combinado em 29/10/2026: no dia do deploy o usuário pede para **excluir os
-> segredos do repositório**. Não fazer antes disso sem pedido. Até lá, os tokens
-> seguem expostos no histórico do GitHub (commit `8edcbb5`) e na conversa.
+> segredos do repositório**. **FEITO em 05/11/2026** (ver abaixo).
 
-**Segredos (a pedido do usuário no dia do deploy)**
-- Token do **Jira** em texto em `config/jira.php` e em `.kiro/settings/mcp.json`;
-  token do **Confluence** e e-mail corporativo também em `.kiro/settings/mcp.json`
-  (arquivo rastreado, contém comentário `//` → não é JSON puro; NÃO ler com
-  `ConvertFrom-Json`/imprimir, o conteúdo vaza no terminal).
-- Fazer: (1) usuário **revoga e gera novos tokens** (id.atlassian.com → Segurança →
-  Tokens de API) — a única correção que de fato resolve; (2) `config/jira.php`
-  passa a ler só `getenv('JIRA_API_TOKEN')` (documentar onde definir: Apache/XAMPP
-  e CentOS/systemd); (3) parar de rastrear `.kiro/settings/mcp.json` (`git rm
-  --cached` + `.gitignore`) e criar `mcp.json.example` sem segredos;
-  (4) reescrever histórico (`git filter-repo`/BFG + force-push) SOMENTE se o
-  usuário pedir (destrutivo; com os tokens revogados deixa de ser urgente).
-- Também revisar: senha de dev do banco (`metricas_jca`/`metricas_jca`) em
-  `db/schema.sql`, senha do root usada nos testes, `app/Services/Logger.php`
-  (máscara de segredos já existe).
+**Segredos — RESOLVIDO em 05/11/2026 (commit `9be4dd6`, com push)**
+- O usuário **revogou o token do Jira** no Atlassian. Verificado por mim com
+  `GET /rest/api/3/myself` usando o token antigo → **HTTP 401 Unauthorized**:
+  o token está morto/inerte.
+- `config/jira.php`: token e e-mail agora vêm **só de variável de ambiente**
+  (`getenv('JIRA_API_TOKEN')` / `getenv('JIRA_EMAIL')`), **sem fallback com
+  segredo**. Se faltar o token, a extração falha de forma clara. No deploy,
+  definir essas env vars no servidor (Apache/XAMPP ou systemd/.env não versionado)
+  com o **token NOVO**.
+- `.kiro/settings/mcp.json`: **removido do controle de versão** (`git rm --cached`;
+  o arquivo local permanece intacto e a extração local segue funcionando) e
+  **adicionado ao `.gitignore`**. Continua valendo: NÃO abrir/`ConvertFrom-Json`/
+  imprimir esse arquivo (contém comentário `//` e tokens).
+- `config/db.php`: **nunca foi versionado** (já no `.gitignore`); nada a fazer.
+- As credenciais de **produção** (banco `score_performance`, VPN) nunca estiveram
+  em arquivo do repositório — só vieram no chat.
+- **Decisão do usuário (05/11)**: NÃO reescrever o histórico. Logo o token antigo
+  **ainda aparece nos commits antigos do GitHub** (`8edcbb5` em diante), porém
+  **revogado/inerte**. Reescrita (`git filter-repo`/BFG + force-push) fica
+  disponível se um dia quiser, mas não é urgente com o token morto.
+- Ainda a revisar no deploy: senha de dev do banco (`metricas_jca`/`metricas_jca`)
+  em `db/schema.sql` e a senha do root usada nos testes (`app/Services/Logger.php`
+  já tem máscara de segredos).
 
 **Banco**: aplicar `db/schema.sql`, `db/views.sql`, `db/triggers.sql` (este com
 conta privilegiada); trocar a senha do usuário de aplicação por uma forte;
