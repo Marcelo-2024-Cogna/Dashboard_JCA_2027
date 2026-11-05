@@ -13,3 +13,6 @@ data/notificacoes.log
 # Artefatos de trabalho dos workflows (task.md, design, reviews, plan).
 # São rascunhos de processo, não fazem parte do produto versionado.
 .agents/
+# Configuração local de MCP (contém token do Jira específico do ambiente).
+# Mantido apenas localmente; não versionar segredos.
+.kiro/settings/mcp.json

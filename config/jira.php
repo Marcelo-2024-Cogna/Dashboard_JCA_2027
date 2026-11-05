@@ -5,10 +5,14 @@
  * Variáveis de ambiente têm precedência sobre os valores padrão.
  */
 
+// Credenciais SEMPRE via ambiente — nunca hardcode segredos aqui (este
+// arquivo é versionado). Defina JIRA_API_TOKEN e JIRA_EMAIL no servidor
+// (variáveis de ambiente / arquivo .env não versionado). Sem fallback com
+// segredo: se faltar o token, a extração falha de forma clara.
 return [
-    'host'  => getenv('JIRA_HOST')       ?: 'https://cogna.atlassian.net',
-    'email' => getenv('JIRA_EMAIL')      ?: 'marcelo.doliveira@cogna.com.br',
-    'token' => getenv('JIRA_API_TOKEN')  ?: 'ATATT3xFfGF0rk7econkkvKg1PpqrxudnjzGXn1R9lZ-7rc4zE8mKXIBtaYeCWbVz2BwOH2X1yYhclVH4gt5jwdj5hIry1ExsRo4Qv_-Tn0liiq_8cH0hxpltI5eeZsEe51Vl31gErP0HZOsjbQ_a-8U2FLWXmKCVKsmjgwnDrF3zFz69sv0Kt8=E36B9456',
+    'host'  => getenv('JIRA_HOST')      ?: 'https://cogna.atlassian.net',
+    'email' => getenv('JIRA_EMAIL')     ?: '',
+    'token' => getenv('JIRA_API_TOKEN') ?: '',
 
     // Tempo de cache do arquivo data/items.json em segundos (padrão: 30 min)
     'cache_ttl' => (int)(getenv('JIRA_CACHE_TTL') ?: 1800),
