@@ -319,23 +319,65 @@ class ProdutividadeRepository
     /** PI de referência AO VIVO, restrita às sprints da janela (sprint_ref). */
     private function aoVivo(int $piId, array $sprints, array $keys): array
     {
+        $out = [];
+        foreach ($this->somarEntregues($piId, $sprints, $keys, 'projeto_key') as $k => $r) {
+            $h = (float)$r['horas'];
+            $pts = $r['pontos'];
+            $out[$k] = self::linha($h, $pts, $pts !== null && $pts > 0 ? $h / $pts : null,
+                (int)$r['itens'], (int)$r['sp_nulo'], 'ao_vivo');
+        }
+        return $out;
+    }
+
+    /**
+     * Produtividade AO VIVO por sprint (sprint_ref), restrita às sprints da janela.
+     * Sprint sem item entregue não aparece; pontos = 0.0 quando todos os SP são nulos.
+     * @return array<string,array{horas:float,pontos:float,itens:int,sp_nulo:int}>
+     */
+    public function porSprint(int $piId, array $sprints, array $keys): array
+    {
+        $out = [];
+        foreach ($this->somarEntregues($piId, $sprints, $keys, 'sprint_ref') as $sp => $r) {
+            $out[$sp] = [
+                'horas'  => (float)$r['horas'],
+                'pontos' => $r['pontos'] === null ? 0.0 : (float)$r['pontos'],
+                'itens'  => (int)$r['itens'],
+                'sp_nulo' => (int)$r['sp_nulo'],
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * Soma de horas/pontos/itens dos itens de valor ENTREGUES da PI nas sprints da janela,
+     * agrupados por $agrupar. $agrupar é o único identificador interpolado no SQL e é
+     * validado contra a lista fixa (não vem de entrada de usuário).
+     * @return array<string,array{horas:float,pontos:?float,itens:int,sp_nulo:int}>
+     */
+    private function somarEntregues(int $piId, array $sprints, array $keys, string $agrupar): array
+    {
+        if (!in_array($agrupar, ['projeto_key', 'sprint_ref'], true)) {
+            throw new InvalidArgumentException("Agrupamento inválido: {$agrupar}.");
+        }
         $par = [':pi' => $piId];
         $s = $this->in('s', $sprints, $par); $k = $this->in('k', $keys, $par);
         $st = $this->pdo->prepare(
-            "SELECT projeto_key, SUM(soma_tempo_gasto) / 3600 AS horas, SUM(story_points) AS pontos,
+            "SELECT $agrupar AS g, SUM(soma_tempo_gasto) / 3600 AS horas, SUM(story_points) AS pontos,
                     COUNT(*) AS itens, SUM(story_points IS NULL) AS sp_nulo
                FROM vw_item
               WHERE configuracao_pi_id = :pi AND is_entrega_valor = 1 AND entregue = 1
                 AND sprint_ref IN ($s) AND projeto_key IN ($k)
-              GROUP BY projeto_key"
+              GROUP BY $agrupar"
         );
         $st->execute($par);
         $out = [];
         foreach ($st->fetchAll() as $r) {
-            $h = (float)$r['horas'];
-            $pts = $r['pontos'] === null ? null : (float)$r['pontos'];
-            $out[$r['projeto_key']] = self::linha($h, $pts, $pts !== null && $pts > 0 ? $h / $pts : null,
-                (int)$r['itens'], (int)$r['sp_nulo'], 'ao_vivo');
+            $out[$r['g']] = [
+                'horas'  => (float)$r['horas'],
+                'pontos' => $r['pontos'] === null ? null : (float)$r['pontos'],
+                'itens'  => (int)$r['itens'],
+                'sp_nulo' => (int)$r['sp_nulo'],
+            ];
         }
         return $out;
     }

@@ -127,6 +127,18 @@
     return new RegExp('(?<![\\d.])' + num + '(?![\\d.]*\\d)');
   }
 
+  /**
+   * Rótulo da opção vazia do select de sprint, por seção:
+   *   - "overview" (Visão Geral): "PI inteira" se modo=pi na URL, senão
+   *     "Sprint ativa" (modo=sprint ou vazio);
+   *   - demais telas: "Todas as fechadas".
+   */
+  function rotuloSprintVazio() {
+    if ((window.APP_SECTION || '') !== 'overview') return 'Todas as fechadas';
+    const modo = (new URLSearchParams(location.search).get('modo') || '').toLowerCase().trim();
+    return modo === 'pi' ? 'PI inteira' : 'Sprint ativa';
+  }
+
   /** Índices do catálogo de /filtros usados pelo Util.applyFilters (legado). */
   function indexCatalog(cat) {
     const keysByJornada = {}, keysByTime = {};
@@ -170,7 +182,12 @@
       fillSelect(selJornada, jornadas, cur.jornada);
       fillSelect(selTime,    times,    cur.time);
       fillSelect(selVersao,  versoes,  eff.versao, { semVazio: true });
-      fillSelect(selSprint,  sprints,  cur.sprint, { rotuloVazio: 'Todas as fechadas' });
+      // Rótulo da opção vazia do select de sprint: na Visão Geral (seção
+      // "overview") ela representa o escopo do seletor ("Sprint ativa" por
+      // padrão, "PI inteira" quando modo=pi na URL); nas demais telas, as
+      // sprints fechadas. O valor da opção continua vazio ("").
+      const rotuloVazio = rotuloSprintVazio();
+      fillSelect(selSprint,  sprints,  cur.sprint, { rotuloVazio });
     } catch (e) {
       console.warn('Falha ao popular filtros:', e.message);
     }

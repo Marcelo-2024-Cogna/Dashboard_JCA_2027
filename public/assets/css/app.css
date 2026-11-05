@@ -334,6 +334,40 @@ tbody td { padding: 8px 13px; }
 .pr-diag summary { cursor: pointer; color: var(--text); }
 .pr-diag ul { margin: 8px 0 0; padding-left: 18px; line-height: 1.6; }
 
+/* ── Visão Geral (vg-*) ── */
+/* Toggle segmentado "Sprint ativa | PI inteira" */
+.vg-seg-wrap { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 14px; }
+.vg-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.vg-seg-btn {
+  background: var(--surface); color: var(--muted); border: none; cursor: pointer;
+  padding: 8px 18px; font-size: .82rem; font-weight: 600;
+}
+.vg-seg-btn + .vg-seg-btn { border-left: 1px solid var(--border); }
+.vg-seg-btn:hover { color: var(--text); }
+/* aria-pressed é o canal primário; a cor é reforço, não o único sinal */
+.vg-seg-btn[aria-pressed="true"] { background: var(--indigo); color: #fff; }
+.vg-seg-btn[aria-pressed="true"]::before { content: '✓ '; }
+
+/* Faixa de contexto âmbar quando a defasagem passa de 1 dia */
+.vg-faixa-ambar {
+  background: rgba(245,158,11,.1); border: 1px solid var(--amber); color: #fcd34d;
+}
+.vg-faixa-ambar strong { color: #fde68a; }
+
+/* Badge "aproximado por datas de fluxo" */
+.vg-badge-aprox { border-color: var(--amber); color: var(--amber); background: rgba(245,158,11,.1); }
+
+/* Placeholder tracejado da Sustentação */
+.vg-placeholder { border: 1px dashed var(--border); background: transparent; opacity: .85; }
+.vg-placeholder h3 { color: var(--muted); }
+
+/* Grade de KPIs mais compacta na Visão Geral */
+.vg-kpi-grid { grid-template-columns: repeat(auto-fill, minmax(170px,1fr)); margin-top: 4px; }
+
+/* Cards largos (tempo por status, lista) ocupam a linha inteira */
+.vg-wide { margin-top: 0; }
+.vg-tbl { font-size: .76rem; }
+
 @media (max-width: 1000px) {
   .layout { grid-template-columns: 1fr; grid-template-areas: "header" "main"; }
   .sidebar { display: none; }

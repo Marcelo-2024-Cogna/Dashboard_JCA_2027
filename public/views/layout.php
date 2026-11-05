@@ -36,6 +36,10 @@ $menuMain = ['overview','velocidade','cycle-time','previsibilidade','plan-real',
        scripts inline das views já encontrem window.App e window.Charts. -->
   <script>
     window.APP_BASE = <?= json_encode($base) ?>;
+    // Seção ativa (ex.: "overview"). A barra de filtros usa isto para decidir
+    // o rótulo da opção vazia do select de sprint (Visão Geral: "Sprint ativa"/
+    // "PI inteira"; demais telas: "Todas as fechadas").
+    window.APP_SECTION = <?= json_encode($activeSection ?? '') ?>;
     // Tipos de "entrega de valor" (config/baseline.php). Usado pelas views
     // para filtrar métricas de valor (Lead Time, Produtividade).
     window.VALUE_TYPES = <?= json_encode($valueTypes ?? []) ?>;

@@ -35,4 +35,27 @@ class SprintRef
         }
         return 'SP ' . implode('.', $best);
     }
+
+    /**
+     * Todas as sprints no formato N.N.N encontradas no texto, normalizadas
+     * para 'SP a.b.c', sem duplicatas e ordenadas pela tupla numérica
+     * (ano, pi, seq) crescente (ex.: 'SP 26.4.2' < 'SP 26.4.10').
+     * Texto vazio ou sem match → [].
+     */
+    public static function todas(?string $sprint): array
+    {
+        if ($sprint === null || trim($sprint) === '') {
+            return [];
+        }
+        if (!preg_match_all('/(?<![\d.])(\d+)\.(\d+)\.(\d+)(?![\d.]*\d)/', $sprint, $m, PREG_SET_ORDER)) {
+            return [];
+        }
+        $tuplas = [];
+        foreach ($m as $x) {
+            $t = [(int)$x[1], (int)$x[2], (int)$x[3]];
+            $tuplas['SP ' . implode('.', $t)] = $t;
+        }
+        uasort($tuplas, static fn(array $p, array $q): int => $p <=> $q);
+        return array_keys($tuplas);
+    }
 }

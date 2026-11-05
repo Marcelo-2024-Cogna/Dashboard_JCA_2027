@@ -214,6 +214,14 @@ switch (true) {
         (new \App\Controllers\GraficosController(new \App\Repositories\PrevisibilidadeRepository()))->produtividade();
         break;
 
+    case $uri === '/graficos/visao-geral':
+        $vgBase = new \App\Repositories\PrevisibilidadeRepository();
+        (new \App\Controllers\GraficosController(
+            $vgBase, null, null, null, null,
+            new \App\Repositories\VisaoGeralRepository($vgBase)
+        ))->visaoGeral();
+        break;
+
     // ── Home → Visão Geral ───────────────────────────────────────────────
     case $uri === '/' || $uri === '/index.html':
         $makeViewController()->render('overview');

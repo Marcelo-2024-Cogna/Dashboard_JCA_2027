@@ -7,6 +7,7 @@ use App\Repositories\PlanejadoRealizadoRepository;
 use App\Repositories\PrevisibilidadeRepository;
 use App\Repositories\ProdutividadeRepository;
 use App\Repositories\VelocidadeRepository;
+use App\Repositories\VisaoGeralRepository;
 use App\Services\Logger;
 use InvalidArgumentException;
 use Throwable;
@@ -34,19 +35,22 @@ class GraficosController
     private LeadTimeRepository $leadTime;
     private ProdutividadeRepository $produtividade;
     private VelocidadeRepository $velocidade;
+    private ?VisaoGeralRepository $visaoGeral;
 
     public function __construct(
         PrevisibilidadeRepository $previsibilidade,
         ?PlanejadoRealizadoRepository $planejadoRealizado = null,
         ?LeadTimeRepository $leadTime = null,
         ?ProdutividadeRepository $produtividade = null,
-        ?VelocidadeRepository $velocidade = null
+        ?VelocidadeRepository $velocidade = null,
+        ?VisaoGeralRepository $visaoGeral = null
     ) {
         $this->velocidade         = $velocidade ?? new VelocidadeRepository($previsibilidade);
         $this->produtividade      = $produtividade ?? new ProdutividadeRepository($previsibilidade);
         $this->previsibilidade    = $previsibilidade;
         $this->planejadoRealizado = $planejadoRealizado ?? new PlanejadoRealizadoRepository($previsibilidade);
         $this->leadTime           = $leadTime ?? new LeadTimeRepository($previsibilidade);
+        $this->visaoGeral         = $visaoGeral;
     }
 
     // ── GET /graficos/plan-real ──────────────────────────────────────────
@@ -137,6 +141,29 @@ class GraficosController
         }
     }
 
+    // ── GET /graficos/visao-geral ─────────────────────────────────────────
+    public function visaoGeral(): void
+    {
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
+            header('Allow: GET');
+            $this->respond(405, ['erro' => 'Use o método GET.']);
+            return;
+        }
+        try {
+            $repo = $this->visaoGeral ?? new VisaoGeralRepository($this->previsibilidade, $this->velocidade, $this->produtividade);
+            $filtros = $this->lerFiltros(true);
+            $this->respond(200, ['success' => true] + $repo->consultar($filtros));
+        } catch (InvalidArgumentException $e) {
+            Logger::warning(Logger::CANAL_DASHBOARD, 'GET /graficos/visao-geral → 400: ' . $e->getMessage(), [
+                'query' => $_GET,
+            ]);
+            $this->respond(400, ['success' => false, 'erro' => $e->getMessage()]);
+        } catch (Throwable $e) {
+            Logger::exception(Logger::CANAL_DASHBOARD, 'GET /graficos/visao-geral: exceção', $e, ['query' => $_GET]);
+            $this->respond(500, ['success' => false, 'erro' => 'Falha ao calcular a Visão Geral.']);
+        }
+    }
+
     // ── GET /graficos/previsibilidade ────────────────────────────────────
     public function previsibilidade(): void
     {
@@ -159,11 +186,18 @@ class GraficosController
         }
     }
 
-    /** @return array<string,string> */
-    private function lerFiltros(): array
+    /**
+     * @param bool $comModo quando true, lê também o parâmetro 'modo' (texto ≤ 255, padrão 'sprint').
+     * @return array<string,string>
+     */
+    private function lerFiltros(bool $comModo = false): array
     {
+        $chaves = self::FILTROS;
+        if ($comModo) {
+            $chaves = array_merge($chaves, ['modo']);
+        }
         $out = [];
-        foreach (self::FILTROS as $k) {
+        foreach ($chaves as $k) {
             $v = $_GET[$k] ?? '';
             if (!is_string($v)) {
                 throw new InvalidArgumentException("Parâmetro '{$k}' deve ser um texto.");
@@ -173,6 +207,9 @@ class GraficosController
                 throw new InvalidArgumentException("Parâmetro '{$k}' excede 255 caracteres.");
             }
             $out[$k] = $v;
+        }
+        if ($comModo && ($out['modo'] ?? '') === '') {
+            $out['modo'] = 'sprint';
         }
         return $out;
     }

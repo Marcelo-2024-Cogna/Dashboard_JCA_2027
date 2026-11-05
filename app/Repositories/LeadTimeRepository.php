@@ -78,17 +78,17 @@ class LeadTimeRepository
             $rows = $itens[$t['projeto_key']] ?? [];
             $j = &$jornadas[$t['jornada']];
             $j ??= ['jornada' => $t['jornada'], 'times' => [], '_itens' => []];
-            $j['times'][] = ['time' => $t['time'], 'projeto_key' => $t['projeto_key']] + $this->estatisticas($rows);
+            $j['times'][] = ['time' => $t['time'], 'projeto_key' => $t['projeto_key']] + self::estatisticas($rows);
             array_push($j['_itens'], ...$rows);
             unset($j);
         }
         $porJornada = [];
         $todos = [];
         foreach ($jornadas as $j) {
-            $porJornada[] = ['jornada' => $j['jornada'], 'times' => $j['times'], 'media_jornada' => $this->estatisticas($j['_itens'])];
+            $porJornada[] = ['jornada' => $j['jornada'], 'times' => $j['times'], 'media_jornada' => self::estatisticas($j['_itens'])];
             array_push($todos, ...$j['_itens']);
         }
-        $total = $this->estatisticas($todos);
+        $total = self::estatisticas($todos);
 
         if ($calcula && $total['itens'] === 0) {
             $avisos[] = 'Nenhum item de entrega de valor entregue na janela para a seleção.';
@@ -156,8 +156,27 @@ class LeadTimeRepository
         return $out;
     }
 
+    /**
+     * Monta uma linha no formato de itens() a partir de valores soltos.
+     * lt = null se d, h, i forem todos null; senão soma das etapas presentes.
+     * qtd = número de etapas presentes. st = $status. fi = $fimImplantacao !== null.
+     * @return array{d:?int,h:?int,i:?int,lt:?int,qtd:int,st:?string,fi:bool}
+     */
+    public static function linha(?int $d, ?int $h, ?int $i, ?string $status, ?string $fimImplantacao): array
+    {
+        $lt = null; $qtd = 0;
+        foreach ([$d, $h, $i] as $e) {
+            if ($e !== null) { $lt = ($lt ?? 0) + $e; $qtd++; }
+        }
+        return [
+            'd' => $d, 'h' => $h, 'i' => $i,
+            'lt' => $lt, 'qtd' => $qtd,
+            'st' => $status, 'fi' => $fimImplantacao !== null,
+        ];
+    }
+
     /** Estatísticas de um conjunto de itens (time, jornada ou seleção). */
-    private function estatisticas(array $rows): array
+    public static function estatisticas(array $rows): array
     {
         $semEtapa = 0;
         $lts = [];
@@ -171,7 +190,7 @@ class LeadTimeRepository
             }
         }
         $itens = count($lts);
-        $resumo = $this->implantacaoResumo($rows);
+        $resumo = self::implantacaoResumo($rows);
         $etapa = function (string $e) use ($soma, $n, $itens): array {
             return [
                 'contribuicao'    => $itens > 0 ? round($soma[$e] / $itens, 4) : null,
@@ -204,7 +223,7 @@ class LeadTimeRepository
      * concluída = tem fim_implantacao; pendente de produção = status 'Pendente de Produção'
      * sem fim; sem_fim_outros = sem fim e outro status (distribuição em sem_fim_outros_por_status).
      */
-    private function implantacaoResumo(array $rows): array
+    public static function implantacaoResumo(array $rows): array
     {
         $entregues = count($rows);
         $concl = 0; $pend = 0; $outros = 0; $porStatus = [];
