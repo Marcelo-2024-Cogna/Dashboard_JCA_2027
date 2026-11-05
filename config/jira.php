@@ -6,9 +6,30 @@
  */
 
 // Credenciais SEMPRE via ambiente — nunca hardcode segredos aqui (este
-// arquivo é versionado). Defina JIRA_API_TOKEN e JIRA_EMAIL no servidor
-// (variáveis de ambiente / arquivo .env não versionado). Sem fallback com
-// segredo: se faltar o token, a extração falha de forma clara.
+// arquivo é versionado). Sem fallback com segredo: se faltar o token, a
+// extração falha de forma clara.
+//
+// FONTE DAS CREDENCIAIS (precedência):
+//   1) Variáveis de ambiente reais (ex.: definidas no systemd/Apache do
+//      servidor de produção) — SEMPRE vencem.
+//   2) config/secrets.local.php (NÃO versionado, no .gitignore) — para o
+//      ambiente de desenvolvimento local. Copie config/secrets.local.php.example
+//      e preencha. Esse arquivo só preenche o que ainda NÃO estiver no ambiente.
+$__secrets = __DIR__ . '/secrets.local.php';
+if (is_file($__secrets)) {
+    $__s = require $__secrets;
+    if (is_array($__s)) {
+        foreach ($__s as $__k => $__v) {
+            // não sobrescreve variável de ambiente já definida (produção vence)
+            if ($__v !== null && $__v !== '' && getenv($__k) === false) {
+                putenv("$__k=$__v");
+            }
+        }
+    }
+    unset($__s, $__k, $__v);
+}
+unset($__secrets);
+
 return [
     'host'  => getenv('JIRA_HOST')      ?: 'https://cogna.atlassian.net',
     'email' => getenv('JIRA_EMAIL')     ?: '',
