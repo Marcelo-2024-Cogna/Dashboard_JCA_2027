@@ -10,3 +10,6 @@ data/logs/*.log.*
 # extracao_agendamento) e log do notificador em modo stub.
 data/agendamentos/ordem_*.json
 data/notificacoes.log
+# Artefatos de trabalho dos workflows (task.md, design, reviews, plan).
+# São rascunhos de processo, não fazem parte do produto versionado.
+.agents/
