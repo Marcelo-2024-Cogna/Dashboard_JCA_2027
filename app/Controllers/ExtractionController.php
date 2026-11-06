@@ -284,7 +284,7 @@ class ExtractionController
         ];
     }
 
-    private function listaDeStrings(mixed $v): bool
+    private function listaDeStrings($v): bool
     {
         if (!is_array($v)) return false;
         foreach ($v as $x) {

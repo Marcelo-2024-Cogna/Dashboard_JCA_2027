@@ -830,20 +830,28 @@ class VisaoGeralCalculator
 
         // Ordenação: não entregues primeiro (por maior tempo na fase atual desc),
         // depois entregues por total_dias desc.
+        // O índice original ($i) é o último desempate para emular a ordenação
+        // estável do PHP 8 (o sort do 7.4 não é estável): a saída é byte-idêntica
+        // nas duas versões mesmo entre elementos empatados.
+        $idx = 0;
+        foreach ($itensLista as &$__it) { $__it['_i'] = $idx++; }
+        unset($__it);
         usort($itensLista, static function (array $a, array $b): int {
             if ($a['_entregue'] !== $b['_entregue']) {
                 return $a['_entregue'] <=> $b['_entregue']; // false (0) antes de true (1)
             }
             if (!$a['_entregue']) {
-                return ($b['_ordfase'] ?? -1) <=> ($a['_ordfase'] ?? -1);
+                $c = ($b['_ordfase'] ?? -1) <=> ($a['_ordfase'] ?? -1);
+            } else {
+                $c = ($b['total_dias'] ?? -1) <=> ($a['total_dias'] ?? -1);
             }
-            return ($b['total_dias'] ?? -1) <=> ($a['total_dias'] ?? -1);
+            return $c !== 0 ? $c : ($a['_i'] <=> $b['_i']);
         });
 
         $truncado = count($itensLista) > $maxLinhas;
         $itensLista = array_slice($itensLista, 0, $maxLinhas);
         $itensLista = array_map(static function (array $x): array {
-            unset($x['_entregue'], $x['_ordfase']);
+            unset($x['_entregue'], $x['_ordfase'], $x['_i']);
             return $x;
         }, $itensLista);
 
@@ -940,12 +948,16 @@ class VisaoGeralCalculator
 
     private static function calcFase(string $tipo, string $a, string $b): ?int
     {
-        return match ($tipo) {
-            'trabalho'    => DiasUteis::trabalho($a, $b),
-            'espera'      => DiasUteis::espera($a, $b),
-            'implantacao' => DiasUteis::implantacao($a, $b),
-            default       => null,
-        };
+        switch ($tipo) {
+            case 'trabalho':
+                return DiasUteis::trabalho($a, $b);
+            case 'espera':
+                return DiasUteis::espera($a, $b);
+            case 'implantacao':
+                return DiasUteis::implantacao($a, $b);
+            default:
+                return null;
+        }
     }
 
     private static function ultimaFaseComDado(array $dias): string

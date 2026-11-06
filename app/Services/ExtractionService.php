@@ -262,7 +262,7 @@ class ExtractionService
     // ── Helpers de conversão ─────────────────────────────────────────────
 
     /** ISO 8601 → 'Y-m-d H:i:s'; vazio/erro → null. */
-    private static function isoToDatetime(mixed $v): ?string
+    private static function isoToDatetime($v): ?string
     {
         if ($v === null || (is_string($v) && trim($v) === '')) return null;
         try {
@@ -272,12 +272,12 @@ class ExtractionService
         }
     }
 
-    private static function numOrNull(mixed $v): ?float
+    private static function numOrNull($v): ?float
     {
         return is_numeric($v) ? (float)$v : null;
     }
 
-    private static function strOrNull(mixed $v): ?string
+    private static function strOrNull($v): ?string
     {
         if ($v === null) return null;
         $s = is_array($v) ? implode('; ', array_filter(array_map('strval', $v))) : (string)$v;

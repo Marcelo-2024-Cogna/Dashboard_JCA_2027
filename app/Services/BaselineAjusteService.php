@@ -57,7 +57,7 @@ class BaselineAjusteService
      *               valor_anterior:?string,valor_novo:?string,ajustes:array}
      * @throws InvalidArgumentException validação
      */
-    public function ajustar(string $pi, string $chave, string $campo, mixed $valor, string $motivo, string $usuario): array
+    public function ajustar(string $pi, string $chave, string $campo, $valor, string $motivo, string $usuario): array
     {
         $motivo  = $this->validarMotivoUsuario($motivo, $usuario);
         $usuario = trim($usuario);
@@ -142,7 +142,7 @@ class BaselineAjusteService
     // ── Núcleo ───────────────────────────────────────────────────────────
 
     /** Aplica o UPDATE com as variáveis de sessão para o trigger; $novo já normalizado. */
-    private function executar(string $pi, int $piId, array $item, string $campo, mixed $novo, string $motivo, string $usuario): array
+    private function executar(string $pi, int $piId, array $item, string $campo, $novo, string $motivo, string $usuario): array
     {
         $atual = $item[$campo];
         $base = ['chave' => $item['chave'], 'pi' => $pi, 'campo' => $campo, 'ajustes' => []];
@@ -264,8 +264,12 @@ class BaselineAjusteService
         return $rows[0];
     }
 
-    /** Normaliza o valor de entrada: numéricos ≥ 0 (2 casas); textos aparados e dentro do limite. */
-    private function normalizar(string $campo, mixed $valor): float|string|null
+    /**
+     * Normaliza o valor de entrada: numéricos ≥ 0 (2 casas); textos aparados e dentro do limite.
+     * @param mixed $valor
+     * @return float|string|null
+     */
+    private function normalizar(string $campo, $valor)
     {
         $def = self::CAMPOS[$campo];
         $v = is_string($valor) ? trim($valor) : $valor;
@@ -299,7 +303,7 @@ class BaselineAjusteService
         return $v;
     }
 
-    private function igual(string $campo, mixed $atual, mixed $novo): bool
+    private function igual(string $campo, $atual, $novo): bool
     {
         if ($atual === null || $novo === null) return $atual === null && $novo === null;
         if (self::CAMPOS[$campo]['tipo'] === 'num') return abs((float)$atual - (float)$novo) < 0.005;

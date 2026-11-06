@@ -22,6 +22,7 @@
  *   php bin/extract_runner.php --projetos=SGGU --pi="PI 4/26" --sprints="SP 26.4.1" --fonte=jira
  */
 
+require_once __DIR__ . '/../app/compat.php';
 require __DIR__ . '/../app/Database.php';
 require __DIR__ . '/../app/Models/JiraModel.php';
 require __DIR__ . '/../app/Services/JqlBuilder.php';

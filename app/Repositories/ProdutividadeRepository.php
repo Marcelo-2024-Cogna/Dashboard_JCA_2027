@@ -70,7 +70,10 @@ class ProdutividadeRepository
 
         // Times candidatos: toda a seleção (o que decide se aparece é ter dado em alguma PI).
         $candidatos = array_merge($ctx['times'], $ctx['times_sem_extracao']);
-        usort($candidatos, fn($a, $b) => [$a['jornada'], $a['time']] <=> [$b['jornada'], $b['time']]);
+        // Índice original como último desempate: emula o sort estável do PHP 8 no 7.4.
+        $candidatos = array_map(null, array_keys($candidatos), $candidatos);
+        usort($candidatos, fn($a, $b) => [$a[1]['jornada'], $a[1]['time'], $a[0]] <=> [$b[1]['jornada'], $b[1]['time'], $b[0]]);
+        $candidatos = array_column($candidatos, 1);
         $keys = array_column($candidatos, 'projeto_key');
 
         // PIs do catálogo até a de referência (ordem cronológica).

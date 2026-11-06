@@ -133,7 +133,7 @@ class PlanejadoRealizadoRepository
 
     // ═══════════════════════════════════════════════════════════════════════
 
-    private function r(float|int|string|null $v): float
+    private function r($v): float
     {
         return round((float)$v, 2);
     }

@@ -31,6 +31,8 @@ if (PHP_SAPI !== 'cli') {
     exit("Somente via CLI.\n");
 }
 
+require_once __DIR__ . '/../app/compat.php';
+
 define('BASE_DIR', dirname(__DIR__));
 date_default_timezone_set((require BASE_DIR . '/config/app.php')['timezone'] ?? 'America/Sao_Paulo');
 spl_autoload_register(function (string $class): void {

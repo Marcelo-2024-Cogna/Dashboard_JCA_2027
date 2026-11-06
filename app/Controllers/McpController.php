@@ -134,7 +134,7 @@ class McpController
 
     // ── Handlers ──────────────────────────────────────────────────────────
 
-    private function handleInitialize(mixed $id): void
+    private function handleInitialize($id): void
     {
         $this->send([
             'jsonrpc' => '2.0',
@@ -147,7 +147,7 @@ class McpController
         ]);
     }
 
-    private function handleToolCall(mixed $id, array $params): void
+    private function handleToolCall($id, array $params): void
     {
         $toolName = $params['name']      ?? '';
         $args     = $params['arguments'] ?? [];
@@ -166,7 +166,7 @@ class McpController
         $this->sendError($id, -32601, "Unknown tool: {$toolName}");
     }
 
-    private function handleGetJiraItems(mixed $id, array $args): void
+    private function handleGetJiraItems($id, array $args): void
     {
         $jql        = trim($args['jql'] ?? '');
         $maxResults = min(max((int)($args['max_results'] ?? 100), 1), 500);
@@ -220,12 +220,12 @@ class McpController
         fflush(STDOUT);
     }
 
-    private function sendError(mixed $id, int $code, string $message): void
+    private function sendError($id, int $code, string $message): void
     {
         $this->send(['jsonrpc' => '2.0', 'id' => $id, 'error' => ['code' => $code, 'message' => $message]]);
     }
 
-    private function sendToolResult(mixed $id, array $payload): void
+    private function sendToolResult($id, array $payload): void
     {
         $this->send([
             'jsonrpc' => '2.0',
@@ -239,7 +239,7 @@ class McpController
         ]);
     }
 
-    private function sendToolError(mixed $id, string $message): void
+    private function sendToolError($id, string $message): void
     {
         $this->send([
             'jsonrpc' => '2.0',

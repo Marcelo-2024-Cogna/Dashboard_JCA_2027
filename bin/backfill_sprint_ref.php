@@ -14,6 +14,7 @@
  * Uso: php bin/backfill_sprint_ref.php [--exemplos=5] [--dry-run]
  */
 
+require_once __DIR__ . '/../app/compat.php';
 require __DIR__ . '/../app/Database.php';
 require __DIR__ . '/../app/Services/Logger.php';
 require __DIR__ . '/../app/Services/SprintRef.php';

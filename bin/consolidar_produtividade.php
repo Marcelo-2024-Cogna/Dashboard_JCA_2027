@@ -18,6 +18,7 @@
  * Idempotente: rodar de novo atualiza as mesmas linhas. Loga no canal 'importacao'.
  */
 
+require_once __DIR__ . '/../app/compat.php';
 require __DIR__ . '/../app/Database.php';
 require __DIR__ . '/../app/Services/Logger.php';
 

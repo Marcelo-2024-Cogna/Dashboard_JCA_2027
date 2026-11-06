@@ -234,7 +234,13 @@ class LeadTimeRepository
             $k = $r['st'] ?? '(vazio)';
             $porStatus[$k] = ($porStatus[$k] ?? 0) + 1;
         }
-        arsort($porStatus);
+        // arsort estável (PHP 8): empates mantêm a ordem de inserção. Emulado com a
+        // posição original como desempate, para o PHP 7.4 produzir a mesma saída.
+        $ordInsercao = array_flip(array_keys($porStatus));
+        $contagem    = $porStatus;
+        uksort($porStatus, static function ($a, $b) use ($contagem, $ordInsercao): int {
+            return ($contagem[$b] <=> $contagem[$a]) ?: ($ordInsercao[$a] <=> $ordInsercao[$b]);
+        });
         return [
             'entregues'         => $entregues,
             'concluidas'        => $concl,

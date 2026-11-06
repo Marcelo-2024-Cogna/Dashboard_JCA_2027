@@ -72,7 +72,10 @@ class FiltrosController
         $corrente ??= $recente['desc_pi'] ?? null;
 
         // Ordem cronológica das PIs (data_ini).
-        usort($pisRaw, fn($a, $b) => strcmp((string)$a['data_ini'], (string)$b['data_ini']) ?: strcmp($a['desc_pi'], $b['desc_pi']));
+        // Índice original como último desempate: emula o sort estável do PHP 8 no 7.4.
+        $pisRaw = array_map(null, array_keys($pisRaw), $pisRaw);
+        usort($pisRaw, fn($a, $b) => strcmp((string)$a[1]['data_ini'], (string)$b[1]['data_ini']) ?: strcmp($a[1]['desc_pi'], $b[1]['desc_pi']) ?: $a[0] <=> $b[0]);
+        $pisRaw = array_column($pisRaw, 1);
         $pis = array_map(fn($p) => [
             'desc_pi'  => $p['desc_pi'],
             'data_ini' => $p['data_ini'],
@@ -83,7 +86,9 @@ class FiltrosController
         $sprints = [];
         foreach ($pis as $p) $sprints[$p['desc_pi']] = [];
         $rows = $this->catalog->sprintsPorPi();
-        usort($rows, fn($a, $b) => strcmp((string)$a['data_ini'], (string)$b['data_ini']) ?: strcmp($a['sprint'], $b['sprint']));
+        $rows = array_map(null, array_keys($rows), $rows);
+        usort($rows, fn($a, $b) => strcmp((string)$a[1]['data_ini'], (string)$b[1]['data_ini']) ?: strcmp($a[1]['sprint'], $b[1]['sprint']) ?: $a[0] <=> $b[0]);
+        $rows = array_column($rows, 1);
         foreach ($rows as $s) {
             if (($s['ativo'] ?? 'S') !== 'S' || !isset($sprints[$s['desc_pi']])) continue;
             $sprints[$s['desc_pi']][] = [

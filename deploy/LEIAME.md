@@ -6,7 +6,7 @@ Opcao A: o DocumentRoot e `/apps/metricas_jca/public`. `app/`, `config/`, `bin/`
 ## 0. Pre-requisitos do servidor
 
 - Apache 2.4 com `mod_rewrite`, `mod_ssl`, `mod_headers` (`a2enmod rewrite ssl headers`).
-- PHP **8.1 ou superior** (desenvolvido e testado em 8.2.12). O minimo vem do uso de `array_is_list()` e do tipo de retorno `never` (8.1) alem de `match`/`str_starts_with` (8.0). Sem Composer: o autoload e proprio.
+- PHP **7.4 ou superior** (7.4.3 do Ubuntu 20.04 validado; 8.x tambem funciona, desenvolvido em 8.2.12). O arquivo `app/compat.php` fornece polyfills guardados por `function_exists` (`str_starts_with`, `str_ends_with`, `str_contains`, `array_is_list`, `get_debug_type`), inertes no PHP 8, e e carregado no topo de `public/index.php` e de todo `bin/*.php`. As extensoes sao as mesmas em 7.4 e 8.x (`php7.4-mysql`, `-mbstring`, `-curl`, `-zip`, `-xml`). Sem Composer: o autoload e proprio. Para validar a sintaxe em 7.4 apos alteracoes: `deploy/lint_php74.ps1`.
 - Extensoes PHP (Apache **e** CLI do cron): `pdo_mysql`, `mbstring`, `curl`, `json` (nativa). Para scripts de importacao em `bin/` (uso eventual): `zip` e `SimpleXML`. Confira com `php -m` no CLI e `phpinfo()`/`apache2ctl -M` na web (o `php.ini` do CLI e o do Apache sao arquivos diferentes).
 - MySQL 8.x acessivel pelo servidor (o dev usa 8.4).
 - Saida de rede do servidor para `https://cogna.atlassian.net` (worker de extracao).
@@ -151,4 +151,4 @@ O app **nao tem autenticacao**. Endpoints POST como `/settings/*` e `/extracao/a
 - `.htaccess`/mod_rewrite, vhost, TLS e cron: nao executados localmente. O servidor embutido do PHP simula `SCRIPT_NAME=/index.php` mas ignora `.htaccess`. Validar no primeiro smoke test.
 - Chamada real ao Jira com `JIRA_CA_BUNDLE` (so a leitura da config foi verificada).
 - Importacao do dump com `mysql` em Linux e contas reais; grants minimos (testado apenas com a conta root local e o schema descartavel).
-- PHP 8.1 (testado em 8.2.12).
+- PHP 7.4: testado localmente com o PHP 7.4.33 (lint de todos os .php, boot via servidor embutido e comparacao das respostas HTTP com o PHP 8.2.12). Nao testado: o PHP 7.4.3-4ubuntu2.28 real do servidor, Apache com mod_php/php-fpm e o worker (`bin/queue_worker.php`) com chamadas reais ao Jira em 7.4.

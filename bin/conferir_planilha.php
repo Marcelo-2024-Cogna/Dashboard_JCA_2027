@@ -27,6 +27,7 @@
  * são comparadas em precisão de MINUTO: o serial do Excel não guarda segundos.
  */
 
+require_once __DIR__ . '/../app/compat.php';
 require __DIR__ . '/../app/Database.php';
 require __DIR__ . '/../app/Services/Logger.php';
 require __DIR__ . '/lib/xlsx_reader.php';
@@ -45,7 +46,7 @@ foreach (array_slice($argv, 1) as $a) {
     if (preg_match('/^--([a-z\-]+)=(.*)$/s', $a, $m)) $opt[$m[1]] = $m[2];
     elseif (preg_match('/^--([a-z\-]+)$/', $a, $m))   $opt[$m[1]] = '1';
 }
-function uso(string $msg): never
+function uso(string $msg): void
 {
     fwrite(STDERR, "ERRO: $msg\n\nUso: php bin/conferir_planilha.php --projetos=SGGU,SGSE [--planilha=ARQ.xlsx] [--aba=NOME] [--sprints=26.4.1,26.4.2] [--pi=\"PI 4/26\"]\n");
     exit(1);
@@ -122,22 +123,32 @@ function normNum($v): ?float
 }
 function normVal(string $tipo, $v): ?string
 {
-    return match ($tipo) {
-        's' => normTxt($v),
-        'n' => ($n = normNum($v)) === null ? null : rtrim(rtrim(number_format($n, 2, '.', ''), '0'), '.'),
+    switch ($tipo) {
+        case 's':
+            return normTxt($v);
+        case 'n':
+            return ($n = normNum($v)) === null ? null : rtrim(rtrim(number_format($n, 2, '.', ''), '0'), '.');
         // Datas comparadas em precisão de MINUTO: a planilha (export Jira/Excel) não guarda segundos.
-        'd' => $v === null || $v === '' ? null : (is_numeric($v) ? substr((string)xlsxSerialToDateTime((string)$v), 0, 16) : normTxt($v)),
-    };
+        case 'd':
+            return $v === null || $v === '' ? null : (is_numeric($v) ? substr((string)xlsxSerialToDateTime((string)$v), 0, 16) : normTxt($v));
+        default:
+            throw new \LogicException('Tipo de normalização inesperado: ' . $tipo);
+    }
 }
 /** Valor do banco já em string (datas 'Y-m-d H:i:s'); normaliza p/ comparação. */
 function normDb(string $tipo, $v): ?string
 {
     if ($v === null) return null;
-    return match ($tipo) {
-        's' => normTxt((string)$v),
-        'n' => normVal('n', $v),
-        'd' => substr((string)$v, 0, 16),
-    };
+    switch ($tipo) {
+        case 's':
+            return normTxt((string)$v);
+        case 'n':
+            return normVal('n', $v);
+        case 'd':
+            return substr((string)$v, 0, 16);
+        default:
+            throw new \LogicException('Tipo de normalização inesperado: ' . $tipo);
+    }
 }
 function fmt(?string $v): string { return $v === null ? '(vazio)' : $v; }
 function prefixo(string $chave): string { return strtoupper(preg_replace('/-\d+$/', '', $chave)); }
@@ -292,7 +303,7 @@ function relatorio(string $titulo, array $prefixos, array $plan, array $db, arra
             $s = $r['E'] ?? '?'; $st[$s] = ($st[$s] ?? 0) + 1;
             $sp += (float)($r['G'] ?? 0);
         }
-        arsort($tipos); arsort($st);
+        arsort_estavel($tipos); arsort_estavel($st);
         out(sprintf('    - %d item(ns): %s', count($ks), $causa));
         out('        tipos: ' . implode(', ', array_map(fn($t, $q) => "$t=$q", array_keys($tipos), $tipos)) . ' | SP total: ' . $sp);
         out('        status: ' . implode(', ', array_map(fn($t, $q) => "$t=$q", array_keys($st), $st)));
@@ -308,7 +319,7 @@ function relatorio(string $titulo, array $prefixos, array $plan, array $db, arra
     else {
         $tipos = []; $sp = 0.0;
         foreach ($soBanco as $k) { $tipos[$D[$k]['tipo_item'] ?? '?'] = ($tipos[$D[$k]['tipo_item'] ?? '?'] ?? 0) + 1; $sp += (float)$D[$k]['story_points']; }
-        arsort($tipos);
+        arsort_estavel($tipos);
         out(sprintf('    - %d item(ns) | tipos: %s | SP total: %s', count($soBanco),
             implode(', ', array_map(fn($t, $q) => "$t=$q", array_keys($tipos), $tipos)), $sp));
         foreach (array_slice($soBanco, 0, 3) as $k) {

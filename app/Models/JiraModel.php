@@ -206,7 +206,7 @@ class JiraModel
 
     // ── Helpers de valor ─────────────────────────────────────────────────
 
-    private function fieldValue(mixed $v): mixed
+    private function fieldValue($v)
     {
         if ($v === null) {
             return null;
@@ -226,13 +226,13 @@ class JiraModel
         return $v;
     }
 
-    private function toHours(mixed $v): ?float
+    private function toHours($v): ?float
     {
         return (is_numeric($v) && $v > 0) ? round((float) $v / 3600, 2) : null;
     }
 
     /** Valor bruto de aggregatetimespent em SEGUNDOS (null se vazio/zero). */
-    private function toSeconds(mixed $v): ?int
+    private function toSeconds($v): ?int
     {
         return (is_numeric($v) && $v > 0) ? (int) $v : null;
     }

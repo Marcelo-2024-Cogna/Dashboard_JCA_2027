@@ -19,6 +19,7 @@
  * Exit: 0 ok · 1 parâmetros/arquivo · 4 falha (rollback) ou baseline alterada.
  */
 
+require_once __DIR__ . '/../app/compat.php';
 require __DIR__ . '/../app/Database.php';
 require __DIR__ . '/../app/Services/Logger.php';
 require __DIR__ . '/../app/Services/SprintRef.php';
@@ -37,7 +38,7 @@ const QUANDO  = '2026-10-28 21:12:18';
 const CAMPOS  = ['story_point_estimate' => 'num', 'story_points' => 'num', 'sprint' => 'txt', 'sprint_ref' => 'txt',
                  'tipo_item' => 'txt', 'status' => 'txt', 'pai' => 'txt', 'projeto' => 'txt', 'ativo' => 'txt'];
 
-function falha(string $msg, int $code = 1): never
+function falha(string $msg, int $code = 1): void
 {
     fwrite(STDERR, "ERRO: $msg\n");
     exit($code);
@@ -68,7 +69,7 @@ $json = json_decode((string)file_get_contents($arq), true);
 if (!is_array($json) || !isset($json['itens'])) falha("JSON inválido (sem 'itens'): $arq");
 
 /** Valor no formato do trigger (CAST ... AS CHAR): decimais com 2 casas. */
-function canon(string $tipo, mixed $v): ?string
+function canon(string $tipo, $v): ?string
 {
     if ($v === null || $v === '') return null;
     return $tipo === 'num' ? number_format((float)$v, 2, '.', '') : (string)$v;

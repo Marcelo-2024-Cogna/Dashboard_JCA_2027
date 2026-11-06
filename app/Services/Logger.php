@@ -150,7 +150,7 @@ class Logger
     }
 
     /** Sanitiza recursivamente: chaves sensíveis → máscara; strings → sanitize(). */
-    private static function sanitizeValue(mixed $v, string $key = ''): mixed
+    private static function sanitizeValue($v, string $key = '')
     {
         if ($key !== '' && preg_match('/pass|senha|token|authoriz|secret|api[_-]?key|credential/i', $key)) {
             return self::MASK;

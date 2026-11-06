@@ -44,6 +44,7 @@
  *       existente (sem --substituir) · 4 falha na carga (rollback).
  */
 
+require_once __DIR__ . '/../app/compat.php';
 require __DIR__ . '/../app/Database.php';
 require __DIR__ . '/../app/Services/Logger.php';
 require __DIR__ . '/../app/Services/SprintRef.php';
@@ -75,7 +76,7 @@ foreach (array_slice($argv, 1) as $a) {
     if (preg_match('/^--([a-z\-]+)=(.*)$/s', $a, $m)) $opt[$m[1]] = $m[2];
     elseif (preg_match('/^--([a-z\-]+)$/', $a, $m))   $opt[$m[1]] = '1';
 }
-function falha(string $msg, int $code = 1): never
+function falha(string $msg, int $code = 1): void
 {
     fwrite(STDERR, "ERRO: $msg\n");
     exit($code);
@@ -129,7 +130,7 @@ try {
             out("Planilha copiada (cópia, original mantido): data/import/baseline/" . ARQ_ORIGEM_PADRAO);
             $xlsx = [$dest];
         }
-        usort($xlsx, fn($a, $b) => filemtime($b) <=> filemtime($a));
+        $xlsx = array_map(null, array_keys($xlsx), $xlsx); usort($xlsx, fn($a, $b) => (filemtime($b[1]) <=> filemtime($a[1])) ?: $a[0] <=> $b[0]); $xlsx = array_column($xlsx, 1);
         $arq = $xlsx[0];
     }
     if (!is_file($arq)) falha("Arquivo não encontrado: $arq");
@@ -264,7 +265,7 @@ try {
     out('  Rejeitados     : ' . count($rejeitados));
     foreach ($porMotivo as $motivo => $d) {
         out("     - {$d['total']} × $motivo");
-        arsort($d['projeto_key']);
+        arsort_estavel($d['projeto_key']);
         out('         projeto_key: ' . implode(', ', array_map(fn($k, $v) => "$k($v)", array_keys($d['projeto_key']), $d['projeto_key'])));
     }
     $multi = array_filter($projetosPorKey, fn($s) => count($s) > 1);

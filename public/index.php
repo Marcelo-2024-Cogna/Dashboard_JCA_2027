@@ -13,6 +13,9 @@
 ini_set('display_errors', '0');
 error_reporting(E_ALL);
 
+// Polyfills PHP 8.x (inertes no PHP 8); antes de qualquer uso.
+require_once __DIR__ . '/../app/compat.php';
+
 define('BASE_DIR', dirname(__DIR__));
 define('DATA_DIR', BASE_DIR . '/data');
 
@@ -192,11 +195,17 @@ switch (true) {
             require BASE_DIR . '/config/extracao.php',
             BASE_DIR
         );
-        match ($uri) {
-            '/extracao/catalogo' => $extracaoCtl->catalogo(),
-            '/extracao/agendar'  => $extracaoCtl->agendar(),
-            '/extracao/fila'     => $extracaoCtl->fila(),
-        };
+        switch ($uri) {
+            case '/extracao/catalogo':
+                $extracaoCtl->catalogo();
+                break;
+            case '/extracao/agendar':
+                $extracaoCtl->agendar();
+                break;
+            case '/extracao/fila':
+                $extracaoCtl->fila();
+                break;
+        }
         break;
 
     // ── Filtros do header (catálogo lido do banco) ───────────────────────

@@ -19,6 +19,7 @@
  * Exit: 0 ok (inclui 'sem alteração') · 1 uso incorreto · 2 falha de validação · 4 falha de execução (rollback).
  */
 
+require_once __DIR__ . '/../app/compat.php';
 require __DIR__ . '/../app/Database.php';
 require __DIR__ . '/../app/Services/Logger.php';
 require __DIR__ . '/../app/Services/SprintRef.php';
@@ -39,7 +40,7 @@ Regras: motivo com no mínimo 10 caracteres e usuario obrigatórios; numéricos 
         o valor deve diferir do atual (senão: 'sem alteração'). Nada é apagado da trilha.
 TXT;
 
-function uso(string $msg): never
+function uso(string $msg): void
 {
     fwrite(STDERR, "ERRO: $msg\n\n" . AJUDA . "\n");
     exit(1);

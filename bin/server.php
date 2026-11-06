@@ -14,6 +14,8 @@
 ini_set('display_errors', '0');
 error_reporting(E_ALL);
 
+require_once __DIR__ . '/../app/compat.php';
+
 define('BASE_DIR', dirname(__DIR__));
 
 // Autoload — mesmo mecanismo do front controller (public/index.php)
