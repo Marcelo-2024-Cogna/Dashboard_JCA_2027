@@ -4,6 +4,40 @@
 > A v1.0 (JSON + extração via HTTP) está congelada em `dashboard-v1.0/`
 > (http://localhost:8080/dashboard-v1.0/) e no histórico do git.
 
+## DIRETRIZES DO USUÁRIO — 06/11/2026 (ler primeiro)
+
+1. **Imediato**: (a) aguardar o upgrade do ambiente (o usuário tentará subir o PHP do
+   servidor de 7.4 para 8.x na SEGUNDA 10/11); (b) push do código atual — FEITO,
+   `origin/main` em `7c1b73e`. O deploy roda em 7.4 (backport commitado e verificado) e em 8.x.
+
+2. **Segunda-feira (pós-deploy e homologação), planejar a v2.0**:
+   - **Comparação de repositórios**: analisar `Métricas JCA` contra `Plataforma-Engenharia-Performance/`
+     (a pasta "PEP"/Score Performance que o usuário rastreou em `af81878`; NUNCA foi alterada por
+     mim), para mapear funcionalidades equivalentes e migrar as que faltam para a nossa base.
+     O usuário disse que vai **refatorar o Score Performance** na v2.0.
+   - **Validação da Visão Geral**: confirmar se os JQLs estão 100% aderentes às métricas da tela
+     (já há o relatório `.agents/tasks/jql-aderencia.md`: hoje ~98% de aderência; as 12 decisões
+     da seção 7 continuam PENDENTES do usuário).
+
+3. **Diretriz técnica no radar — EXTRAÇÃO INCREMENTAL E CUMULATIVA por PI**:
+   - Para **sprints fechadas**, a extração deve ser **incremental** e **cumulativa**: a cada sprint
+     que fecha, rodar o JQL acrescentando essa sprint às demais já fechadas da PI em curso
+     (comportamento "macro do Excel": cada nova extração acumula e recalcula o panorama da PI).
+   - O usuário rascunhou uma classe `srvJiraIncrementalExtraction` (controle de estado local das
+     sprints já processadas; JQL `sprint IN (...)` cumulativo; nomenclatura `srv`). Guardado em
+     `data/import/srvJiraIncrementalExtraction.exemplo.php` para referência. O usuário quer as
+     MINHAS percepções sobre o caminho na segunda (ver nota de análise abaixo).
+
+4. **Preocupação do usuário — o BUG da extração por sprint** (que eu reportei em 06/11):
+   `ExtractionService::extract` faz DELETE por `configuracao_pi_id` + projeto IGNORANDO a sprint.
+   Extrair só uma sprint apagaria as outras sprints da PI daquele time. HOJE isso é contornado
+   reextraindo a PI inteira (sem `--sprints`), que é idempotente. A proposta incremental do item 3
+   ou um DELETE que respeite a sprint resolvem de vez; é prioridade antes de automatizar extração
+   por sprint. Ver análise técnica que vou escrever para a segunda.
+
+---
+
+
 ## 1. Ambiente
 - Dashboard v1.5: http://localhost:8080/dashboard/ (XAMPP Apache, porta 8080).
 - MySQL 8.4 · banco `metricas_agil` · usuário de app `metricas_jca` (credenciais
@@ -277,6 +311,33 @@
 - Ainda a revisar no deploy: senha de dev do banco (`metricas_jca`/`metricas_jca`)
   em `db/schema.sql` e a senha do root usada nos testes (`app/Services/Logger.php`
   já tem máscara de segredos).
+
+**ESTADO DO PREPARO DO DEPLOY (05–06/11/2026) — repositório PRONTO, servidor NÃO tocado**
+- Destino: Linux/Apache 2.4, `/apps/metricas_jca`, `https://metricas.cogna.com.br/` (RAIZ do
+  domínio), **Opção A: DocumentRoot = `/apps/metricas_jca/public`**. Acesso por VPN ao share
+  `\\172.27.1.200\apps` (existem `metricas_jca` com só um `index.php` placeholder e
+  `score_performance`). Nada foi gravado no servidor; credenciais de produção só vieram no chat.
+- Commits locais, AINDA SEM PUSH: `6638b1c` (feat deploy) e `99ddd18` (.gitattributes LF).
+- Feito e verificado: `public/index.php` com basePath por `SCRIPT_NAME` (vazio na raiz; antes o
+  fallback `/dashboard` quebraria tudo); `public/.htaccess` sem RewriteBase; Chart.js 4.4.4 local em
+  `public/assets/vendor`; `deploy/` com vhost, cron (flock), exemplos de `db.php`/`secrets.local.php`,
+  SQL consolidado (`01_schema` → dados → `02_views` → `03_triggers`; 12 tabelas/15 views/1 trigger,
+  iguais ao banco local), `dump_dados.ps1` (senha nunca hardcoded; dump em `data/deploy/`, ignorado),
+  `excluir.txt` e `LEIAME.md` (runbook). Testado no XAMPP (`/dashboard`) e no modo raiz
+  (`php -S 127.0.0.1:18081 -t public`; a porta 8081 é bloqueada neste Windows).
+- NÃO testado (validar no 1º smoke test no servidor): `.htaccess`/mod_rewrite, vhost, TLS, cron,
+  Jira com `JIRA_CA_BUNDLE`, import do dump em Linux.
+- **PENDENTE DO USUÁRIO (responde em 06/11)**: (1) nome do schema e usuário do banco de produção
+  (recomendado usuário dedicado, só DML; triggers exigem conta privilegiada; NÃO reaproveitar
+  `score_performance`); (2) versões de PHP (mín. 8.1) e MySQL e se é mod_php ou php-fpm;
+  (3) certificado corporativo (o vhost tem placeholders; o modelo do Score Performance tem
+  `...snakeoil.keyls`, provável typo, e usa certificado autoassinado); (4) o domínio é só interno
+  (VPN/ACL)? O app NÃO tem autenticação (opções comentadas no vhost: Basic Auth / `Require ip`);
+  (5) saída de rede do servidor para `https://cogna.atlassian.net` (pelo SMB não dá para testar:
+  página PHP temporária de diagnóstico que eu apago, ou `curl -I` no servidor).
+- Tokens: o do Jira (clássico, sem escopo) está só em `config/secrets.local.php` (ignorado); no
+  servidor vai em `config/secrets.local.php` (chmod 640) ou env. Tokens com escopo foram testados
+  (401 em Basic auth), descartados e revogados. Histórico do git NÃO será reescrito (decisão do usuário).
 
 **Banco**: aplicar `db/schema.sql`, `db/views.sql`, `db/triggers.sql` (este com
 conta privilegiada); trocar a senha do usuário de aplicação por uma forte;
