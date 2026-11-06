@@ -1,0 +1,12 @@
+# Arquivos que vao para o servidor Linux de producao: SEMPRE LF.
+# (core.autocrlf=true no Windows converteria para CRLF; um crontab ou vhost com
+# CR no fim das linhas falha de forma silenciosa no Linux.)
+deploy/cron/*          text eol=lf
+deploy/apache/*        text eol=lf
+deploy/config/*        text eol=lf
+deploy/sql/*.sql       text eol=lf
+deploy/excluir.txt     text eol=lf
+*.sh                   text eol=lf
+
+# Biblioteca minificada de terceiros: nao converter quebras de linha.
+public/assets/vendor/*.js  -text
