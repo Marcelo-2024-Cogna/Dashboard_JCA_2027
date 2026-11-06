@@ -2,11 +2,18 @@
 #  .htaccess da pasta public/ (document root efetivo)
 #  Front Controller: envia todas as rotas virtuais para index.php,
 #  exceto arquivos/pastas que existem fisicamente (assets).
+#
+#  Funciona SEM edicao nos dois cenarios:
+#    - XAMPP (dev):    http://localhost:8080/dashboard/  (via .htaccess da raiz -> public/)
+#    - Producao:       DocumentRoot = <app>/public, app na raiz do dominio
+#  Nao ha RewriteBase de proposito: em contexto de diretorio (.htaccess) o
+#  Apache assume a base como o caminho URL do proprio diretorio, e a regra de
+#  saida abaixo e RELATIVA ("index.php"), entao o destino e sempre o
+#  index.php desta pasta, seja "/dashboard/public/index.php" ou "/index.php".
 # ============================================================
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
-    RewriteBase /dashboard/public/
 
     # Se o caminho for um arquivo real (ex: index.html, .css, .js), serve direto
     RewriteCond %{REQUEST_FILENAME} -f [OR]
@@ -16,6 +23,12 @@
     # Caso contrario, roteia tudo para o front controller
     RewriteRule ^ index.php [L]
 </IfModule>
+
+# Nega acesso a arquivos/pastas ocultos (.env, .git, .gitignore, .DS_Store...).
+# O .htaccess em si ja e protegido pelo Apache por padrao.
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>
 
 # Garante charset UTF-8 para HTML servido diretamente
 <IfModule mod_headers.c>

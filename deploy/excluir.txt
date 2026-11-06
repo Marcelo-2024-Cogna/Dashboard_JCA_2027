@@ -1,0 +1,56 @@
+# =====================================================================
+#  Caminhos que NAO devem ser copiados ao servidor de producao.
+#  Formato compativel com:  rsync -a --exclude-from=deploy/excluir.txt  ORIGEM/  DESTINO/
+#  (linhas com "/" inicial sao relativas a raiz do projeto; "#" = comentario;
+#   "+ " = incluir excecao)
+#  Em Windows/robocopy, veja o equivalente em deploy/LEIAME.md.
+# =====================================================================
+
+# --- Controle de versao e ferramentas de desenvolvimento
+/.git/
+/.gitignore
+/.agents/
+/.kiro/
+/.vscode/
+/dashboard-2026.code-workspace
+
+# --- Projetos que NAO fazem parte desta aplicacao
+/dashboard-v1.0/
+/Plataforma-Engenharia-Performance/
+
+# --- Credenciais locais (criar as de producao NO servidor a partir de deploy/config/*.example)
+/config/db.php
+/config/secrets.local.php
+
+# --- Arquivos de rastreabilidade/insumo do desenvolvimento (planilhas e imagens de proposta)
+/Template*.xlsx
+/Template*.png
+
+# --- .htaccess da RAIZ: so serve ao XAMPP (/dashboard/). Em producao o
+#     DocumentRoot e public/, entao ele nunca e lido.
+/.htaccess
+
+# --- Scripts destrutivos de carga (apagam/recriam times). NAO levar para producao.
+/bin/seed_catalogo.php
+/bin/seed_sustentacao.php
+
+# --- Dados gerados em runtime / locais (recriados pela aplicacao no servidor)
++ /data/logs/.gitkeep
+- /data/logs/*
++ /data/agendamentos/.gitkeep
+- /data/agendamentos/*
++ /data/exports/.gitkeep
+- /data/exports/*
+/data/deploy/
+/data/items.json
+/data/notificacoes.log
+
+# --- Insumos de importacao locais (xlsx/json da baseline); manter README e fixtures
+/data/import/baseline/*.xlsx
+/data/import/baseline/baseline_*.json
+
+# --- Lixo comum
+Thumbs.db
+.DS_Store
+*.bak
+*.tmp

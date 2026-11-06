@@ -44,7 +44,7 @@ $menuMain = ['overview','velocidade','cycle-time','previsibilidade','plan-real',
     // para filtrar métricas de valor (Lead Time, Produtividade).
     window.VALUE_TYPES = <?= json_encode($valueTypes ?? []) ?>;
   </script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="<?= $base ?>/assets/vendor/chart.umd.min.js"></script>
   <script src="<?= $base ?>/assets/js/charts.js"></script>
   <script src="<?= $base ?>/assets/js/app.js"></script>
   <script src="<?= $base ?>/assets/js/extracao.js"></script>

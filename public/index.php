@@ -78,14 +78,34 @@ $makeCapacityController = function () use ($baselineConfig, $capacityConfig, $ma
 };
 
 // ── Roteamento ───────────────────────────────────────────────────────────────
-// A URL chega como /dashboard/extract, /dashboard/public/extract, /dashboard/ etc.
-// Normalizamos removendo o prefixo do projeto (/dashboard e /dashboard/public)
-// para obter a rota "limpa" (ex: /extract, /).
-$uri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
+// Prefixo da app no servidor, detectado a partir de SCRIPT_NAME (sem literais):
+//   "/index.php"                  → ""           (DocumentRoot = public/, app na raiz do domínio)
+//   "/dashboard/public/index.php" → "/dashboard" (XAMPP, via .htaccess raiz → public/)
+//   "/dashboard/index.php"        → "/dashboard"
+//   "/public/index.php"           → ""           (DocumentRoot = raiz do projeto)
+// $basePath é usado nas views para montar URLs ("$base/assets/...") e pode ser vazio.
+$scriptName = $_SERVER['SCRIPT_NAME'] ?? '';
+$basePath   = '';
+$stripPrefixes = [];            // prefixos a remover da URI, do mais específico ao menos
+if (preg_match('#^(.*)/public/index\.php$#', $scriptName, $m)) {
+    $basePath = $m[1];
+    $stripPrefixes = [$basePath . '/public', $basePath];
+} elseif (preg_match('#^(.*)/index\.php$#', $scriptName, $m)) {
+    $basePath = $m[1];
+    $stripPrefixes = [$basePath];
+}
 
-// Remove prefixos conhecidos do subdiretório, na ordem mais específica primeiro
-foreach (['/dashboard/public', '/dashboard'] as $prefix) {
-    if (str_starts_with($uri, $prefix)) {
+// A URL chega como {base}/extract, {base}/public/extract, {base}/ etc.
+// Normalizamos removendo o prefixo detectado para obter a rota "limpa"
+// (ex: /extract, /). O prefixo só é removido se for um segmento INTEIRO
+// (nunca corta parte do nome de uma rota real).
+$uri = (string)parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
+
+foreach ($stripPrefixes as $prefix) {
+    if ($prefix === '') {
+        continue;
+    }
+    if ($uri === $prefix || str_starts_with($uri, $prefix . '/')) {
         $uri = substr($uri, strlen($prefix));
         break;
     }
@@ -93,15 +113,6 @@ foreach (['/dashboard/public', '/dashboard'] as $prefix) {
 
 // Normaliza: garante uma barra inicial e remove barra final redundante
 $uri = '/' . trim($uri, '/');
-
-// Prefixo da app no servidor (ex: "/dashboard"), para montar URLs nas views.
-$scriptName = $_SERVER['SCRIPT_NAME'] ?? '';
-$basePath = '/dashboard';
-if (preg_match('#^(/.*?)/public/index\.php$#', $scriptName, $m)) {
-    $basePath = $m[1];
-} elseif (preg_match('#^(/.*?)/index\.php$#', $scriptName, $m)) {
-    $basePath = $m[1];
-}
 
 // Factory do controller de views (páginas PHP tradicionais)
 $makeViewController = function () use ($basePath, $baselineConfig, $phpVersion) {

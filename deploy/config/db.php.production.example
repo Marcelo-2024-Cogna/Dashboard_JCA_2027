@@ -1,0 +1,26 @@
+<?php
+/**
+ * deploy/config/db.php.production.example — MODELO PARA PRODUCAO (SEM segredos)
+ * ──────────────────────────────────────────────────────────────────────────
+ * Copiar NO SERVIDOR para /apps/metricas_jca/config/db.php e preencher.
+ * O arquivo real nunca vai para o git (config/db.php esta no .gitignore).
+ *
+ *   sudo cp deploy/config/db.php.production.example config/db.php
+ *   sudo chown root:www-data config/db.php ; sudo chmod 640 config/db.php
+ *
+ * Use um usuario DEDICADO da aplicacao, com privilegios minimos
+ * (SELECT, INSERT, UPDATE, DELETE no schema da aplicacao). Em runtime o app
+ * nao executa DDL. Veja deploy/LEIAME.md, secao "Banco e usuario".
+ *
+ * 'dbname' deve ser o mesmo nome usado ao aplicar deploy/sql/*.sql
+ * (padrao: metricas_agil).
+ */
+
+return [
+    'host'    => 'HOST_DO_MYSQL',        // ex.: 127.0.0.1 ou o host do servidor MySQL
+    'port'    => 3306,
+    'dbname'  => 'metricas_agil',        // nome do schema de producao (a confirmar)
+    'user'    => 'USUARIO_DA_APLICACAO', // ex.: metricas_jca
+    'pass'    => 'SENHA_FORTE_AQUI',
+    'charset' => 'utf8mb4',
+];

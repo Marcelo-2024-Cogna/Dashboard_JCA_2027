@@ -16,6 +16,8 @@ data/notificacoes.log
 # Configuração local de MCP (contém token do Jira específico do ambiente).
 # Mantido apenas localmente; não versionar segredos.
 .kiro/settings/mcp.json
+# Dump de DADOS gerado por deploy/dump_dados.ps1 (dados reais; nao versionar).
+data/deploy/
 # Credenciais locais (token do Jira etc.) — ambiente de desenvolvimento.
 # O modelo versionável é config/secrets.local.php.example.
 config/secrets.local.php

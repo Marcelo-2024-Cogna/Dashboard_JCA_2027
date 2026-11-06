@@ -1,0 +1,24 @@
+# =====================================================================
+#  Crontab do worker da fila de extracao - Metricas Jeito Cogna Agil
+#  Instalar no crontab do MESMO usuario que roda o Apache (www-data no
+#  Debian/Ubuntu), para que logs e arquivos de ordem tenham o mesmo dono:
+#     sudo -u www-data crontab -l                       # ver o que ja existe
+#     sudo -u www-data crontab /apps/metricas_jca/deploy/cron/metricas_jca.cron
+#  (cuidado: "crontab <arquivo>" SUBSTITUI o crontab inteiro desse usuario;
+#   se ja houver entradas, edite com "sudo -u www-data crontab -e" e cole a linha.)
+#
+#  - bin/queue_worker.php le a fila na tabela extracao_agendamento (MySQL),
+#    processa ordens 'pendente' vencidas e grava logs em data/logs/*.log
+#    (via App\Services\Logger) e a notificacao em data/notificacoes.log.
+#  - flock -n: se a execucao anterior ainda estiver rodando, esta e ignorada
+#    (nao empilha processos). O claim atomico no banco e a segunda protecao.
+#  - O CLI usa as MESMAS credenciais da web: config/db.php e
+#    config/secrets.local.php (criados no servidor; carregados por
+#    config/jira.php, inclusive no CLI). Nao e preciso exportar variaveis aqui.
+#  - Saida do worker: data/logs/worker.log (1 linha por minuto quando ocioso;
+#    configure logrotate - ver deploy/LEIAME.md).
+# =====================================================================
+SHELL=/bin/bash
+PATH=/usr/local/bin:/usr/bin:/bin
+
+* * * * * /usr/bin/flock -n /var/lock/metricas_jca_worker.lock /usr/bin/php /apps/metricas_jca/bin/queue_worker.php >> /apps/metricas_jca/data/logs/worker.log 2>&1
