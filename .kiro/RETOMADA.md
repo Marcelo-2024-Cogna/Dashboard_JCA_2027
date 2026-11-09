@@ -4,6 +4,61 @@
 > A v1.0 (JSON + extração via HTTP) está congelada em `dashboard-v1.0/`
 > (http://localhost:8080/dashboard-v1.0/) e no histórico do git.
 
+## DECISÕES DO USUÁRIO — 09/11/2026 (segunda; infra ainda sem resposta ao chamado de upgrade do PHP)
+
+1. **PHP**: manter o código compatível com **7.4 E 8.0+** (polyfills em `app/compat.php`; removê-los só
+   depois do upgrade oficial do servidor). Todo código novo deve passar no lint do 7.4
+   (`deploy/lint_php74.ps1`; PHP 7.4.33 de teste em `%TEMP%\php74`, se ainda existir) e do 8.2.
+2. **Nomes**: o legado (`*Controller`, `*Service`, `*Model`, `*Repository`, `vw_*.php`) NÃO será
+   renomeado agora. **Código NOVO** usa prefixos `ctrl`, `srv`, `mdl`, `vmvw_`.
+3. **Fallback de PI na extração** (reverte a decisão de 04/11 "só fixVersion"): considerar os itens que
+   pertencem às **sprints da PI 4/26 pelo calendário** (tabela `sprints`) mesmo quando o `fixVersion`
+   está VAZIO **ou aponta para PI anterior** (caso do APAP: itens com `fixVersion ~ PI 3/26` na sprint
+   26.4.x). O usuário quer monitorar a regra de perto. NÃO implementado ainda (vem depois da reextração).
+   Após implementar: nova reextração + novo dump.
+4. **Horários**: extração às **23:00**, verificação às **23:30**.
+5. **Visão Geral / UI**: manter SÓ o card de **Produtividade da Sprint Ativa**; remover os cards e
+   históricos de produtividade de sprints encerradas (já existem na tela Produtividade). Cards devem
+   se ajustar dinamicamente ao filtrar por time/sprint (sem buracos).
+6. **Falhas do job**: `mail()` nativo do PHP em produção (servidor de e-mail local) + log em arquivo
+   como garantia. **v2.0**: webhook do Microsoft Teams.
+7. **Marco oficial = PI 1/27**. Histórico antigo do Ingresso e de-para `JI*` -> `IN*` DESCARTADOS.
+   Sustentação e novos PDF/XLSX seguem pausados para a v2.0.
+8. **CONCLUÍDO em 09/11** (tudo com push, `origin/main` em `e707a12`): reextração da PI 4/26;
+   análise Banco x JSON; comparativo com `Plataforma-Engenharia-Performance`; revisão do
+   `virtualHost.bash`; limpeza dos cards da Visão Geral; **Fase 1 do job noturno**.
+   Relatórios (em `.agents/tasks/`, ignorado pelo git; recriar se faltarem): `banco-vs-json.md`,
+   `comparativo-pep.md`, `jql-aderencia.md`, `extracao-incremental-analise.md`, `fase1-job-noturno.md`.
+9. **FASE 1 DO JOB NOTURNO (commits `558d3fe`, `e707a12`)**:
+   - `bin/extract_diaria.php` (23:00) e `bin/extract_check.php` (23:30); classes `srv*` em
+     `app/Srv/`; testes em `bin/teste_job_noturno.php` (60/60 em 7.4 e 8.2, banco descartável).
+   - Códigos de saída do diário: 0 ok; 1 falha parcial; 2 config/PI inválida; 3 já em execução;
+     4 erro fatal/Jira indisponível. Verificador: 0 ok; 1 alerta; 2 config; 4 fatal.
+   - **Fallback de PI por sprint** (ligado por padrão em `ExtractionService`): itens das sprints da
+     PI com `fixVersion` vazio ou de PI anterior entram na PI corrente; coluna nova
+     `extracao_jira.origem_pi` (`fixversion` | `sprint` | NULL). Migração:
+     `db/migracoes/2026-11-09_origem_pi.sql` e `deploy/sql/04_migracao_origem_pi.sql` (aplicar ANTES
+     do código novo em bancos existentes). PI 4/26: 7690 -> 8780 itens (1044 do fallback, 738 SP);
+     APAP 130 itens/257 SP; previsibilidade do APAP foi de 3,2% para 78,3%.
+   - **Extração por sprint está BLOQUEADA** (400 no `/extracao/agendar`; seletor desativado no modal):
+     o DELETE apagaria as outras sprints da PI. Voltará na v2.0 com DELETE que respeite a sprint.
+   - DELETE agora por PI + prefixo de chave validado; aborta se vier < 80% do existente;
+     retry/backoff; lock por PI em `data/locks`. Aviso de falha: `mail()` + log
+     (`JOB_NOTIFY_TO` / `JOB_NOTIFY_FROM`, ainda SEM destinatário definido).
+10. **NÚMEROS DE REFERÊNCIA ATUAIS** (após a Fase 1; valores de 09/11 ~19h, Secretaria PI 4/26):
+    janela padrão inclui SP 26.4.1–26.4.3 fechadas; sprint em foco SP 26.4.4; Velocidade média
+    ~197; resíduos 0. Os números antigos (435/410/396 etc.) deixaram de valer.
+11. **PENDENTE DO USUÁRIO**: (a) item com `fixVersion` de PI futura (ex.: SGSE-5375 `PI 2/27`) no
+    fallback: manter ou excluir; (b) sprints de sustentação (26.4.7/26.4.8) no fallback: manter;
+    (c) `JOB_NOTIFY_TO`/`JOB_NOTIFY_FROM`; (d) cancelar ordens locais #16 (pendente), #18 e #19
+    (erro de teste) e apagar `extracao_jira_snap_20261109b`; (e) cache de resposta da Visão Geral
+    (recomendado pela análise; ~1 dia); (f) gerar o DUMP FINAL (o `dados_20261109.sql` está
+    defasado após o fallback); (g) infra: sem resposta ao chamado do PHP/acesso; faltam
+    `mod_rewrite`, `mod_headers`, `php-mbstring`, `php-curl` no servidor.
+12. **v2.0**: decisões do comparativo em `comparativo-pep.md` seção 8 (produtividade oficial,
+    unidade de tempo do Cycle Time, fonte do Planejado vs Realizado, autenticação, etc.); perguntar se o
+    app `score_performance` de produção é o mesmo que o PEP.
+
 ## DIRETRIZES DO USUÁRIO — 06/11/2026 (ler primeiro)
 
 1. **Imediato**: (a) aguardar o upgrade do ambiente (o usuário tentará subir o PHP do
