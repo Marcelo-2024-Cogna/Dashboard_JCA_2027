@@ -9,17 +9,22 @@
  * PARÂMETROS (getopt):
  *   --projetos=SGGU,SGTB    lista de projeto_key (obrigatório)
  *   --pi='PI 4/26'          rótulo da fixVersion/PI (obrigatório)
- *   --sprints='SP 26.4.1'   lista de sprints (opcional)
+ *   --sprints=...           RECUSADO: a extração é sempre da PI inteira (ver abaixo)
  *   --baseline=0|1          1 = grava em baseline; default 0 (extracao_jira)
  *   --fonte=jira|fixture    default jira
  *   --fixture=caminho.json  opcional; default data/import/fixtures/jira_sample.json
+ *   --forcar                relaxa a proteção R1 (aceita queda grande de itens)
+ *
+ * A limpeza é por PI + prefixo de chave dos projetos informados; por isso
+ * filtro de sprint é recusado (apagaria sprints da PI que não voltariam).
+ * A extração por sprint volta na v2.0, somente com um DELETE que respeite a sprint.
  *
  * soma_tempo_gasto é gravado em SEGUNDOS (a view divide por 3600).
  * O token do Jira NUNCA é impresso.
  *
  * Uso:
  *   php bin/extract_runner.php --projetos=SGGU --pi="PI 4/26" --fonte=fixture
- *   php bin/extract_runner.php --projetos=SGGU --pi="PI 4/26" --sprints="SP 26.4.1" --fonte=jira
+ *   php bin/extract_runner.php --projetos=SGGU --pi="PI 4/26" --fonte=jira --forcar
  */
 
 require_once __DIR__ . '/../app/compat.php';
@@ -27,6 +32,7 @@ require __DIR__ . '/../app/Database.php';
 require __DIR__ . '/../app/Models/JiraModel.php';
 require __DIR__ . '/../app/Services/JqlBuilder.php';
 require __DIR__ . '/../app/Services/Logger.php';
+require __DIR__ . '/../app/Srv/srvLock.php';
 require __DIR__ . '/../app/Services/ExtractionService.php';
 
 date_default_timezone_set((require __DIR__ . '/../config/app.php')['timezone'] ?? 'America/Sao_Paulo');
@@ -35,7 +41,7 @@ use App\Database;
 use App\Services\ExtractionService;
 
 $opts = getopt('', [
-    'projetos:', 'pi:', 'sprints::', 'baseline::', 'fonte::', 'fixture::',
+    'projetos:', 'pi:', 'sprints::', 'baseline::', 'fonte::', 'fixture::', 'forcar',
 ]);
 
 function splitList(?string $v): array
@@ -52,13 +58,19 @@ $fonte    = strtolower(trim((string)($opts['fonte'] ?? 'jira')));
 $fixture  = $opts['fixture'] ?? (__DIR__ . '/../data/import/fixtures/jira_sample.json');
 
 if ($projetos === [] || $piLabel === '') {
-    fwrite(STDERR, "Uso: php bin/extract_runner.php --projetos=SGGU[,SGTB] --pi=\"PI 4/26\" [--sprints=\"SP 26.4.1\"] [--baseline=0|1] [--fonte=jira|fixture]\n");
+    fwrite(STDERR, "Uso: php bin/extract_runner.php --projetos=SGGU[,SGTB] --pi=\"PI 4/26\" [--baseline=0|1] [--fonte=jira|fixture] [--forcar]\n");
     exit(2);
 }
 if (!in_array($fonte, ['jira', 'fixture'], true)) {
     fwrite(STDERR, "Valor inválido para --fonte: {$fonte} (use jira|fixture)\n");
     exit(2);
 }
+
+if ($sprints !== []) {
+    fwrite(STDERR, "--sprints não é mais suportado: a extração é sempre da PI inteira (a limpeza por PI apagaria sprints que não voltariam).\n");
+    exit(2);
+}
+$forcar = array_key_exists('forcar', $opts);
 
 $tabela = $baseline ? 'baseline' : 'extracao_jira';
 $service = new ExtractionService();
@@ -75,7 +87,7 @@ echo "  JQL      : " . $service->buildJql($projetos, $piLabel, $sprints ?: null)
 echo str_repeat('-', 74) . "\n";
 
 try {
-    $r = $service->extract($projetos, $piLabel, $sprints ?: null, $fonte, $baseline, $fixture);
+    $r = $service->extract($projetos, $piLabel, null, $fonte, $baseline, $fixture, ['forcar' => $forcar]);
 } catch (RuntimeException $e) {
     if ($e->getCode() === ExtractionService::ERR_FETCH) {
         if ($fonte === 'jira') {
@@ -96,6 +108,7 @@ if ($fonte === 'fixture') {
 } else {
     echo "  Jira OK: {$r['itens_lidos']} itens em {$r['paginas']} página(s)\n";
     foreach ($r['logs'] as $l) echo "     · {$l}\n";
+    echo "  Principal (fixVersion): {$r['itens_principal']}; fallback (sprint): {$r['itens_fallback']} (descartados por já existirem: {$r['fallback_dup']})\n";
 }
 if ($r['pi_id'] === null) {
     echo "  AVISO: PI '{$piLabel}' não encontrada em configuracao_pi — configuracao_pi_id ficará NULL.\n";

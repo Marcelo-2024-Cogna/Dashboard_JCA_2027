@@ -709,19 +709,26 @@ class VisaoGeralRepository
         $par = [':pi' => $piId];
         $k = $this->in('k', $keys, $par);
         $st = $this->pdo->prepare(
-            "SELECT MAX(data_carga) AS m FROM extracao_jira
+            "SELECT MAX(data_carga) AS m, MIN(data_carga) AS n FROM extracao_jira
               WHERE ativo = 'S' AND configuracao_pi_id = :pi AND SUBSTRING_INDEX(chave, '-', 1) IN ($k)"
         );
         $st->execute($par);
-        $ultimaCarga = $st->fetchColumn();
-        $ultimaCarga = $ultimaCarga === false ? null : $ultimaCarga;
+        $linhaCarga  = $st->fetch();
+        $ultimaCarga = $linhaCarga && $linhaCarga['m'] !== null ? $linhaCarga['m'] : null;
+        $maisAntiga  = $linhaCarga && $linhaCarga['n'] !== null ? $linhaCarga['n'] : null;
 
         $defasagem = null;
+        $defasagemHoras = null;
+        $limiteHoras = (int) ($this->config['aviso_defasagem_horas'] ?? 25);
         if ($ultimaCarga !== null) {
-            $dias = (int) floor((strtotime($hoje . ' 00:00:00') - strtotime(substr((string) $ultimaCarga, 0, 10) . ' 00:00:00')) / 86400);
-            $defasagem = $dias;
-            if ($dias > (int) ($this->config['aviso_defasagem_dias'] ?? 1)) {
-                $avisos[] = 'A última carga do Jira tem ' . $dias . ' dia(s) de defasagem.';
+            $defasagem = (int) floor((strtotime($hoje . ' 00:00:00') - strtotime(substr((string) $ultimaCarga, 0, 10) . ' 00:00:00')) / 86400);
+        }
+        // Aviso em HORAS sobre a carga MAIS ANTIGA da seleção (job noturno às 23:00:
+        // 25 h cobre a janela entre duas execuções sem alarme falso).
+        if ($maisAntiga !== null) {
+            $defasagemHoras = round((time() - strtotime((string) $maisAntiga)) / 3600, 1);
+            if ($defasagemHoras > $limiteHoras) {
+                $avisos[] = 'A carga mais antiga do Jira tem ' . $defasagemHoras . ' h de defasagem.';
             }
         }
 
@@ -746,6 +753,8 @@ class VisaoGeralRepository
         return [
             'ultima_carga'      => $ultimaCarga,
             'defasagem_dias'    => $defasagem,
+            'defasagem_horas'   => $defasagemHoras,
+            'aviso_defasagem_horas' => $limiteHoras,
             'prefixos_sem_time' => $prefixos,
         ];
     }

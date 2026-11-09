@@ -68,6 +68,14 @@ class ExtractionController
         $times    = $this->normalizar($body['times'] ?? []);
         $confirmar = ($body['confirmar'] ?? false) === true;
 
+        // A limpeza da extração é por PI + prefixo de chave: um filtro de sprint
+        // apagaria sprints da PI que não voltariam. A extração por sprint volta
+        // na v2.0, somente com um DELETE que respeite a sprint.
+        if ($sprints !== []) {
+            $this->respond(400, ['erro' => 'A extração é sempre da PI inteira: não é possível filtrar por sprint (o filtro por sprint volta na v2.0). Envie "sprints" vazio.']);
+            return;
+        }
+
         $email = isset($body['email']) ? trim((string)$body['email']) : '';
         if ($email === '') {
             $email = (string)($this->cfg['email_destino_padrao'] ?? '');

@@ -2,6 +2,10 @@
 # O modelo versionável é config/db.php.example.
 config/db.php
 
+# Locks (flock) e estado do verificador do job noturno (runtime).
+data/locks/*.lock
+data/extract_check_estado.json
+
 # Logs de execução (mantém apenas o diretório versionado).
 data/logs/*.log
 data/logs/*.log.*

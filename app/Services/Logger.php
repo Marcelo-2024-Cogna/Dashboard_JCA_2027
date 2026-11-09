@@ -40,6 +40,12 @@ class Logger
     /** Diretório de logs (sobrescrevível para testes). */
     private static ?string $dir = null;
 
+    /** Redireciona os logs para outro diretório (testes); null = data/logs. */
+    public static function setDir(?string $dir): void
+    {
+        self::$dir = $dir;
+    }
+
     public static function info(string $canal, string $msg, array $ctx = []): void
     {
         self::write('INFO', $canal, $msg, $ctx);

@@ -19,8 +19,22 @@ class JiraModel
     private array   $fieldList;  // field_list
     private bool    $sslVerify;  // verificar certificado SSL
     private ?string $caBundle;   // caminho para CA bundle customizado
+    private int     $tentativas; // retry: total de tentativas por requisição
+    private float   $esperaBase; // retry: espera base (s) do backoff exponencial
+    private float   $esperaMax;  // retry: teto (s) da espera calculada
+    private int     $timeout;    // timeout (s) de cada requisição
+    /** @var callable|null transporte HTTP injetável (testes); null = cURL */
+    private $transport;
+    /** @var callable|null função de espera injetável (testes); null = usleep */
+    private $sleeper;
 
-    public function __construct(array $config)
+    /**
+     * @param array         $config    config/jira.php (+ chave opcional 'retry')
+     * @param callable|null $transport function(string $url, array $headers, int $timeout):
+     *                                 array{status:int, body:string, erro:?string, retry_after:?int}
+     * @param callable|null $sleeper   function(float $segundos): void
+     */
+    public function __construct(array $config, ?callable $transport = null, ?callable $sleeper = null)
     {
         $this->host      = rtrim($config['host'], '/');
         $this->email     = $config['email'];
@@ -29,6 +43,14 @@ class JiraModel
         $this->fieldList = $config['field_list'];
         $this->sslVerify = $config['ssl_verify'] ?? true;
         $this->caBundle  = $config['ca_bundle']  ?? null;
+
+        $retry            = (array)($config['retry'] ?? []);
+        $this->tentativas = max(1, (int)($retry['tentativas'] ?? 4));
+        $this->esperaBase = max(0.0, (float)($retry['espera_base_s'] ?? 2));
+        $this->esperaMax  = max(0.0, (float)($retry['espera_max_s'] ?? 60));
+        $this->timeout    = max(1, (int)($retry['timeout_s'] ?? 30));
+        $this->transport  = $transport;
+        $this->sleeper    = $sleeper;
     }
 
     // ── Busca paginada completa ───────────────────────────────────────────
@@ -56,6 +78,13 @@ class JiraModel
             }
 
             $logs[] = "Página {$page}: " . count($batch) . ' itens';
+
+            // Resposta parcial: o Jira diz que há mais páginas mas não manda o
+            // cursor. Parar aqui entregaria um recorte incompleto como se fosse
+            // completo (e o DELETE apagaria o resto), então falha.
+            if (!$isLast && $nextPageToken === null) {
+                throw new \RuntimeException("Resposta parcial do Jira: página {$page} sem nextPageToken e isLast=false");
+            }
 
             if (empty($batch)) {
                 break;
@@ -100,19 +129,91 @@ class JiraModel
             $params['nextPageToken'] = $nextPageToken;
         }
 
-        $url  = $this->host . '/rest/api/3/search/jql?' . http_build_query($params);
-        $auth = base64_encode("{$this->email}:{$this->token}");
+        $url = $this->host . '/rest/api/3/search/jql?' . http_build_query($params);
+        return $this->requisitar($url);
+    }
 
+    /**
+     * GET com retry e backoff exponencial (extração noturna sem supervisão).
+     *   - TENTA DE NOVO: erro de rede/timeout, HTTP 429 (honra Retry-After),
+     *     HTTP 5xx e JSON inválido/truncado;
+     *   - NÃO tenta de novo: HTTP 4xx restantes (400/401/403/404...): repetir
+     *     não adianta e arrisca bloquear a conta.
+     * Cada nova tentativa é registrada no log (canal extracao), sem segredos.
+     */
+    private function requisitar(string $url): array
+    {
+        $headers = [
+            'Authorization: Basic ' . base64_encode("{$this->email}:{$this->token}"),
+            'Accept: application/json',
+        ];
+        $ultimo = 'falha desconhecida';
+
+        for ($t = 1; $t <= $this->tentativas; $t++) {
+            $r         = $this->enviar($url, $headers);
+            $status    = (int)$r['status'];
+            $erro      = (string)($r['erro'] ?? '');
+            $retryAft  = isset($r['retry_after']) ? (int)$r['retry_after'] : 0;
+            $retentar  = false;
+
+            if ($erro !== '') {
+                $ultimo   = "cURL: {$erro}";
+                $retentar = true;
+            } elseif ($status === 429 || $status >= 500) {
+                $ultimo   = "Jira API HTTP {$status}";
+                $retentar = true;
+            } elseif ($status >= 400) {
+                // Falha definitiva (credencial/consulta inválida).
+                throw new \RuntimeException("Jira API HTTP {$status}: " . (string)$r['body']);
+            } else {
+                $decoded = json_decode((string)$r['body'], true);
+                if (is_array($decoded)) {
+                    return $decoded;
+                }
+                $ultimo   = 'Jira retornou JSON inválido';
+                $retentar = true;
+            }
+
+            if (!$retentar || $t >= $this->tentativas) {
+                break;
+            }
+
+            $espera = min($this->esperaMax, $this->esperaBase * (2 ** ($t - 1)));
+            if ($status === 429 && $retryAft > 0) {
+                $espera = (float)min($retryAft, 300); // honra o Retry-After do Jira
+            }
+            \App\Services\Logger::warning('extracao', 'Jira: falha transitória, nova tentativa', [
+                'tentativa' => $t, 'de' => $this->tentativas, 'motivo' => $ultimo,
+                'espera_s' => $espera,
+            ]);
+            $this->dormir($espera);
+        }
+
+        throw new \RuntimeException($ultimo . " (após {$this->tentativas} tentativa(s))");
+    }
+
+    /** Uma requisição HTTP (transporte injetado ou cURL). */
+    private function enviar(string $url, array $headers): array
+    {
+        if ($this->transport !== null) {
+            return (array)call_user_func($this->transport, $url, $headers, $this->timeout);
+        }
+
+        $retryAfter = null;
         $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_HTTPHEADER     => [
-                'Authorization: Basic ' . $auth,
-                'Accept: application/json',
-            ],
-            CURLOPT_TIMEOUT        => 30,
+            CURLOPT_HTTPHEADER     => $headers,
+            CURLOPT_TIMEOUT        => $this->timeout,
+            CURLOPT_CONNECTTIMEOUT => min(15, $this->timeout),
             CURLOPT_SSL_VERIFYPEER => $this->sslVerify,
             CURLOPT_SSL_VERIFYHOST => $this->sslVerify ? 2 : 0,
+            CURLOPT_HEADERFUNCTION => function ($curl, string $linha) use (&$retryAfter): int {
+                if (stripos($linha, 'Retry-After:') === 0) {
+                    $retryAfter = (int)trim(substr($linha, 12));
+                }
+                return strlen($linha);
+            },
         ]);
 
         // CA bundle customizado (certificado do proxy corporativo)
@@ -121,24 +222,26 @@ class JiraModel
         }
 
         $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $curlErr  = curl_error($ch);
         curl_close($ch);
 
-        if ($curlErr) {
-            throw new \RuntimeException("cURL: {$curlErr}");
-        }
+        return [
+            'status'      => $httpCode,
+            'body'        => is_string($response) ? $response : '',
+            'erro'        => $curlErr !== '' ? $curlErr : null,
+            'retry_after' => $retryAfter,
+        ];
+    }
 
-        if ($httpCode >= 400) {
-            throw new \RuntimeException("Jira API HTTP {$httpCode}: {$response}");
+    private function dormir(float $segundos): void
+    {
+        if ($segundos <= 0) return;
+        if ($this->sleeper !== null) {
+            call_user_func($this->sleeper, $segundos);
+            return;
         }
-
-        $decoded = json_decode($response, true);
-        if ($decoded === null) {
-            throw new \RuntimeException('Jira retornou JSON inválido');
-        }
-
-        return $decoded;
+        usleep((int)round($segundos * 1000000));
     }
 
     // ── Mapeamento dos 33 campos ─────────────────────────────────────────

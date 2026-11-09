@@ -55,7 +55,7 @@
               <div class="ext-list" id="lst-pis"></div>
             </fieldset>
 
-            <fieldset class="ext-box" id="box-sprints">
+            <fieldset class="ext-box" id="box-sprints" disabled>
               <legend>Sprints</legend>
               <div class="ext-tools">
                 <button type="button" class="link-btn" data-sel="none" data-alvo="sprints" title="Equivale a não filtrar por sprint">Todas as sprints da PI</button>
@@ -63,7 +63,7 @@
                 <button type="button" class="link-btn" data-sel="none" data-alvo="sprints">Limpar</button>
               </div>
               <div class="ext-list" id="lst-sprints"></div>
-              <p class="ext-hint">Nenhuma marcada = todas as sprints das PIs escolhidas.</p>
+              <p class="ext-hint">A extração é sempre da PI inteira (todas as sprints). O filtro por sprint volta na v2.0.</p>
             </fieldset>
 
             <fieldset class="ext-box" id="box-times">

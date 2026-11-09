@@ -192,6 +192,29 @@ class ExtractionQueueRepository
         return (int)$this->pdo->lastInsertId();
     }
 
+    /**
+     * Última ordem criada pelo job noturno (marcador "origem":"extract_diaria"
+     * no JSON) na data informada (Y-m-d), com status da ordem e do último log.
+     * null = o job não enfileirou nada naquele dia.
+     */
+    public function ultimaOrdemDiaria(string $dataYmd): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT a.id_agendamento AS id, a.status, a.criado_em, a.atualizado_em,
+                    l.status AS log_status, l.mensagem
+               FROM extracao_agendamento a
+          LEFT JOIN extracao_log l
+                 ON l.id_log = (SELECT MAX(l2.id_log) FROM extracao_log l2 WHERE l2.agendamento_id = a.id_agendamento)
+              WHERE a.parametros_json LIKE '%\"origem\":\"extract_diaria\"%'
+                AND DATE(a.criado_em) = :d
+           ORDER BY a.id_agendamento DESC
+              LIMIT 1"
+        );
+        $stmt->execute([':d' => $dataYmd]);
+        $r = $stmt->fetch();
+        return $r === false ? null : $r;
+    }
+
     /** Últimas ordens com o resumo do último log (se houver). */
     public function listarFila(int $limite = 20): array
     {

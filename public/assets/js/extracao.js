@@ -241,7 +241,9 @@
     return {
       jornadas: [...sel.jornadas],
       pis: [...sel.pis],
-      sprints: [...sel.sprints],
+      // A extração é sempre da PI inteira: o filtro por sprint está desabilitado
+      // (volta na v2.0, só com um DELETE que respeite a sprint). O payload mantém a chave.
+      sprints: [],
       times: [...sel.times],
       email,
     };

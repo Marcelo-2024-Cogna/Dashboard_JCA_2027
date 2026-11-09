@@ -47,5 +47,6 @@ return [
     'limite_chamado_dias'    => 2,   // limite (dias) de resolução de chamado
     'max_linhas_lista'       => 500, // teto de linhas na lista de itens
     'max_linhas_tempo_status' => 300, // teto de linhas no tempo por status
-    'aviso_defasagem_dias'   => 1,   // defasagem (dias) que dispara aviso
+    'aviso_defasagem_dias'   => 1,   // (legado) defasagem em dias; o aviso agora usa horas
+    'aviso_defasagem_horas'  => 25,  // defasagem (h) da carga mais antiga que dispara aviso
 ];

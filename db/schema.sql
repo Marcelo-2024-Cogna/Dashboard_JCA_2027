@@ -132,6 +132,7 @@ CREATE TABLE IF NOT EXISTS extracao_jira (
     tempo_total_bloqueado  VARCHAR(100) NULL,
     data_carga             DATETIME NULL,
     ativo                  CHAR(1) NOT NULL DEFAULT 'S',
+    origem_pi              VARCHAR(10) NULL,  -- 'fixversion' | 'sprint' (fallback por sprint); NULL = carga anterior ao fallback
     PRIMARY KEY (id_extracao),
     KEY idx_extracao_jira_chave (chave),
     KEY idx_extracao_jira_configuracao_pi_id (configuracao_pi_id),
@@ -243,6 +244,19 @@ SET @col := (SELECT COUNT(*) FROM information_schema.COLUMNS
                 AND COLUMN_NAME = 'sprint_ref');
 SET @sql := IF(@col = 0,
     'ALTER TABLE baseline ADD COLUMN sprint_ref VARCHAR(20) NULL AFTER sprint, ADD KEY idx_baseline_sprint_ref (sprint_ref)',
+    'SELECT 1');
+PREPARE stmt_mig FROM @sql;
+EXECUTE stmt_mig;
+DEALLOCATE PREPARE stmt_mig;
+
+-- 8d. Migração idempotente (job noturno / fallback de PI por sprint):
+-- origem_pi em extracao_jira ('fixversion' | 'sprint'). Linhas antigas ficam
+-- NULL (carga anterior ao fallback); a próxima extração regrava a PI inteira.
+SET @col := (SELECT COUNT(*) FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'extracao_jira'
+                AND COLUMN_NAME = 'origem_pi');
+SET @sql := IF(@col = 0,
+    'ALTER TABLE extracao_jira ADD COLUMN origem_pi VARCHAR(10) NULL AFTER ativo',
     'SELECT 1');
 PREPARE stmt_mig FROM @sql;
 EXECUTE stmt_mig;

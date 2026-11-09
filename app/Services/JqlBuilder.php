@@ -88,6 +88,30 @@ class JqlBuilder
     }
 
     /**
+     * JQL do FALLBACK de PI (job noturno): itens que estão nas SPRINTS da PI
+     * mas cujo fixVersion está VAZIO ou aponta para outra PI (carry-over).
+     * Segundo passo, para os mesmos projetos da extração principal. O
+     * chamador une por chave e descarta quem a busca principal já trouxe.
+     *
+     * @param string[] $projetos   chaves de projeto
+     * @param string   $pi         rótulo da PI (ex: 'PI 4/26')
+     * @param string[] $sprintsPi  nomes das sprints da PI (ex: 'SP 26.4.1')
+     */
+    public function forFallbackSprints(array $projetos, string $pi, array $sprintsPi): string
+    {
+        $projects   = implode(', ', $projetos);
+        $types      = $this->cfg['issue_types_jql'] ?? 'standardIssueTypes()';
+        $orderBy    = $this->cfg['order_by'] ?? 'project';
+        $sprintList = '"' . implode('", "', $sprintsPi) . '"';
+
+        return "project in ({$projects})"
+            . " AND issuetype in {$types}"
+            . " AND Sprint in ({$sprintList})"
+            . ' AND (fixVersion is EMPTY OR fixVersion !~ "*' . $pi . '*")'
+            . " ORDER BY {$orderBy}";
+    }
+
+    /**
      * JQL com uma lista de sprints arbitrária.
      * @param string[] $sprints
      */

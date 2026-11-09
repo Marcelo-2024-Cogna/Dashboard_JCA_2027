@@ -154,7 +154,9 @@
   function faixaContexto(d) {
     const j = d.janela || {}, fa = d.filtros || {}, ex = d.extracao || {};
     const defas = ex.defasagem_dias;
-    const ambar = defas != null && defas > 1;
+    const defasH = ex.defasagem_horas;
+    const limH = ex.aviso_defasagem_horas != null ? ex.aviso_defasagem_horas : 25;
+    const ambar = defasH != null ? defasH > limH : (defas != null && defas > 1);
     const box = el('div', 'alert ' + (ambar ? 'vg-faixa-ambar' : 'alert-info') + ' prev-janela');
     box.setAttribute('role', 'status');
 
