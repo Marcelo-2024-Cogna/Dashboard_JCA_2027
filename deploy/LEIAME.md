@@ -116,13 +116,13 @@ O app grava em `data/` (logs, ordens da fila, JSONs de baseline/capacidade/confi
 
 ```bash
 cd /apps/metricas_jca
-mkdir -p data/{logs,agendamentos,baselines,progress,capacity,config,exports,import}
+mkdir -p data/{logs,agendamentos,baselines,progress,capacity,config,exports,import,locks}
 chown -R root:www-data . ; chmod -R u=rwX,g=rX,o= .
 chown -R www-data:www-data data ; chmod -R u=rwX,g=rwX,o= data
 chown root:www-data config/*.php ; chmod 640 config/db.php config/secrets.local.php
 ```
 
-Pastas: `data/` (raiz, para `items.json` e `notificacoes.log`), `data/logs`, `data/agendamentos`, `data/baselines`, `data/progress`, `data/capacity`, `data/config`, `data/exports` e `data/import` (estas duas so para scripts de `bin/`).
+Pastas: `data/` (raiz, para `items.json` e `notificacoes.log`), `data/logs`, `data/agendamentos`, `data/baselines`, `data/progress`, `data/capacity`, `data/config`, `data/exports` e `data/import` (estas duas so para scripts de `bin/`) e `data/locks` (locks `flock` do job noturno e das extracoes por PI; precisa de escrita pelo usuario do cron). O verificador tambem grava `data/extract_check_estado.json` (em `data/`).
 
 ## 7. Apache
 
@@ -142,6 +142,55 @@ sudo -u www-data crontab -l                                   # ver o que ja exi
 sudo -u www-data crontab /apps/metricas_jca/deploy/cron/metricas_jca.cron
 ```
 Roda `bin/queue_worker.php` a cada minuto com `flock -n`, saida em `data/logs/worker.log` (uma linha por minuto: configure `logrotate` semanal para esse arquivo). O worker usa o mesmo `config/db.php` e `config/secrets.local.php` da web.
+
+## 8b. Job noturno (extracao 23:00 e verificador 23:30)
+
+Dois scripts novos, ambos em `bin/` e agendados no mesmo `deploy/cron/metricas_jca.cron` (com `flock -n`, saida em `data/logs/extracao_diaria.log`):
+
+| Hora  | Script | O que faz |
+|-------|--------|-----------|
+| 23:00 | `bin/extract_diaria.php` | Resolve a PI corrente (e a anterior por 14 dias apos o fim dela), enfileira UMA ordem com hash do dia e a processa no mesmo processo: extracao principal por `fixVersion` + **fallback por sprint** (itens das sprints da PI sem `fixVersion` ou com `fixVersion` de outra PI; gravados com `extracao_jira.origem_pi = 'sprint'`). O resultado aparece em `/extracao/fila`, na linha `RESUMO ...` de `data/logs/extracao.log` e, em falha, em `data/notificacoes.log` + e-mail. |
+| 23:30 | `bin/extract_check.php` | Confere jornada com dados de ate 25 h, ordem do job criada hoje e sem erro, e queda brusca (< 80%) de itens da PI contra `data/extract_check_estado.json`. Alerta por log + e-mail. Apague o arquivo de estado para "zerar" a referencia de uma queda legitima. |
+
+**Codigos de saida** (tambem em `--help`):
+
+| Codigo | `extract_diaria.php` | `extract_check.php` | `queue_worker.php` |
+|--------|----------------------|---------------------|--------------------|
+| 0 | ok (inclui "ja executada hoje") | tudo ok | nada pendente ou tudo ok |
+| 1 | falha parcial (alguma jornada/PI) | alerta | alguma ordem em erro ou com lotes em falha |
+| 2 | configuracao/PI invalida (sem PI cadastrada, fora do periodo de graca, nenhum time ativo, opcao invalida) | idem | opcao invalida |
+| 3 | ja em execucao (lock), sem erro | n/a | n/a |
+| 4 | erro fatal / Jira indisponivel (nenhuma jornada gravada) | erro fatal (ex.: banco) | n/a |
+
+**Opcoes de `extract_diaria.php`**: `--dry-run` (nao toca no Jira nem grava; so SELECT), `--pi='PI x/yy'`, `--forcar` (relaxa a protecao contra resposta parcial), `--sem-fallback`, `--refazer` (executa de novo no mesmo dia), `--help`.
+
+**Protecoes**: a limpeza antes do INSERT e por **PI + prefixo de chave** dos projetos do lote (`chave LIKE 'SGSE-%'`), nunca por nome de projeto; a gravacao so ocorre depois de buscar tudo (transacao unica por lote, rollback em erro); se o Jira devolver 0 itens ou menos de 80% do que ja existe no recorte, o lote e abortado sem apagar nada (`limiar_parcial` em `config/extracao.php`); retry com backoff (4 tentativas; honra `Retry-After`; nao repete 400/401/403); lock `flock` em `data/locks/` (job noturno e extracao por PI). A extracao e sempre da PI inteira: `/extracao/agendar` recusa `sprints` preenchido (400).
+
+**Notificacao de falha** (`mail()` nativo do PHP + log em arquivo como garantia). Variaveis (ambiente ou `config/secrets.local.php`): `JOB_NOTIFY_TO` (destinatarios separados por virgula), `JOB_NOTIFY_FROM` (remetente) e `APP_ENV` (rotulo no assunto). Vazio = so log. `mail()` exige **MTA local** (sendmail/postfix) no servidor; sem ele a falha do envio e registrada no log e o job segue (nunca derruba a extracao). Canal Teams: reservado para a v2.0.
+
+**Fuso do servidor**: o cron usa o horario do servidor. Confira com `timedatectl`; se estiver em UTC, `0 23` roda as 20:00 em Brasilia (ou ajuste o fuso do servidor para `America/Sao_Paulo`).
+
+**logrotate** (exemplo `/etc/logrotate.d/metricas_jca`):
+```
+/apps/metricas_jca/data/logs/extracao_diaria.log /apps/metricas_jca/data/logs/worker.log {
+    weekly
+    rotate 8
+    compress
+    missingok
+    notifempty
+    copytruncate
+}
+```
+
+**Windows (dev)** com o Agendador de Tarefas:
+```powershell
+schtasks /Create /TN "MetricasJCA-Extracao" /SC DAILY /ST 23:00 /TR "C:\xampp\php\php.exe C:\xampp\htdocs\dashboard\bin\extract_diaria.php"
+schtasks /Create /TN "MetricasJCA-Verificacao" /SC DAILY /ST 23:30 /TR "C:\xampp\php\php.exe C:\xampp\htdocs\dashboard\bin\extract_check.php"
+```
+
+**Migracao `origem_pi`**: bancos criados antes desta versao precisam da coluna `extracao_jira.origem_pi` (`VARCHAR(10) NULL`). Aplique `deploy/sql/04_migracao_origem_pi.sql` (idempotente, conta com `ALTER`) **antes** da primeira extracao; quem aplicar o novo `01_schema.sql` ja tem a coluna. Linhas antigas ficam `NULL` (carga anterior ao fallback). As views nao mudam. Ordem em producao: `01_schema.sql` (ou `04_`) -> dump de dados -> `02_views.sql` -> `03_triggers.sql`.
+
+**Classes novas** (prefixo `srv`, namespace `App\Srv`, pasta `app/Srv/`, mapeadas pelo mesmo autoload `App\X\Y` -> `app/X/Y.php`; nomes de arquivo = nome da classe, sensiveis a maiusculas no Linux).
 
 ## 9. Smoke test
 

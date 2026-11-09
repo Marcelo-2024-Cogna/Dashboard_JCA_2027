@@ -41,6 +41,11 @@
 - /data/agendamentos/*
 + /data/exports/.gitkeep
 - /data/exports/*
++ /data/locks/.gitkeep
+- /data/locks/*
+/data/extract_check_estado.json
+# --- Script de verificacao de desenvolvimento (banco descartavel; nao levar)
+/bin/teste_job_noturno.php
 /data/deploy/
 /data/items.json
 /data/notificacoes.log

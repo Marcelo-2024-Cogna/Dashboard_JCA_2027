@@ -22,3 +22,13 @@ SHELL=/bin/bash
 PATH=/usr/local/bin:/usr/bin:/bin
 
 * * * * * /usr/bin/flock -n /var/lock/metricas_jca_worker.lock /usr/bin/php /apps/metricas_jca/bin/queue_worker.php >> /apps/metricas_jca/data/logs/worker.log 2>&1
+#
+#  JOB NOTURNO (ver deploy/LEIAME.md, secao 8b). O cron usa o FUSO DO SERVIDOR:
+#  confira com "timedatectl" (se estiver em UTC, 23:00 vira 20:00 em Brasilia).
+#  - 23:00 extract_diaria.php: extracao da PI corrente (fixVersion + fallback por sprint).
+#  - 23:30 extract_check.php : verificador (defasagem, ordem em erro, queda brusca).
+#  Saida em data/logs/extracao_diaria.log (configure logrotate). Codigos de saida:
+#  0 ok | 1 falha parcial/alerta | 2 configuracao/PI invalida | 3 ja em execucao | 4 erro fatal.
+#  JOB_NOTIFY_TO / JOB_NOTIFY_FROM / APP_ENV vao em config/secrets.local.php (mail() exige MTA local).
+0 23 * * * /usr/bin/flock -n /var/lock/metricas_jca_diaria.lock /usr/bin/php /apps/metricas_jca/bin/extract_diaria.php >> /apps/metricas_jca/data/logs/extracao_diaria.log 2>&1
+30 23 * * * /usr/bin/flock -n /var/lock/metricas_jca_check.lock /usr/bin/php /apps/metricas_jca/bin/extract_check.php >> /apps/metricas_jca/data/logs/extracao_diaria.log 2>&1

@@ -146,6 +146,7 @@ CREATE TABLE IF NOT EXISTS extracao_jira (
     tempo_total_bloqueado  VARCHAR(100) NULL,
     data_carga             DATETIME NULL,
     ativo                  CHAR(1) NOT NULL DEFAULT 'S',
+    origem_pi              VARCHAR(10) NULL,  -- 'fixversion' | 'sprint' (fallback por sprint); NULL = carga anterior ao fallback
     PRIMARY KEY (id_extracao),
     KEY idx_extracao_jira_chave (chave),
     KEY idx_extracao_jira_configuracao_pi_id (configuracao_pi_id),
