@@ -11,6 +11,21 @@ Opcao A: o DocumentRoot e `/apps/metricas_jca/public`. `app/`, `config/`, `bin/`
 - MySQL 8.x acessivel pelo servidor (o dev usa 8.4).
 - Saida de rede do servidor para `https://cogna.atlassian.net` (worker de extracao).
 
+## Pre-voo no servidor (antes do deploy)
+
+Medido no phpinfo de 06/11 (Ubuntu 20.04, Apache 2.4.41 prefork, PHP 7.4 mod_php): `mod_ssl` e `mod_alias` carregados; **faltam** `mod_rewrite` e `mod_headers` no Apache e `mbstring` e `curl` no PHP (o app usa `mb_*` e o `curl` do `JiraModel`).
+
+```bash
+apache2ctl -M | grep -E 'rewrite|headers|ssl'          # esperado: 3 linhas
+sudo a2enmod rewrite headers
+sudo apt install php7.4-mbstring php7.4-curl            # opcional: php7.4-zip php7.4-xml
+php -m | grep -E 'mbstring|curl|pdo_mysql|json'         # CLI (cron); conferir tambem o phpinfo da web
+apache2ctl configtest
+sudo systemctl restart apache2                          # restart (nao reload) para carregar extensoes do mod_php
+```
+
+Aviso: sem `mod_rewrite` o `public/.htaccess` (dentro de `IfModule mod_rewrite.c`) falha **em silencio**: so `/` e os assets abrem e as demais rotas dao 404. Sem `mod_headers` o bloco de cabecalhos do vhost e ignorado (tambem em silencio). Sem `mbstring`/`curl` ha erro fatal ao usar graficos e a extracao. Se nao puder habilitar o `mod_rewrite`, use `FallbackResource /index.php` (comentado no vhost).
+
 ## 1. Ordem do deploy
 
 1. Copiar os arquivos (secao 2).
@@ -118,7 +133,7 @@ a2enmod rewrite ssl headers ; a2ensite metricas.cogna.com.br
 apache2ctl configtest && systemctl reload apache2
 ```
 
-O vhost nao usa o certificado `snakeoil` nem a linha `Include .../default-ssl.conf` do modelo (comentada, com explicacao). `public/.htaccess` nao tem `RewriteBase` e funciona na raiz e em `/dashboard/`.
+O vhost nao usa o certificado `snakeoil` nem a linha `Include .../default-ssl.conf` do modelo (comentada, com explicacao). Usa `Options -Indexes +FollowSymLinks`, DocumentRoot em `/apps/metricas_jca/public` (nunca na raiz do app, que exporia `config/`, `data/` e `app/`), certificado DigiCert por placeholder (com `SSLCertificateChainFile` comentado) e, opcionalmente, `FallbackResource /index.php` comentado como roteamento independente do `mod_rewrite`. `public/.htaccess` nao tem `RewriteBase` e funciona na raiz e em `/dashboard/`.
 
 ## 8. Cron do worker
 
