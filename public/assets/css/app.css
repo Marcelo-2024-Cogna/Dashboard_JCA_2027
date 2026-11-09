@@ -35,7 +35,7 @@ body {
 /* ── Layout em grid: sidebar + main ── */
 .layout {
   display: grid;
-  grid-template-columns: var(--sidebar-w) 1fr;
+  grid-template-columns: var(--sidebar-w) minmax(0,1fr);
   grid-template-rows: auto 1fr;
   grid-template-areas:
     "sidebar header"
@@ -135,7 +135,7 @@ body {
 @keyframes pulse { 0%,100% { opacity: .6; } 50% { opacity: 1; } }
 
 /* ── Main / conteúdo ── */
-.main { grid-area: main; padding: 24px 28px; max-width: 1600px; }
+.main { grid-area: main; padding: 24px 28px; max-width: 1600px; min-width: 0; }
 
 /* ── Labels de filtros ativos (destaque) ── */
 .active-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
@@ -362,14 +362,20 @@ tbody td { padding: 8px 13px; }
 .vg-placeholder h3 { color: var(--muted); }
 
 /* Grade de KPIs mais compacta na Visão Geral */
-.vg-kpi-grid { grid-template-columns: repeat(auto-fill, minmax(170px,1fr)); margin-top: 4px; }
+.vg-kpi-grid { grid-template-columns: repeat(auto-fit, minmax(min(170px,100%),1fr)); margin-top: 4px; }
+
+/* Grade de gadgets fluida: altura natural (sem esticar vizinhos) e sem colunas vazias */
+.vg-grid { grid-template-columns: repeat(auto-fit, minmax(min(440px,100%),1fr)); align-items: start; margin-top: 14px; }
+.vg-grid > .ccard { min-width: 0; }
+.vg-grid > .vg-span { grid-column: 1 / -1; }
 
 /* Cards largos (tempo por status, lista) ocupam a linha inteira */
 .vg-wide { margin-top: 0; }
 .vg-tbl { font-size: .76rem; }
 
 @media (max-width: 1000px) {
-  .layout { grid-template-columns: 1fr; grid-template-areas: "header" "main"; }
+  .layout { grid-template-columns: minmax(0,1fr); grid-template-areas: "header" "main"; }
+  .main { padding: 18px 14px; }
   .sidebar { display: none; }
   .cgrid.c2, .cgrid.c3 { grid-template-columns: 1fr; }
 }

@@ -114,6 +114,7 @@
     a.setAttribute('role', 'status');
     a.appendChild(el('span', null, (g && g.motivo) || 'Sem dados para a seleção.'));
     card.appendChild(a);
+    card._vazio = true;
     return card;
   }
 
@@ -262,12 +263,8 @@
 
     sec.appendChild(el('div', 'pr-sub', 'Total do escopo: ' + fmt(g.total_sp) + ' SP (backlog + em andamento + bloqueado + aceitos; cancelados ficam fora).'));
 
-    // Modo PI: produtividade da janela fechada + itens fora da janela.
+    // Modo PI: itens fora da janela.
     if (g.escopo === 'pi') {
-      if (prod.janela_padrao) {
-        sec.appendChild(el('div', 'pr-sub', 'Produtividade nas sprints fechadas (igual às telas Lead Time e Produtividade): '
-          + fmt(prod.janela_padrao.h_por_sp) + ' h/SP · incluindo a sprint ativa: ' + (prod.h_por_sp == null ? '—' : fmt(prod.h_por_sp) + ' h/SP') + '.'));
-      }
       const fdj = g.fora_da_janela || {};
       const foraBits = [];
       if (fdj.sem_sprint_itens) foraBits.push(int(fdj.sem_sprint_itens) + ' item(ns) (' + fmt(fdj.sem_sprint_sp) + ' SP) ainda sem sprint');
@@ -302,7 +299,6 @@
       const k = kpi('Transbordo', 'n/d', 'indisponível', '#a78bfa', tr.motivo || 'Transbordo indisponível para esta sprint.');
       grid.appendChild(k);
     }
-    grid.appendChild(kpi('Produtividade', g.produtividade_h_sp == null ? '—' : fmt(g.produtividade_h_sp) + ' h/SP', 'horas por ponto', '#22d3ee'));
     sec.appendChild(grid);
     sec.appendChild(el('div', 'pr-sub', 'Incidentes/Solicitações: aguardando o módulo de Sustentação.'));
     return sec;
@@ -427,79 +423,12 @@
 
     const jp = g.janela_padrao;
     if (isPi && jp) {
-      card.appendChild(el('div', 'pr-sub', 'Sprints fechadas (igual às telas Lead Time e Produtividade): ' + (jp.sprints || []).join(', ')
+      card.appendChild(el('div', 'pr-sub', 'Sprints fechadas (igual à tela Lead Time): ' + (jp.sprints || []).join(', ')
         + ' · ' + int(jp.itens) + ' itens · lead time ' + (jp.lead_time_medio == null ? '—' : fmt(jp.lead_time_medio) + ' d')
         + ' (dev ' + (jp.desenvolvimento.dias == null ? '—' : fmt(jp.desenvolvimento.dias)) + ' · hml '
         + (jp.homologacao.dias == null ? '—' : fmt(jp.homologacao.dias)) + ' · impl '
         + (jp.implantacao.dias == null ? '—' : fmt(jp.implantacao.dias)) + ').'));
     }
-    return card;
-  }
-
-  // ── 6d. Produtividade por sprint ─────────────────────────────────────
-  function cardProdSprints(d) {
-    const g = d.gadgets.produtividade_sprints;
-    if (!g || g.estado !== 'ok') return cardVazio('Produtividade por sprint', g);
-    const card = cardBase('Produtividade por sprint', 'horas por SP');
-    const sprints = (g.sprints || []).filter(s => s.pontos != null && s.pontos > 0);
-    const wrap = el('div', 'cwrap');
-    const cv = document.createElement('canvas');
-    cv.id = 'vg-prod';
-    cv.setAttribute('role', 'img');
-    cv.setAttribute('aria-label', 'Barras de horas por Story Point por sprint, com a sprint em foco destacada e a linha da produtividade ponderada da PI. Valores na tabela abaixo.');
-    wrap.appendChild(cv);
-    card.appendChild(wrap);
-
-    const pond = g.pi_ponderada_fechadas;
-    if (pond && pond.h_por_sp != null) {
-      card.appendChild(el('div', 'pr-sub', 'Ponderada das sprints fechadas (igual à tela Produtividade): ' + fmt(pond.h_por_sp) + ' h/SP'
-        + (g.pi_ponderada && g.pi_ponderada.h_por_sp != null ? ' · incluindo a sprint ativa: ' + fmt(g.pi_ponderada.h_por_sp) + ' h/SP' : '') + '.'));
-    }
-
-    const { wrap: tw, tb } = tabelaBase(null, 'Produtividade por sprint: horas, pontos e horas por SP', '560px');
-    cabecalho(tb, [['Sprint', ''], ['Status', ''], ['Horas', 'num'], ['Pontos (SP)', 'num'], ['h/SP', 'num'], ['Itens', 'num']]);
-    const tbody = el('tbody');
-    (g.sprints || []).forEach(s => {
-      const tr = el('tr');
-      const td = el('td', null, s.nome + (s.foco ? ' ★' : ''));
-      if (s.foco) td.title = 'Sprint em foco';
-      tr.appendChild(td);
-      tr.appendChild(el('td', null, s.status === 'ativa' ? 'Ativa' : s.status === 'futura' ? 'Futura' : 'Fechada'));
-      tr.appendChild(el('td', 'num', fmt(s.horas)));
-      tr.appendChild(el('td', 'num', fmt(s.pontos)));
-      tr.appendChild(el('td', 'num', s.h_por_sp == null ? '—' : fmt(s.h_por_sp)));
-      tr.appendChild(el('td', 'num', int(s.itens)));
-      if (s.foco) tr.style.fontWeight = '600';
-      tbody.appendChild(tr);
-    });
-    tb.appendChild(tbody);
-    card.appendChild(tw);
-
-    const pondVal = pond && pond.h_por_sp != null ? pond.h_por_sp : null;
-    card._draw = () => window.Charts.make('vg-prod', {
-      data: {
-        labels: sprints.map(s => s.nome),
-        datasets: [
-          {
-            type: 'bar', label: 'h/SP', data: sprints.map(s => s.h_por_sp),
-            backgroundColor: sprints.map(s => s.foco ? '#22d3ee' : '#6366f1'),
-            borderRadius: 4, order: 2,
-          },
-          ...(pondVal != null ? [{
-            type: 'line', label: 'Ponderada (fechadas)', data: sprints.map(() => pondVal),
-            borderColor: '#f59e0b', borderWidth: 2, borderDash: [6, 4], pointRadius: 0, order: 1,
-          }] : []),
-        ],
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: true, position: 'bottom' }, tooltip: { callbacks: { label: c => ' ' + c.dataset.label + ': ' + fmt(c.raw) + ' h/SP' } } },
-        scales: {
-          x: { grid: { display: false }, ticks: { maxRotation: 45, minRotation: 45, autoSkip: false } },
-          y: { beginAtZero: true, title: { display: true, text: 'Horas por SP' }, grid: { color: '#2e3349', borderDash: [4, 4] } },
-        },
-      },
-    });
     return card;
   }
 
@@ -732,7 +661,7 @@
       'Visão por jornada, consolidando os projetos dos times da seleção. Os filtros do cabeçalho (jornada, time, versão, sprint) controlam a tela; ADSE e SGSE são o mesmo time.',
       'Seletor "Sprint ativa | PI inteira": mostra a sprint em foco ou a PI inteira (sprints de valor já iniciadas). Um filtro de sprint no cabeçalho vence o seletor.',
       'Unidade: Story Points, universo de valor + sustentação (como no Planejado x Realizado). Aceitos = Entregues do Planejado x Realizado = Concluído da Velocidade.',
-      'Cycle time e Produtividade batem com as telas Lead Time e Produtividade (bloco "sprints fechadas"); o bloco "incluindo a sprint ativa" é só do modo PI.',
+      'Cycle time bate com a tela Lead Time (bloco "sprints fechadas"). O histórico de Produtividade por sprint fica na tela Produtividade; aqui só aparece a da sprint ativa.',
       'Burndown, Fluxo acumulado (CFD), Tempo por status e Chamados são aproximados por datas de fluxo (não há burndown nativo de sprint); a badge "aproximado" sinaliza isso.',
       'Os gadgets de Sustentação aguardam o módulo independente; o divisor ÷5 do Jira equivale à Produtividade (horas por ponto).',
     ].forEach(t => ul.appendChild(el('li', null, t)));
@@ -755,9 +684,19 @@
 
     // 6: grade de gráficos (coleta os _draw para desenhar após inserir no DOM)
     const aDesenhar = [];
-    const grade = el('div', 'cgrid c2');
-    grade.style.marginTop = '14px';
-    [cardBurndown(d), cardCfd(d), cardCycle(d), cardProdSprints(d), cardTeamVelocity(d), cardChamados(d)].forEach(c => {
+    // Grade fluida: cards com dados em pares; o último sem par e o Cycle time
+    // ocupam a linha toda; cards vazios/indisponíveis vão ao fim, em linha inteira.
+    const grade = el('div', 'cgrid vg-grid');
+    const cycle = cardCycle(d);
+    const pares = [cardBurndown(d), cardCfd(d), cardTeamVelocity(d), cardChamados(d)];
+    const comDados = pares.filter(c => !c._vazio);
+    const vazios = pares.filter(c => c._vazio);
+    if (cycle._vazio) vazios.unshift(cycle);
+    if (comDados.length % 2 === 1) comDados[comDados.length - 1].classList.add('vg-span');
+    const ordem = comDados.concat(cycle._vazio ? [] : [cycle], vazios);
+    if (!cycle._vazio) cycle.classList.add('vg-span');
+    vazios.forEach(c => c.classList.add('vg-span'));
+    ordem.forEach(c => {
       grade.appendChild(c);
       if (c._draw) aDesenhar.push(c);
     });
