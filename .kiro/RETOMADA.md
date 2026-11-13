@@ -42,6 +42,26 @@
   `banco/01_schema.sql`. Números de referência novos (13/11 10:21, Secretaria PI 4/26): velocidade
   607/637/592 média 197,33; previsibilidade 458/329 = 71,8%; plan-real 604/607/637/592; lead time
   121 itens 6,9008; produtividade 6,33; visão geral foco SP 26.4.4 aceitos 32, anterior 217/193.
+- **STATUS DO SERVIDOR (13/11, ~14:45 BRT)**: dados carregados (conferido por contagem: 38.953
+  `extracao_jira`; PIs 10.549/10.010/9.211/9.183). App no ar via vhost temporário em `127.0.0.1:8088`
+  (acesso por túnel SSH/PuTTY); Velocidade, Visão Geral, Lead Time, Previsibilidade, Produtividade OK.
+  Cron do `www-data` instalado (worker a cada minuto + `extract_diaria` 02:00 UTC + `extract_check`
+  02:30 UTC). Dry-run do job OK (10 jornadas, JQL principal e de fallback). Worker ocioso, sem erro.
+- **SERVIDOR EM UTC**: BRT = UTC-3 sem horário de verão; por isso 23:00/23:30 BRT viram 02:00/02:30
+  no crontab. O PHP usa `America/Sao_Paulo` para as datas do job.
+- **BUG DE COLLATION (corrigido em 13/11)**: no servidor as 15 views foram criadas em
+  `utf8mb4_0900_ai_ci` (cliente DBeaver) e o PHP conecta em `utf8mb4_general_ci`; o Planejado x
+  Realizado dava 500 (`Illegal mix of collations`, 1267). `db/views.sql` e `deploy/sql/02_views.sql`
+  agora começam com `SET NAMES utf8mb4 COLLATE utf8mb4_general_ci;`. Servidor corrigido: as views
+  foram recriadas e a consulta de `information_schema.views` mostra `utf8mb4_general_ci` nas 15.
+  `/graficos/plan-real` é o canário no smoke test.
+- **ARMADILHA DO JOB**: se existir ordem CONCLUÍDA no dia, `extract_diaria` sai com "já executada
+  hoje" (exit 0) e NÃO roda. Uma extração real manual feita no mesmo dia (BRT) antes das 23:00 faz o
+  job da noite ser pulado; use `--refazer` só quando for intencional.
+- **PENDENTE no servidor**: teste do token Jira (`200` esperado); primeira extração real automática
+  (14/11 02:00 UTC); vhost definitivo + DigiCert + DNS (infra); `JOB_NOTIFY_TO` e MTA para `mail()`;
+  trocar `metricas_jca@%` por `localhost` com senha própria; remover `info.php` da raiz do app;
+  ampliar `/var` e corrigir o agente ITS que inunda o syslog (chamado de infra).
 
 ## DECISÕES DO USUÁRIO — 09/11/2026 (segunda; infra ainda sem resposta ao chamado de upgrade do PHP)
 
