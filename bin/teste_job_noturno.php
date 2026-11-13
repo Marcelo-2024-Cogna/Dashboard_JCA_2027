@@ -453,6 +453,54 @@ try {
         verdade(strpos($r['jql_fallback'], 'Sprint in ("SP 26.4.1", "SP 26.4.2", "SP 26.4.3")') !== false, 'JQL do fallback: ' . $r['jql_fallback']);
         verdade(strpos($r['jql_fallback'], 'SP 26.4.9') === false, 'sprint inativa não deve entrar');
     });
+    t('fallback: fixVersion de PI futura é excluído e contado; passada/vazia/ilegível entram; principal intacta', function () use ($limpar, $contar, $servico, $pi4) {
+        $limpar();
+        $c = new ScriptedJira(function (string $jql, bool $fb) {
+            if (!$fb) return [item('AAA-1', '[AAA] PI 4/26', 3)];  // (h) principal com a PI-alvo
+            return [
+                item('AAA-10', '[ABCD] PI 2/27', 5),               // (a) futura
+                item('AAA-11', '[AAA] PI 3/26', 2),                // (b) passada
+                item('AAA-12', null, 1),                           // (c) vazia
+                item('AAA-13', '[AAA] PI 3/26; [AAA] PI 1/27', 4), // (d) uma das versões é futura
+                item('AAA-14', 'Release X', 1),                    // (e) ilegível
+                item('AAA-15', '[AAA] PI 2/2027', 1),              // (f) ano com 4 dígitos
+                item('AAA-16', '[AAA] PI 4/25', 1),                // ano anterior
+            ];
+        });
+        $r = $servico($c)->extract(['AAA'], 'PI 4/26', null, 'jira');
+        igual(1, $r['itens_principal'], 'principal');
+        igual(4, $r['itens_fallback'], 'fallback (AAA-11, 12, 14, 16)');
+        igual(3, $r['fallback_futuro'], 'futuros (AAA-10, 13, 15)');
+        igual(5, $r['total_itens'], 'total');
+        igual(0, $contar("chave IN ('AAA-10','AAA-13','AAA-15')"), 'futuros não gravados');
+        igual(4, $contar("origem_pi = 'sprint' AND configuracao_pi_id = ?", [$pi4]));
+        igual(1, $contar("chave = 'AAA-1' AND origem_pi = 'fixversion'"), 'principal gravado');
+    });
+    t('versoesTemPiFutura: PI-alvo PI 1/27 (passado entra, futuro sai) e formatos', function () {
+        verdade(!ExtractionService::versoesTemPiFutura('[AAA] PI 4/26', 'PI 1/27'), 'PI 4/26 é passado de PI 1/27');
+        verdade(ExtractionService::versoesTemPiFutura('[AAA] PI 2/27', 'PI 1/27'), 'PI 2/27 é futuro de PI 1/27');
+        verdade(!ExtractionService::versoesTemPiFutura('[AAA] PI 1/27', 'PI 1/27'), 'mesma PI não exclui');
+        verdade(ExtractionService::versoesTemPiFutura('pi 2 / 27', 'PI 4/26'), 'case-insensitive e espaços');
+        verdade(!ExtractionService::versoesTemPiFutura(null, 'PI 4/26'), 'null');
+        verdade(!ExtractionService::versoesTemPiFutura('Release X', 'PI 4/26'), 'ilegível');
+        igual([27, 2], ExtractionService::parsePi('[SGSE] PI 2/2027'));
+    });
+    t('fallback com PI-alvo PI 1/27: versão PI 4/26 entra, PI 2/27 sai', function () use ($limpar, $servico, $pdo, $piId) {
+        $limpar();
+        $pdo->prepare("INSERT INTO sprints (configuracao_pi_id, nome, tipo, ativo) VALUES (?, 'SP 27.1.1', 'valor', 'S')")->execute([$piId['PI 1/27']]);
+        try {
+            $c = new ScriptedJira(function (string $jql, bool $fb) {
+                if (!$fb) return [item('AAA-1', '[AAA] PI 1/27', 3)];
+                return [item('AAA-20', '[AAA] PI 4/26', 2), item('AAA-21', '[AAA] PI 2/27', 2)];
+            });
+            $r = $servico($c)->extract(['AAA'], 'PI 1/27', null, 'jira');
+            igual(1, $r['itens_fallback'], 'fallback');
+            igual(1, $r['fallback_futuro'], 'futuro');
+            igual(2, $r['total_itens'], 'total');
+        } finally {
+            $pdo->exec("DELETE FROM sprints WHERE nome = 'SP 27.1.1'");
+        }
+    });
     t('fallback desligado (opção) e PI sem sprints: só 1 chamada ao Jira', function () use ($limpar, $servico) {
         $limpar();
         $c = new ScriptedJira(function () { return gera('AAA', 2); });

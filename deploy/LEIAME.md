@@ -149,7 +149,7 @@ Dois scripts novos, ambos em `bin/` e agendados no mesmo `deploy/cron/metricas_j
 
 | Hora  | Script | O que faz |
 |-------|--------|-----------|
-| 23:00 | `bin/extract_diaria.php` | Resolve a PI corrente (e a anterior por 14 dias apos o fim dela), enfileira UMA ordem com hash do dia e a processa no mesmo processo: extracao principal por `fixVersion` + **fallback por sprint** (itens das sprints da PI sem `fixVersion` ou com `fixVersion` de outra PI; gravados com `extracao_jira.origem_pi = 'sprint'`). O resultado aparece em `/extracao/fila`, na linha `RESUMO ...` de `data/logs/extracao.log` e, em falha, em `data/notificacoes.log` + e-mail. |
+| 23:00 | `bin/extract_diaria.php` | Resolve a PI corrente (e a anterior por 14 dias apos o fim dela), enfileira UMA ordem com hash do dia e a processa no mesmo processo: extracao principal por `fixVersion` + **fallback por sprint** (itens das sprints da PI sem `fixVersion` ou com `fixVersion` de outra PI; gravados com `extracao_jira.origem_pi = 'sprint'`; o fallback nao traz itens com `fixVersion` de PI futura). O resultado aparece em `/extracao/fila`, na linha `RESUMO ...` de `data/logs/extracao.log` e, em falha, em `data/notificacoes.log` + e-mail. |
 | 23:30 | `bin/extract_check.php` | Confere jornada com dados de ate 25 h, ordem do job criada hoje e sem erro, e queda brusca (< 80%) de itens da PI contra `data/extract_check_estado.json`. Alerta por log + e-mail. Apague o arquivo de estado para "zerar" a referencia de uma queda legitima. |
 
 **Codigos de saida** (tambem em `--help`):

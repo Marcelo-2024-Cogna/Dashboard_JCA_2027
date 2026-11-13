@@ -134,7 +134,7 @@ class ExtractionService
      * @param array         $opcoes   forcar(bool) relaxa R1; fallback(bool) liga/desliga o fallback por sprint
      * @return array{total_itens:int,registros_apagados:int,jql:string,pi_id:?int,
      *               itens_lidos:int,paginas:?int,logs:string[],tabela:string,data_carga:string,
-     *               itens_principal:int,itens_fallback:int,fallback_dup:int,fora_do_lote:int,
+     *               itens_principal:int,itens_fallback:int,fallback_dup:int,fallback_futuro:int,fora_do_lote:int,
      *               jql_fallback:?string,fallback_por_projeto:array,fallback_versoes:array,
      *               existentes_antes:int}
      * @throws RuntimeException code ERR_* (ver constantes)
@@ -289,6 +289,8 @@ class ExtractionService
         $fbPorProjeto = [];
         $fbVersoes    = [];
         $itensFallback = 0;
+        $fbFuturo = 0;
+        $fbFuturoChaves = [];
         foreach ($itensFallbackBrutos as $it) {
             $chave = self::strOrNull($it['chave'] ?? null);
             $pref  = $chave === null ? null : (string)strstr($chave, '-', true);
@@ -303,6 +305,12 @@ class ExtractionService
                 $fbDup++;
                 continue;
             }
+            // Decisão do usuário: fixVersion de PI futura não entra no fallback.
+            if (self::versoesTemPiFutura($versoes, $pi)) {
+                $fbFuturo++;
+                if (count($fbFuturoChaves) < 10) $fbFuturoChaves[] = $chave . ' (' . $versoes . ')';
+                continue;
+            }
             $vistas[$chave] = true;
             $it['origem_pi'] = 'sprint';
             $finais[] = $it;
@@ -315,6 +323,11 @@ class ExtractionService
             foreach ($nomes as $n) {
                 $fbVersoes[$n] = ($fbVersoes[$n] ?? 0) + 1;
             }
+        }
+        if ($fbFuturo > 0) {
+            Logger::info(Logger::CANAL_EXTRACAO, 'Lote: itens do fallback excluídos por fixVersion de PI futura', $ctxLog + [
+                'fallback_futuro' => $fbFuturo, 'chaves' => $fbFuturoChaves, 'chaves_truncadas' => $fbFuturo > count($fbFuturoChaves),
+            ]);
         }
         unset($itensFallbackBrutos, $vistas);
         ksort($fbPorProjeto);
@@ -442,6 +455,7 @@ class ExtractionService
             'itens_lidos' => count($items), 'inseridos' => $inseridos,
             'apagados' => $apagados, 'paginas' => $paginas, 'pi_id' => $piId,
             'itens_fallback' => $itensFallback, 'fallback_dup' => $fbDup,
+            'fallback_futuro' => $fbFuturo,
             'fora_do_lote' => $foraDoLote, 'existentes_antes' => $existentesAntes,
         ]);
 
@@ -458,12 +472,45 @@ class ExtractionService
             'itens_principal'      => $itensPrincipal,
             'itens_fallback'       => $itensFallback,
             'fallback_dup'         => $fbDup,
+            'fallback_futuro'      => $fbFuturo,
             'fora_do_lote'         => $foraDoLote,
             'jql_fallback'         => $jqlFallback,
             'fallback_por_projeto' => $fbPorProjeto,
             'fallback_versoes'     => $fbVersoes,
             'existentes_antes'     => $existentesAntes,
         ];
+    }
+
+    /**
+     * Extrai (ano 2 dígitos, número) de "PI n/aa" ou "PI n/aaaa" em um nome de versão
+     * (aceita prefixos como "[SGSE] PI 2/27"). Null se não casar.
+     * @return int[]|null [ano, n]
+     */
+    public static function parsePi(string $nome): ?array
+    {
+        if (!preg_match('~PI\s*(\d+)\s*/\s*(\d{2,4})~i', $nome, $m)) {
+            return null;
+        }
+        return [(int)substr($m[2], -2), (int)$m[1]];
+    }
+
+    /**
+     * true se QUALQUER versão (separadas por ';') for uma PI estritamente posterior à PI-alvo.
+     * Nomes não interpretáveis nunca excluem.
+     */
+    public static function versoesTemPiFutura(?string $versoes, string $piAlvo): bool
+    {
+        $alvo = self::parsePi($piAlvo);
+        if ($versoes === null || $alvo === null) {
+            return false;
+        }
+        foreach (explode(';', $versoes) as $nome) {
+            $p = self::parsePi($nome);
+            if ($p !== null && ($p[0] > $alvo[0] || ($p[0] === $alvo[0] && $p[1] > $alvo[1]))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // ── Escopo da limpeza (R2/R3) ────────────────────────────────────────
