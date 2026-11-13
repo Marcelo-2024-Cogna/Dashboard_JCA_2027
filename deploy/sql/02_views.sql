@@ -48,6 +48,13 @@
 
 USE metricas_agil;
 
+-- COLLATION DA SESSAO (obrigatorio): as colunas das views derivadas de texto fixo
+-- (ex.: origem, categoria) herdam a collation da conexao QUE CRIA a view. A aplicacao
+-- PHP conecta com utf8mb4_general_ci; se a view nascer em utf8mb4_0900_ai_ci (padrao
+-- de varios clientes no MySQL 8, como o DBeaver) o Planejado x Realizado falha com
+-- "Illegal mix of collations" (erro 1267). Mantenha esta linha.
+SET NAMES utf8mb4 COLLATE utf8mb4_general_ci;
+
 -- ---------------------------------------------------------------------
 -- 1. vw_extracao_calculada
 --    Extracao bruta (ativo='S') + colunas derivadas de ciclo e flags.

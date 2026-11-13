@@ -95,6 +95,14 @@ mysql -u <conta_privilegiada> -p --default-character-set=utf8mb4 < deploy/sql/03
 
 Por que essa ordem: o trigger `trg_baseline_audit_upd` e AFTER UPDATE em `baseline`. O import usa INSERT (nao dispara), mas aplicar o trigger por ultimo garante que nenhuma linha falsa entre em `baseline_ajuste`. As views nao dependem dos dados. `03_triggers.sql` exige conta com `SUPER` ou `log_bin_trust_function_creators=1` (erro 1419 caso contrario). Todos os scripts sao reaplicaveis.
 
+**Collation das views (importante).** `02_views.sql` comeca com `SET NAMES utf8mb4 COLLATE utf8mb4_general_ci;` porque as colunas de texto fixo das views herdam a collation da conexao que as cria, e a aplicacao PHP conecta em `utf8mb4_general_ci`. Se as views forem criadas por um cliente que usa `utf8mb4_0900_ai_ci` (padrao de varios clientes no MySQL 8), `/graficos/plan-real` falha com erro 500 (`Illegal mix of collations`, 1267). Confira depois de aplicar (esperado: `utf8mb4_general_ci` nas 15 views):
+
+```sql
+SELECT character_set_client, collation_connection, COUNT(*) n
+FROM information_schema.views WHERE table_schema = 'metricas_agil' GROUP BY 1, 2;
+```
+Se aparecer outra collation, reaplique `02_views.sql` (e nao remova a linha `SET NAMES` do inicio).
+
 Dados da carga inicial refletem a extracao local; em producao a extracao do Painel os atualiza.
 
 ## 5. Configuracao (segredos criados NO servidor)
@@ -199,7 +207,7 @@ Navegador (VPN) e `curl -I`:
 2. `https://metricas.cogna.com.br/` 200; no HTML, links `/assets/...` e `/metricas/...` (sem `/dashboard`) e `window.APP_BASE = ""`.
 3. `/assets/vendor/chart.umd.min.js` e `/assets/css/app.css` 200.
 4. `/metricas/velocidade?jornada=Secretaria%20e%20Gestor%20de%20Unidades&versao=PI%204/26` renderiza o grafico.
-5. `/graficos/velocidade?jornada=Secretaria%20e%20Gestor%20de%20Unidades&versao=PI%204/26`: totais 435/410/396, media 198 (se os dados da carga inicial forem os de dev). `/graficos/previsibilidade?...` 331/235/71%.
+5. `/graficos/velocidade?jornada=Secretaria%20e%20Gestor%20de%20Unidades&versao=PI%204/26`: totais 607/637/592 (escopo inicial/final/concluido), media 197,33 (dump de 13/11/2026; muda com novos dados e com a data). `/graficos/previsibilidade?...` 458 comprometidos, 329 entregues, 71,8%. `/graficos/plan-real?...` deve responder 200 (e o canario da collation das views: 500 com `Illegal mix of collations` indica views criadas em `utf8mb4_0900_ai_ci`, ver secao 4).
 6. `/filtros` e `/painel` 200.
 7. Antes de tudo: `ls -la /apps/metricas_jca/public/.htaccess` existe (sem ele, so `/` e assets funcionam e as demais rotas dao 404). `/.env` e `/.gitignore` retornam 403 (e `/config/db.php` 404, pois esta fora do docroot).
 8. Painel: agendar uma extracao pequena; ver a ordem em `/extracao/fila` e, apos o worker, o resultado em `data/logs/extracao.log` e `worker.log`.
