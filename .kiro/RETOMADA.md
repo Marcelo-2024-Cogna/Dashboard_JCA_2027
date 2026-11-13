@@ -4,6 +4,45 @@
 > A v1.0 (JSON + extração via HTTP) está congelada em `dashboard-v1.0/`
 > (http://localhost:8080/dashboard-v1.0/) e no histórico do git.
 
+## SERVIDOR DE HOMOLOGAÇÃO — achados de 10/11/2026 (usuário operando; eu só oriento)
+
+- Host de homologação, Ubuntu 20.04 (focal), Apache 2.4.41 prefork + mod_php 7.4.3, MySQL 8.0.41.
+  Kernel em uso `5.4.0-200`. App em `/apps/metricas_jca` (partição `/apps`, 186 GB livres).
+- **O PPA `ondrej/php` NÃO publica mais pacotes para o focal**: o índice `Packages` dele para focal tem
+  0 bytes (Release de 09/06/2025). `apt install php8.2` não funciona e não vai funcionar neste SO.
+  **PHP 8.x exige trocar de SO** (22.04 = PHP 8.1; 24.04 = PHP 8.3) ou VM nova: decisão/projeto da infra.
+  **Caminho adotado para o deploy: ficar no PHP 7.4** (o app é compatível; polyfills em `app/compat.php`).
+- `sources.list` apontava para `old-releases.ubuntu.com` (404 para o focal); corrigido para
+  `archive.ubuntu.com`. Atualização de kernel 5.4.0-208 interrompida (disco cheio) foi desfeita com
+  `apt remove --purge` dos pacotes `*-208*`; microcódigo e kernel 200 marcados como manuais.
+- Volumes pequenos e sem folga no VG (`VFree 0`): `/var` 4 GB (~89% após limpeza), `/opt` 1 GB em
+  100%, `/usr` 3,6 GB (~77%). `/var/lib/mysql` ~201 MB, `/var/log` 2,3 GB. Pedir à infra para ampliar
+  `/var` e olhar `/opt`. Criado `/etc/apt/apt.conf.d/02lowdisk` (sem cache binário do apt).
+- Pré-voo ainda pendente no servidor: `mod_rewrite` e `mod_headers` (a2enmod), `php7.4-mbstring`,
+  `php7.4-curl` (e opcional `-zip`, `-xml`). Depois: schema, dump, views, triggers, `config/db.php`,
+  `config/secrets.local.php`, vhost + DigiCert, cron.
+- Dica de segurança: PHP 7.4 está sem suporte upstream; patches só via Ubuntu Pro/ESM
+  (`/var/lib/ubuntu-advantage` existe: pedir à infra `pro status`).
+- **PHP 7.4.3-4ubuntu2.29 instalado em 12/11** (mbstring, curl, xml, zip), `rewrite` e `headers`
+  habilitados, Apache reiniciado, `configtest` OK.
+- **INCIDENTE DE DISCO (12-13/11)**: `/var` chegou a 100% (20 KB livres) e o `CREATE DATABASE`
+  falhou com `errno 28`. Causa: `/var/log/syslog` com 1,6 GB, inundado pelo serviço
+  `ITS.Cloud.Servico.Agent` (92% das linhas) que tenta conectar a um broker RabbitMQ externo e falha
+  com `BIO_new_file: no such file` (arquivo de certificado/chave ausente), várias vezes por segundo,
+  ~430 MB/dia. O `logrotate` parou em 10/11 (disco cheio impediu a rotação). Alívio feito pelo
+  usuário: cópia do log em `/apps/_diag` (chmod 700), `syslog` truncado; `/var` voltou a 44%.
+  **Causa-raiz é do agente ITS (não nosso): reportar à infra/ITS.** Se não corrigirem, o disco volta a
+  encher em ~5 dias. Pedir também ampliar `/var` (VG sem espaço livre) e olhar `/opt` (100%).
+- `log_bin` do MySQL está ON (retenção 30 dias); datadir `/var/lib/mysql` (~200 MB). Contas: criar o
+  usuário da aplicação só com DML; não usar a conta do Score Performance para DDL.
+- **Pacote pronto (13/11)**: `data/deploy/pacote/` (ignorado pelo git): `metricas_jca/` (158 arquivos, sem
+  `db.php` nem `secrets.local.php`) e `banco/` (dump `dados_20261112.sql` sha256 601A208E...D53F90,
+  `01`..`04` SQL). Ensaio de importação em MySQL 8.4.9 descartável OK; lint 7.4 e 8.2 OK; boot 7.4 x 8.2
+  byte-idêntico. **NÃO aplicar `db/schema.sql`** (cria `metricas_jca@'%'` com senha fraca): usar
+  `banco/01_schema.sql`. Números de referência novos (13/11 10:21, Secretaria PI 4/26): velocidade
+  607/637/592 média 197,33; previsibilidade 458/329 = 71,8%; plan-real 604/607/637/592; lead time
+  121 itens 6,9008; produtividade 6,33; visão geral foco SP 26.4.4 aceitos 32, anterior 217/193.
+
 ## DECISÕES DO USUÁRIO — 09/11/2026 (segunda; infra ainda sem resposta ao chamado de upgrade do PHP)
 
 1. **PHP**: manter o código compatível com **7.4 E 8.0+** (polyfills em `app/compat.php`; removê-los só
@@ -370,7 +409,7 @@
 **ESTADO DO PREPARO DO DEPLOY (05–06/11/2026) — repositório PRONTO, servidor NÃO tocado**
 - Destino: Linux/Apache 2.4, `/apps/metricas_jca`, `https://metricas.cogna.com.br/` (RAIZ do
   domínio), **Opção A: DocumentRoot = `/apps/metricas_jca/public`**. Acesso por VPN ao share
-  `\\172.27.1.200\apps` (existem `metricas_jca` com só um `index.php` placeholder e
+  `\\<servidor>\apps` (existem `metricas_jca` com só um `index.php` placeholder e
   `score_performance`). Nada foi gravado no servidor; credenciais de produção só vieram no chat.
 - Commits locais, AINDA SEM PUSH: `6638b1c` (feat deploy) e `99ddd18` (.gitattributes LF).
 - Feito e verificado: `public/index.php` com basePath por `SCRIPT_NAME` (vazio na raiz; antes o
