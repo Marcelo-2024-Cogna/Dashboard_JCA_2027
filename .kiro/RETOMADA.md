@@ -58,10 +58,33 @@
 - **ARMADILHA DO JOB**: se existir ordem CONCLUÍDA no dia, `extract_diaria` sai com "já executada
   hoje" (exit 0) e NÃO roda. Uma extração real manual feita no mesmo dia (BRT) antes das 23:00 faz o
   job da noite ser pulado; use `--refazer` só quando for intencional.
-- **PENDENTE no servidor**: teste do token Jira (`200` esperado); primeira extração real automática
-  (14/11 02:00 UTC); vhost definitivo + DigiCert + DNS (infra); `JOB_NOTIFY_TO` e MTA para `mail()`;
-  trocar `metricas_jca@%` por `localhost` com senha própria; remover `info.php` da raiz do app;
-  ampliar `/var` e corrigir o agente ITS que inunda o syslog (chamado de infra).
+- **EXTRAÇÃO NOTURNA NO SERVIDOR (13–16/11)**: noites de 13 e 14/11 OK (10 jornadas, 0 erro, ~9.330
+  itens, ~110 s, fallback ~1.086, verificador "OK"). Token Jira testado (`200`), cron do `www-data`
+  instalado (worker a cada minuto; job 02:00 UTC; verificador 02:30 UTC), `JOB_NOTIFY_TO` configurado.
+- **INCIDENTE 15–16/11 (RESOLVIDO)**: a ordem #3 (15/11 23:00 BRT) ficou ~17 h parada. Causa: `/var`
+  (4 GB) em 100% por `syslog` (`syslog.1` 1,2 GB + 663 MB) e journal (509 MB), inundados pelo agente
+  ITS (400 a 850 MB/dia). Com `log_bin` ligado o MySQL ESPERA espaço livre para gravar o binlog
+  (`Disk is full writing './binlog.000798'... Waiting for someone to free space`) em vez de dar erro:
+  travou o `extract_diaria` e um worker do cron (o `flock -n` faz os demais workers serem ignorados;
+  o Score Performance, que usa o mesmo MySQL, também ficou sem gravar). O `extract_check` das 23:30
+  pegou ("ordem #3 ainda pendente"); o e-mail não saiu (sem `sendmail`), ficou em `notificacoes.log`.
+  Resolvido em 16/11 ~16:30 BRT: logs copiados para `/apps/_diag` (chmod 700), `truncate` do syslog,
+  `journalctl --vacuum-size=50M`, `apt clean` (`/var` 45%). O MySQL retomou sozinho e a ordem #3
+  concluiu (10 jornadas OK, 9.424 itens, exit 0; duração 63.329 s = tempo parado). Dados do servidor
+  atualizados em 16/11 16:35.
+- **Fatos do servidor**: NÃO é desligado no fim de semana (`uptime -s` = 17/09; jobs rodaram sáb e
+  dom). O serviço MySQL reiniciou em 14/11 06:43 UTC (não foi boot). Sem MTA (`sendmail` ausente):
+  avisos só em `data/notificacoes.log` e `erros.log`.
+- **`logrotate -d` deve usar `/etc/logrotate.conf`**: o snippet `/etc/logrotate.d/rsyslog` sozinho não
+  tem `su root syslog` e dá falso "parent directory has insecure permissions". Backup de configs do
+  sistema vai FORA de `/etc/logrotate.d` (ele lê tudo o que está lá).
+- **PENDENTE no servidor**: logrotate do syslog com `rotate 2`, sem `delaycompress`, `maxsize 150M` e
+  `SystemMaxUse=100M` no journald (paliativo; o agente ITS continua gerando o flood); vhost definitivo +
+  DigiCert + DNS (infra); MTA para `mail()`; trocar `metricas_jca@%` por `localhost` com senha própria;
+  ampliar `/var` (4 GB, VG sem espaço livre) e corrigir o agente ITS (chamado de infra, URGENTE).
+- **PENDENTE no código (aguardando "pode" do usuário)**: verificador alertar ordem `processando` há mais
+  de 30 min ou `pendente` vencida; checar espaço livre da `/var` (limite configurável); linha de
+  progresso por jornada no job.
 
 ## DECISÕES DO USUÁRIO — 09/11/2026 (segunda; infra ainda sem resposta ao chamado de upgrade do PHP)
 
