@@ -215,6 +215,57 @@ class ExtractionQueueRepository
         return $r === false ? null : $r;
     }
 
+    /**
+     * SOMENTE LEITURA. Ordens 'processando' sem atualização há mais de $minutos
+     * (qualquer origem). Idade medida com NOW() do banco (alinhado ao SET time_zone da sessão).
+     * @return array<int,array{id:int,atualizado_em:?string,minutos:int}>
+     */
+    public function processandoParadas(int $minutos): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT id_agendamento AS id, atualizado_em,
+                    TIMESTAMPDIFF(MINUTE, COALESCE(atualizado_em, criado_em), NOW()) AS minutos
+               FROM extracao_agendamento
+              WHERE status = 'processando'
+                AND TIMESTAMPDIFF(MINUTE, COALESCE(atualizado_em, criado_em), NOW()) > :m
+           ORDER BY id_agendamento"
+        );
+        $stmt->bindValue(':m', $minutos, PDO::PARAM_INT);
+        $stmt->execute();
+        return $this->normalizarIdade($stmt->fetchAll(), 'atualizado_em');
+    }
+
+    /**
+     * SOMENTE LEITURA. Ordens 'pendente' do job noturno cujo agendado_para já
+     * passou há mais de $minutos (nenhum worker as pegou).
+     * @return array<int,array{id:int,agendado_para:?string,minutos:int}>
+     */
+    public function pendentesJobVencidas(int $minutos): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT id_agendamento AS id, agendado_para,
+                    TIMESTAMPDIFF(MINUTE, agendado_para, NOW()) AS minutos
+               FROM extracao_agendamento
+              WHERE status = 'pendente' AND ativo = 'S'
+                AND agendado_para IS NOT NULL
+                AND parametros_json LIKE '%\"origem\":\"extract_diaria\"%'
+                AND TIMESTAMPDIFF(MINUTE, agendado_para, NOW()) > :m
+           ORDER BY id_agendamento"
+        );
+        $stmt->bindValue(':m', $minutos, PDO::PARAM_INT);
+        $stmt->execute();
+        return $this->normalizarIdade($stmt->fetchAll(), 'agendado_para');
+    }
+
+    private function normalizarIdade(array $linhas, string $campo): array
+    {
+        $out = [];
+        foreach ($linhas as $l) {
+            $out[] = ['id' => (int)$l['id'], $campo => $l[$campo], 'minutos' => (int)$l['minutos']];
+        }
+        return $out;
+    }
+
     /** Últimas ordens com o resumo do último log (se houver). */
     public function listarFila(int $limite = 20): array
     {

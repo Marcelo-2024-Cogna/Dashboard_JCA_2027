@@ -11,6 +11,9 @@
  *
  * Toda a lógica vive em App\Srv\srvExtracaoDiaria.
  *
+ * Códigos de saída: 0 ok | 1 falha parcial | 2 config/PI inválida | 3 já em
+ * execução | 4 erro fatal | 5 disco insuficiente (pré-voo; --ignorar-disco força).
+ *
  * Execute `php bin/extract_diaria.php --help` para opções e códigos de saída.
  */
 
@@ -54,6 +57,7 @@ Opções:
   --sem-fallback   desliga o fallback por sprint (para comparação)
   --refazer        executa de novo mesmo que já exista ordem concluída hoje
   --fonte=jira|fixture   padrão jira (fixture = apenas testes)
+  --ignorar-disco  ignora o pré-voo de disco; use só sabendo que o disco está cheio
   --help           esta ajuda
 
 Códigos de saída:
@@ -63,10 +67,12 @@ Códigos de saída:
      opção inválida, nenhum time ativo)
   3  já em execução (lock) - sem erro
   4  erro fatal / Jira indisponível (nenhuma jornada gravada)
+  5  disco insuficiente: pré-voo (livre < disco.min_livre_mb em config/extracao.php;
+     nada é criado nem gravado; notifica; --ignorar-disco força a execução)
 TXT;
 }
 
-$permitidas = ['--dry-run', '--pi', '--forcar', '--sem-fallback', '--refazer', '--fonte', '--help'];
+$permitidas = ['--dry-run', '--pi', '--forcar', '--sem-fallback', '--refazer', '--fonte', '--ignorar-disco', '--help'];
 foreach (array_slice($argv, 1) as $a) {
     $nome = strtok((string)$a, '=');
     if (strncmp((string)$a, '--', 2) !== 0 || !in_array($nome, $permitidas, true)) {
@@ -75,7 +81,7 @@ foreach (array_slice($argv, 1) as $a) {
     }
 }
 
-$opts = getopt('', ['dry-run', 'pi:', 'forcar', 'sem-fallback', 'refazer', 'fonte:', 'help']);
+$opts = getopt('', ['dry-run', 'pi:', 'forcar', 'sem-fallback', 'refazer', 'fonte:', 'ignorar-disco', 'help']);
 if (array_key_exists('help', $opts)) {
     echo extract_diaria_ajuda() . "\n";
     exit(0);
@@ -110,6 +116,7 @@ try {
         'sem_fallback' => array_key_exists('sem-fallback', $opts),
         'refazer'      => array_key_exists('refazer', $opts),
         'fonte'        => $fonte,
+        'ignorar_disco' => array_key_exists('ignorar-disco', $opts),
     ]);
 } catch (Throwable $e) {
     fwrite(STDERR, 'ERRO FATAL: ' . Logger::sanitize($e->getMessage()) . "\n");

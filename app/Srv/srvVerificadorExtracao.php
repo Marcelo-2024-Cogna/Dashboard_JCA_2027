@@ -21,6 +21,20 @@ use RuntimeException;
  *   - a última ordem do job está em erro / terminou com falhas / não terminou;
  *   - queda brusca: itens da PI < checagem_queda_pct do último valor
  *     registrado no arquivo de estado (apague o arquivo para "zerar").
+ *   - ordem 'processando' (qualquer origem) sem atualização há mais de
+ *     checagem_processando_min (padrão 30): possível travamento no banco/disco;
+ *   - ordem 'pendente' do job vencida há mais de checagem_pendente_venc_min
+ *     (padrão 15) além do agendado_para: nenhum worker a pegou;
+ *   - disco: livre < disco.min_livre_mb OU livre% < disco.min_livre_pct em
+ *     algum de disco.caminhos (caminho indisponível vira aviso, não alerta).
+ *
+ * Interação do alerta de 'pendente': a ordem do job nasce com agendado_para =
+ * criado_em + 60 min. Às 23:30 (job 23:00) ela ainda está ~30 min no futuro,
+ * logo "vencida" NÃO dispara; quem acusa é o alerta antigo ("ainda está
+ * 'pendente'"). A partir de 00:15 os dois disparam para a mesma ordem
+ * (mensagens diferentes, sem deduplicação). O alerta novo cobre verificações
+ * tardias/manuais e ordens de dias anteriores esquecidas. Idades usam NOW()
+ * do banco, nunca o relógio do PHP.
  *
  * Granularidade de data_carga: por JORNADA (todos os prefixos de chave dos
  * times ativos da jornada), porque a carga é feita por jornada.
@@ -31,9 +45,12 @@ class srvVerificadorExtracao
     private array $cfg;
     private string $estado;
     private ExtractionQueueRepository $queue;
+    /** @var callable|null */
+    private $discoProvider;
 
-    public function __construct(PDO $pdo, array $cfg, string $arquivoEstado)
+    public function __construct(PDO $pdo, array $cfg, string $arquivoEstado, ?callable $discoProvider = null)
     {
+        $this->discoProvider = $discoProvider;
         $this->pdo    = $pdo;
         $this->cfg    = $cfg;
         $this->estado = $arquivoEstado;
@@ -41,7 +58,7 @@ class srvVerificadorExtracao
     }
 
     /**
-     * @return array{alertas:string[],ok:bool,pi:string,itens:int,jornadas:array,estado_gravado:bool}
+     * @return array{alertas:string[],ok:bool,pi:string,itens:int,jornadas:array,estado_gravado:bool,disco:array,avisos:string[]}
      * @throws RuntimeException code 2 se não há PI resolvível
      */
     public function verificar(DateTimeImmutable $agora, bool $dry, ?string $forcarPi = null): array
@@ -106,6 +123,22 @@ class srvVerificadorExtracao
             }
         }
 
+        // ── Ordens travadas (processando parada / pendente vencida) ──────
+        $limProc = (int)($this->cfg['checagem_processando_min'] ?? 30);
+        foreach ($this->queue->processandoParadas($limProc) as $o) {
+            $alertas[] = "Ordem #{$o['id']} processando há {$o['minutos']} min (possível travamento no banco ou no disco); atualizado_em " . ($o['atualizado_em'] ?? '-') . "; limite {$limProc} min.";
+        }
+        $limPend = (int)($this->cfg['checagem_pendente_venc_min'] ?? 15);
+        foreach ($this->queue->pendentesJobVencidas($limPend) as $o) {
+            $alertas[] = "Ordem #{$o['id']} do job noturno pendente e vencida há {$o['minutos']} min (agendado_para {$o['agendado_para']}); nenhum worker a pegou; limite {$limPend} min.";
+        }
+
+        // ── Disco ────────────────────────────────────────────────────────
+        $disco = new srvDisco((array)($this->cfg['disco'] ?? []), $this->discoProvider);
+        foreach ($disco->abaixoDeQualquerLimite() as $m) {
+            $alertas[] = 'Disco: ' . $disco->descrever($m) . ' abaixo do limite (mín. ' . $disco->minLivreMb() . ' MB ou ' . $disco->minLivrePct() . '%).';
+        }
+
         // ── Queda brusca de itens da PI ──────────────────────────────────
         $q = $this->pdo->prepare('SELECT COUNT(*) FROM extracao_jira WHERE configuracao_pi_id = :id');
         $q->execute([':id' => $piId]);
@@ -125,7 +158,10 @@ class srvVerificadorExtracao
             $gravado = $this->gravarEstado(['pi' => $pi, 'itens' => $itens, 'data' => $agora->format('Y-m-d H:i:s')]);
         }
 
-        return ['alertas' => $alertas, 'ok' => $alertas === [], 'pi' => $pi, 'itens' => $itens, 'jornadas' => $jornadas, 'estado_gravado' => $gravado];
+        return [
+            'alertas' => $alertas, 'ok' => $alertas === [], 'pi' => $pi, 'itens' => $itens, 'jornadas' => $jornadas,
+            'estado_gravado' => $gravado, 'disco' => $disco->medir(), 'avisos' => $disco->avisos(),
+        ];
     }
 
     private function lerEstado(): ?array

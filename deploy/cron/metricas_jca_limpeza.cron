@@ -1,0 +1,20 @@
+# =====================================================================
+#  /etc/cron.d/metricas_jca_limpeza - contencao paliativa do /var
+#  Instalar como root:  sudo cp deploy/cron/metricas_jca_limpeza.cron /etc/cron.d/metricas_jca_limpeza
+#                       sudo chown root:root /etc/cron.d/metricas_jca_limpeza
+#                       sudo chmod 644 /etc/cron.d/metricas_jca_limpeza
+#  (o nome em /etc/cron.d NAO pode ter ponto, por isso sem a extensao .cron)
+#  Antes: sudo chmod 755 /apps/metricas_jca/deploy/cron/limpeza_var.sh e rodar
+#  uma vez em dry-run:  sudo /apps/metricas_jca/deploy/cron/limpeza_var.sh
+#
+#  O servidor esta em UTC; a cada 30 minutos nao depende do fuso (o cron do
+#  Ubuntu 20.04 ignora CRON_TZ). O campo de usuario (root) e obrigatorio neste
+#  formato. A saida vai para /dev/null porque o proprio script grava
+#  /apps/metricas_jca/data/logs/limpeza_var.log (o unico com rotacao definida
+#  em deploy/logrotate/metricas_jca). flock: se uma execucao demorar, a
+#  seguinte e ignorada.
+#  Codigos de saida do script: 0 nada a fazer | 1 acao executada | 2 erro | 3 ja em execucao
+# =====================================================================
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+*/30 * * * * root /usr/bin/flock -n /var/lock/metricas_jca_limpeza_cron.lock /apps/metricas_jca/deploy/cron/limpeza_var.sh --executar >/dev/null 2>&1

@@ -131,7 +131,8 @@ class ExtractionService
      * @param string        $fonte    'jira' | 'fixture'
      * @param bool          $baseline true = grava em baseline
      * @param string|null   $fixture  caminho da fixture (default data/import/fixtures/jira_sample.json)
-     * @param array         $opcoes   forcar(bool) relaxa R1; fallback(bool) liga/desliga o fallback por sprint
+     * @param array         $opcoes   forcar(bool) relaxa R1; fallback(bool) liga/desliga o fallback por sprint;
+     *                                progresso(callable) chamado como ('buscou', n) ao fim da busca, antes de gravar
      * @return array{total_itens:int,registros_apagados:int,jql:string,pi_id:?int,
      *               itens_lidos:int,paginas:?int,logs:string[],tabela:string,data_carga:string,
      *               itens_principal:int,itens_fallback:int,fallback_dup:int,fallback_futuro:int,fora_do_lote:int,
@@ -258,6 +259,11 @@ class ExtractionService
                     }
                 }
             }
+        }
+
+        // Progresso (opcional): busca concluída, dados ainda em memória, nada gravado.
+        if (isset($opcoes['progresso']) && is_callable($opcoes['progresso'])) {
+            call_user_func($opcoes['progresso'], 'buscou', count($items) + count($itensFallbackBrutos));
         }
 
         // ── Une por chave (principal vence) e filtra pelo lote ───────────

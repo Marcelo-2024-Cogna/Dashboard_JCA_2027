@@ -7,6 +7,10 @@
  * (origem_pi), notificação (mail() ausente/falhando só loga; CR/LF), resolução
  * de PI (datas simuladas), fila/worker (R7), extract_diaria (--dry-run, códigos
  * de saída), extract_check (verificador) e a recusa de filtro de sprint.
+ * Salvaguardas operacionais: pré-voo de disco (exit 5, --ignorar-disco),
+ * alertas do verificador (processando parada, pendente vencida, disco),
+ * verificador sem banco (exit 4) e linhas de progresso por jornada. O disco
+ * é simulado por um provedor injetado (não depende do disco real).
  *
  * NUNCA toca em metricas_agil: cria o banco 'metricas_job_test' a partir de
  * deploy/sql/01_schema.sql num servidor MySQL DESCARTÁVEL e o remove ao final.
@@ -40,11 +44,13 @@ use App\Repositories\ExtractionQueueRepository;
 use App\Services\ExtractionService;
 use App\Services\LogNotifier;
 use App\Services\Logger;
+use App\Srv\srvDisco;
 use App\Srv\srvExtracaoDiaria;
 use App\Srv\srvLock;
 use App\Srv\srvNotificadorEmail;
 use App\Srv\srvProcessadorFila;
 use App\Srv\srvResolvedorPi;
+use App\Srv\srvVerificadorCli;
 use App\Srv\srvVerificadorExtracao;
 
 const BANCO_TESTE = 'metricas_job_test';
@@ -250,6 +256,9 @@ try {
         'email_destino_padrao' => 'padrao@exemplo.invalid',
         'zumbi_horas' => 2,
         'log_notificacoes' => $arqNotif,
+        'checagem_processando_min' => 30,
+        'checagem_pendente_venc_min' => 15,
+        'disco' => ['caminhos' => ['/var-teste'], 'min_livre_mb' => 500, 'min_livre_pct' => 10],
     ];
 
     $limpar = function () use ($pdo, $tmp): void {
@@ -951,6 +960,249 @@ try {
         deveLancar(function () use ($verif) {
             $verif()->verificar(new DateTimeImmutable('+400 days'), true);
         }, 2);
+    });
+
+    // ═════════════════════════════════════════════════════════════════════════
+    echo "\n[8] Salvaguardas operacionais (disco, ordens travadas, progresso)\n";
+    // Provedor de disco simulado: livre/total em MB.
+    $discoFake = function (float $livreMb, float $totalMb = 4096.0): callable {
+        return function ($caminho) use ($livreMb, $totalMb) {
+            return ['livre' => $livreMb * 1048576, 'total' => $totalMb * 1048576];
+        };
+    };
+    // Ordem com idade controlada pelo SQL (NOW() do banco): minutos relativos a agora (negativo = passado).
+    $ordemSql = function (string $status, int $agendadoMin, int $atualizadoMin, bool $job) use ($pdo, $fila): int {
+        $json = json_encode($job ? ['origem' => 'extract_diaria', 'lotes' => [], 'pis' => []] : ['lotes' => [], 'pis' => []]);
+        $id = $fila->criar((string)$json, sha1(uniqid('', true)), null, 0);
+        $pdo->exec(sprintf(
+            "UPDATE extracao_agendamento SET status = '%s', agendado_para = NOW() + INTERVAL %d MINUTE, atualizado_em = NOW() + INTERVAL %d MINUTE WHERE id_agendamento = %d",
+            $status, $agendadoMin, $atualizadoMin, $id
+        ));
+        return $id;
+    };
+    $verifDisco = function (?callable $prov) use ($pdo, $extCfg, $estado): srvVerificadorExtracao {
+        return new srvVerificadorExtracao($pdo, $extCfg, $estado, $prov);
+    };
+    $juntar = function (array $r): string { return implode("\n", $r['alertas']); };
+    $diariaDisco = function (ScriptedJira $c, array &$linhas, ?callable $prov, array &$mails, array $over = []) use ($pdo, $extCfg, $arqNotif, $notFila): srvExtracaoDiaria {
+        $mailer = function ($to, $assunto, $corpo, $cab) use (&$mails) { $mails[] = ['to' => $to, 'assunto' => $assunto, 'corpo' => $corpo]; return true; };
+        $cfg = $over + $extCfg;
+        return new srvExtracaoDiaria(
+            $pdo, $cfg, BASE_DIR,
+            new ExtractionService($pdo, cfgJira(), cfgBaseline(), $c, $cfg),
+            $notFila,
+            new srvNotificadorEmail($arqNotif, 'teste', $mailer),
+            function (string $m) use (&$linhas): void { $linhas[] = $m; },
+            $prov
+        );
+    };
+
+    t('srvDisco: provedor null => aviso, nada alertado; 300 MB => abaixo; 2000 MB (48%) => acima', function () use ($discoFake) {
+        $cfg = ['caminhos' => ['/var-teste'], 'min_livre_mb' => 500, 'min_livre_pct' => 10];
+        $d = new srvDisco($cfg, function ($c) { return null; });
+        igual([], $d->abaixoDeQualquerLimite());
+        igual([], $d->abaixoDoMinimoMb());
+        verdade(strpos(implode(' ', $d->avisos()), "'/var-teste' indisponível") !== false, 'aviso');
+        igual(300.0, (new srvDisco($cfg, $discoFake(300)))->abaixoDoMinimoMb()[0]['livre_mb']);
+        igual([], (new srvDisco($cfg, $discoFake(2000)))->abaixoDeQualquerLimite());
+        $desc = (new srvDisco($cfg, $discoFake(312.4, 4096)))->medir();
+        igual('/var-teste: livre 312.4 MB (7.6% de 4096.0 MB)', (new srvDisco($cfg, $discoFake(312.4, 4096)))->descrever($desc[0]));
+    });
+    t('srvDisco: 600 MB de 8000 (7,5%) => só o verificador (MB ou %) alerta; o pré-voo (só MB) não', function () use ($discoFake) {
+        $d = new srvDisco(['caminhos' => ['/x'], 'min_livre_mb' => 500, 'min_livre_pct' => 10], $discoFake(600, 8000));
+        igual(1, count($d->abaixoDeQualquerLimite()));
+        igual(0, count($d->abaixoDoMinimoMb()));
+        igual([], (new srvDisco([], $discoFake(1)))->medir(), 'sem caminhos configurados não mede nada');
+    });
+    t('verificador: ordem processando há 45 min => alerta com id, atualizado_em e minutos', function () use ($limpar, $ordemSql, $verifDisco, $juntar, $discoFake) {
+        $limpar();
+        $id = $ordemSql('processando', -50, -45, false);
+        $r = $verifDisco($discoFake(2000))->verificar(new DateTimeImmutable('now'), true);
+        $txt = $juntar($r);
+        verdade(preg_match("/Ordem #{$id} processando há (4[4-6]) min \(possível travamento no banco ou no disco\); atualizado_em \d{4}-\d\d-\d\d \d\d:\d\d:\d\d/", $txt) === 1, $txt);
+        igual(false, $r['ok']);
+    });
+    t('verificador: ordem processando há 5 min => sem alerta de "processando há"', function () use ($limpar, $ordemSql, $verifDisco, $juntar, $discoFake) {
+        $limpar();
+        $ordemSql('processando', -10, -5, false);
+        $txt = $juntar($verifDisco($discoFake(2000))->verificar(new DateTimeImmutable('now'), true));
+        verdade(strpos($txt, 'processando há') === false, $txt);
+    });
+    t('verificador: pendente do job vencida há 30 min => alerta "vencida há"; há 10 min => sem alerta', function () use ($limpar, $ordemSql, $verifDisco, $juntar, $discoFake) {
+        $limpar();
+        $id = $ordemSql('pendente', -30, -30, true);
+        $txt = $juntar($verifDisco($discoFake(2000))->verificar(new DateTimeImmutable('now'), true));
+        verdade(preg_match("/Ordem #{$id} do job noturno pendente e vencida há (29|30|31) min/", $txt) === 1, $txt);
+        $limpar();
+        $ordemSql('pendente', -10, -10, true);
+        $txt = $juntar($verifDisco($discoFake(2000))->verificar(new DateTimeImmutable('now'), true));
+        verdade(strpos($txt, 'vencida há') === false, $txt);
+    });
+    t('interação: ordem do job criada agora (agendado_para = NOW()+60) => SEM "vencida há", COM o alerta antigo "ainda está \'pendente\'"', function () use ($limpar, $fila, $verifDisco, $juntar, $discoFake) {
+        $limpar();
+        $json = json_encode(['origem' => 'extract_diaria', 'lotes' => [], 'pis' => []]);
+        $id = $fila->criar((string)$json, sha1(uniqid('', true)), null, 60);
+        $txt = $juntar($verifDisco($discoFake(2000))->verificar(new DateTimeImmutable('now'), true));
+        verdade(strpos($txt, 'vencida há') === false, $txt);
+        verdade(strpos($txt, "A ordem #{$id} do job noturno ainda está 'pendente'") !== false, $txt);
+    });
+    t('interação: pendente do job vencida há 30 min => os DOIS alertas (sem deduplicação)', function () use ($limpar, $ordemSql, $verifDisco, $juntar, $discoFake) {
+        $limpar();
+        $id = $ordemSql('pendente', -30, -30, true);
+        $txt = $juntar($verifDisco($discoFake(2000))->verificar(new DateTimeImmutable('now'), true));
+        verdade(strpos($txt, 'vencida há') !== false && strpos($txt, "A ordem #{$id} do job noturno ainda está 'pendente'") !== false, $txt);
+    });
+    t('verificador: disco abaixo => alerta com caminho, MB e %; acima => sem alerta de disco; exit lógico 1 só pelo disco', function () use ($rodarJob, $verifDisco, $juntar, $discoFake, $estado) {
+        $rodarJob();
+        @unlink($estado); // sem estado anterior: evita "queda brusca" herdada do teste anterior
+        $r = $verifDisco($discoFake(200, 4096))->verificar(new DateTimeImmutable('now'), true);
+        $txt = $juntar($r);
+        verdade(strpos($txt, 'Disco: /var-teste: livre 200.0 MB (4.9% de 4096.0 MB)') !== false, $txt);
+        igual(1, count($r['alertas']), 'só o alerta de disco: ' . $txt);
+        igual(false, $r['ok']);
+        $r2 = $verifDisco($discoFake(2000, 4096))->verificar(new DateTimeImmutable('now'), true);
+        igual([], $r2['alertas']);
+        igual(true, $r2['ok']);
+        $r3 = $verifDisco(function ($c) { return null; })->verificar(new DateTimeImmutable('now'), true);
+        igual([], $r3['alertas'], 'caminho indisponível não é alerta');
+        verdade(count($r3['avisos']) === 1, 'aviso de caminho indisponível');
+    });
+    t('verificador (CLI): só leitura no banco; disco baixo => exit 1, notifica; ok => exit 0', function () use ($rodarJob, $extCfg, $pdo, $discoFake, $arqNotif, $contarTudo, $estado) {
+        $rodarJob();
+        @unlink($estado);
+        $antes = $contarTudo();
+        $saida = [];
+        $mails = [];
+        $mailer = function ($to, $assunto, $corpo, $cab) use (&$mails) { $mails[] = $assunto; return true; };
+        $notif = new srvNotificadorEmail($arqNotif, 'teste', $mailer);
+        $out = function (string $m) use (&$saida): void { $saida[] = $m; };
+        $cod = (new srvVerificadorCli())->executar(function () use ($pdo) { return $pdo; }, $extCfg, dirname($extCfg['estado_check']), false, $discoFake(200), $out, $notif);
+        igual(1, $cod, implode(' | ', $saida));
+        verdade(strpos(implode("\n", $saida), 'ALERTA: Disco:') !== false, 'ALERTA de disco');
+        igual(1, count($mails), 'notificação do alerta');
+        igual($antes, $contarTudo(), 'verificador não altera o banco');
+        $saida = [];
+        $cod = (new srvVerificadorCli())->executar(function () use ($pdo) { return $pdo; }, $extCfg, dirname($extCfg['estado_check']), true, $discoFake(2000), $out, $notif);
+        igual(0, $cod, implode(' | ', $saida));
+        verdade(strpos(implode("\n", $saida), 'Disco /var-teste: livre 2000.0 MB') !== false, 'linha de disco no resumo');
+    });
+    t('verificador sem conexão com o banco => exit 4, registra e notifica (dry-run => 4 sem notificar)', function () use ($extCfg, $arqNotif, $tmp) {
+        $saida = [];
+        $mails = [];
+        $mailer = function ($to, $assunto, $corpo, $cab) use (&$mails) { $mails[] = ['assunto' => $assunto, 'corpo' => $corpo]; return true; };
+        $notif = new srvNotificadorEmail($arqNotif, 'teste', $mailer);
+        $out = function (string $m) use (&$saida): void { $saida[] = $m; };
+        $semBanco = function () { throw new PDOException('SQLSTATE[HY000] [2002] Connection refused'); };
+        igual(4, (new srvVerificadorCli())->executar($semBanco, $extCfg, $tmp, false, null, $out, $notif));
+        verdade(strpos(implode("\n", $saida), 'ERRO FATAL') !== false, 'ERRO FATAL na saída');
+        igual(1, count($mails), 'notificação enviada');
+        verdade(strpos($mails[0]['assunto'], 'Verificacao') !== false && strpos($mails[0]['corpo'], 'Codigo de saida: 4') !== false, $mails[0]['assunto']);
+        verdade(strpos((string)file_get_contents($arqNotif), 'Verificacao') !== false, 'notificacoes.log');
+        $mails = [];
+        igual(4, (new srvVerificadorCli())->executar($semBanco, $extCfg, $tmp, true, null, $out, $notif));
+        igual(0, count($mails), 'dry-run não notifica');
+    });
+    t('pré-voo: disco abaixo do mínimo => exit 5, nenhuma ordem, 0 chamadas ao Jira, e-mail de falha (saída 5), log de erro', function () use ($limpar, $contarTudo, $diariaDisco, $jiraPadrao, $discoFake, $tmp) {
+        $limpar();
+        $antes = $contarTudo();
+        $c = $jiraPadrao();
+        $l = [];
+        $mails = [];
+        igual(5, $diariaDisco($c, $l, $discoFake(300), $mails)->executar([]), implode(' | ', $l));
+        igual($antes, $contarTudo(), 'nada criado');
+        igual(0, count($c->chamadas), 'chamadas ao Jira');
+        igual(1, count($mails), 'e-mails');
+        verdade(strpos($mails[0]['corpo'], 'Codigo de saida: 5') !== false && strpos($mails[0]['corpo'], '/var-teste') !== false, $mails[0]['corpo']);
+        verdade(strpos(implode("\n", $l), 'PRÉ-VOO DE DISCO REPROVADO') !== false, 'mensagem');
+        $log = '';
+        foreach (glob($tmp . '/logs/*.log') ?: [] as $f) $log .= (string)file_get_contents($f);
+        verdade(strpos($log, 'pré-voo de disco reprovado') !== false, 'Logger registrou o erro');
+    });
+    t('pré-voo: --ignorar-disco segue (exit 0, "IGNORADO"); disco acima segue ("Pré-voo de disco ok"); sem a chave disco segue', function () use ($limpar, $contarTudo, $diariaDisco, $jiraPadrao, $discoFake) {
+        $limpar();
+        $l = [];
+        $mails = [];
+        igual(0, $diariaDisco($jiraPadrao(), $l, $discoFake(300), $mails)->executar(['ignorar_disco' => true]), implode(' | ', $l));
+        verdade(strpos(implode("\n", $l), 'PRÉ-VOO DE DISCO IGNORADO') !== false, 'IGNORADO');
+        igual(1, $contarTudo()['ordens'], 'ordem criada');
+        $limpar();
+        $l = [];
+        igual(0, $diariaDisco($jiraPadrao(), $l, $discoFake(2000), $mails)->executar([]), implode(' | ', $l));
+        verdade(strpos(implode("\n", $l), 'Pré-voo de disco ok') !== false, 'ok');
+        $limpar();
+        $l = [];
+        igual(0, $diariaDisco($jiraPadrao(), $l, $discoFake(1), $mails, ['disco' => []])->executar([]), implode(' | ', $l));
+        igual(0, count($mails), 'sem e-mail de falha');
+    });
+    t('pré-voo: --dry-run com disco baixo => exit 0, avisa que bloquearia, nada gravado', function () use ($limpar, $contarTudo, $diariaDisco, $jiraPadrao, $discoFake) {
+        $limpar();
+        $antes = $contarTudo();
+        $l = [];
+        $mails = [];
+        $c = $jiraPadrao();
+        igual(0, $diariaDisco($c, $l, $discoFake(300), $mails)->executar(['dry_run' => true]), implode(' | ', $l));
+        verdade(strpos(implode("\n", $l), 'o pré-voo bloquearia (exit 5)') !== false, 'aviso dry-run');
+        igual($antes, $contarTudo());
+        igual(0, count($c->chamadas));
+        igual(0, count($mails));
+    });
+    t('progresso por jornada: "buscando no Jira" => "buscou N itens em Ts; gravando" => "OK", nessa ordem', function () use ($limpar, $diariaDisco, $jiraPadrao, $discoFake) {
+        $limpar();
+        $l = [];
+        $mails = [];
+        igual(0, $diariaDisco($jiraPadrao(), $l, $discoFake(2000), $mails)->executar([]), implode(' | ', $l));
+        $pos = function (string $re) use ($l): int {
+            foreach ($l as $i => $x) if (preg_match($re, $x) === 1) return $i;
+            return -1;
+        };
+        foreach ([['J1', 8], ['J2', 4]] as $j) {
+            $a = $pos('/^Jornada ' . $j[0] . ' \/ PI 4\/26: buscando no Jira$/');
+            $b = $pos('/^Jornada ' . $j[0] . ' \/ PI 4\/26: buscou ' . $j[1] . ' itens em \d+(\.\d+)?s; gravando$/');
+            $c = $pos('/^  OK   ' . $j[0] . ' \/ PI 4\/26: /');
+            verdade($a >= 0 && $b > $a && $c > $b, "ordem das linhas de {$j[0]}: {$a}/{$b}/{$c} :: " . implode(' | ', $l));
+        }
+    });
+    t('progresso: o stdout padrão do job leva hora [AAAA-MM-DD HH:MM:SS] em cada linha', function () use ($limpar, $pdo, $extCfg, $arqNotif, $notFila, $jiraPadrao, $discoFake) {
+        $limpar();
+        $cfg = $extCfg;
+        $job = new srvExtracaoDiaria(
+            $pdo, $cfg, BASE_DIR,
+            new ExtractionService($pdo, cfgJira(), cfgBaseline(), $jiraPadrao(), $cfg),
+            $notFila,
+            new srvNotificadorEmail($arqNotif, 'teste', function () { return true; }),
+            null,
+            $discoFake(2000)
+        );
+        ob_start();
+        try {
+            $cod = $job->executar([]);
+        } finally {
+            $txt = (string)ob_get_clean();
+        }
+        igual(0, $cod, $txt);
+        $linhas = array_values(array_filter(explode("\n", $txt), function ($x) { return $x !== ''; }));
+        verdade(count($linhas) > 5, 'linhas: ' . count($linhas));
+        foreach ($linhas as $x) {
+            verdade(preg_match('/^\[\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\] /', $x) === 1, 'sem hora: ' . $x);
+        }
+        verdade(strpos($txt, 'Jornada J1 / PI 4/26: buscando no Jira') !== false && strpos($txt, '; gravando') !== false, 'progresso no stdout');
+    });
+    t('CLI: --help traz o código 5 e --ignorar-disco; --ignorar-disco --help => 0; extract_check --help traz o código 4', function () {
+        $rodar = function (array $args): array {
+            $p = proc_open(array_merge([PHP_BINARY], $args), [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+            $so = stream_get_contents($pipes[1]);
+            stream_get_contents($pipes[2]);
+            return [proc_close($p), $so];
+        };
+        $r = $rodar([BASE_DIR . '/bin/extract_diaria.php', '--help']);
+        igual(0, $r[0]);
+        verdade(strpos($r[1], '5  disco insuficiente') !== false && strpos($r[1], '--ignorar-disco') !== false, '--help sem o código 5');
+        verdade(strpos($r[1], '3  já em execução') !== false, 'linha do código 3 preservada');
+        igual(0, $rodar([BASE_DIR . '/bin/extract_diaria.php', '--ignorar-disco', '--help'])[0]);
+        igual(2, $rodar([BASE_DIR . '/bin/extract_diaria.php', '--ignorar-disc'])[0]);
+        $c = $rodar([BASE_DIR . '/bin/extract_check.php', '--help']);
+        igual(0, $c[0]);
+        verdade(strpos($c[1], '4  erro fatal') !== false && strpos($c[1], 'disco') !== false, 'extract_check --help');
     });
 } finally {
     // ── Limpeza: banco descartável e temporários ─────────────────────────────

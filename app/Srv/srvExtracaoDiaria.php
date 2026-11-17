@@ -26,6 +26,11 @@ use Throwable;
  *   0 ok (inclui "já executada hoje")        3 já em execução (sem erro)
  *   1 falha parcial (alguma jornada/PI)      4 erro fatal / Jira indisponível
  *   2 configuração/PI inválida                  (nenhuma jornada gravada)
+ *   5 disco insuficiente: pré-voo (livre < disco.min_livre_mb; --ignorar-disco força)
+ *
+ * PRÉ-VOO DE DISCO: antes do lock, da ordem e de qualquer acesso ao banco,
+ * mede os caminhos de cfg['disco']['caminhos']. Com o /var cheio e log_bin
+ * ligado o MySQL ESPERA espaço em vez de falhar (incidente de 15/11).
  *
  * Política do hash do dia: ordem 'pendente' do dia é reaproveitada;
  * 'processando' => 3; 'concluido' => "já executada hoje" (0), salvo --refazer.
@@ -37,6 +42,7 @@ class srvExtracaoDiaria
     public const EXIT_CONFIG = 2;
     public const EXIT_EM_EXECUCAO = 3;
     public const EXIT_FATAL = 4;
+    public const EXIT_DISCO = 5;
 
     /** Minutos que a ordem fica "agendada no futuro" para o worker de 1 min não pegá-la antes do claim local. */
     private const ATRASO_ORDEM_MIN = 60;
@@ -50,6 +56,8 @@ class srvExtracaoDiaria
     private srvNotificadorEmail $falhaNotifier;
     /** @var callable */
     private $out;
+    /** @var callable|null provedor de disco (testes); null = disk_free_space */
+    private $discoProvider;
 
     public function __construct(
         PDO $pdo,
@@ -58,8 +66,10 @@ class srvExtracaoDiaria
         ExtractionService $service,
         Notifier $filaNotifier,
         srvNotificadorEmail $falhaNotifier,
-        ?callable $out = null
+        ?callable $out = null,
+        ?callable $discoProvider = null
     ) {
+        $this->discoProvider = $discoProvider;
         $this->pdo           = $pdo;
         $this->cfg           = $cfg;
         $this->baseDir       = rtrim($baseDir, '/\\');
@@ -69,17 +79,23 @@ class srvExtracaoDiaria
         $this->falhaNotifier = $falhaNotifier;
         $this->out           = $out ?? function (string $m): void {
             echo '[' . date('Y-m-d H:i:s') . '] ' . $m . "\n";
+            if (function_exists('flush')) flush();
+            if (defined('STDOUT')) @fflush(STDOUT);
         };
     }
 
     /**
-     * @param array $opts dry_run, pi, forcar, sem_fallback, refazer, fonte ('jira'|'fixture'), hoje (Y-m-d)
+     * @param array $opts dry_run, pi, forcar, sem_fallback, refazer, fonte ('jira'|'fixture'), hoje (Y-m-d),
+     *                    ignorar_disco (bool)
      * @return int código de saída
      */
     public function executar(array $opts): int
     {
         $dry  = !empty($opts['dry_run']);
         $lock = null;
+
+        $disco = $this->preVooDisco($opts, $dry);
+        if ($disco !== null) return $disco;
 
         if (!$dry) {
             $lock = new srvLock($this->lockDir() . '/extract_diaria.lock');
@@ -107,6 +123,49 @@ class srvExtracaoDiaria
 
         if ($lock !== null) $lock->liberar();
         return $codigo;
+    }
+
+    /**
+     * Pré-voo de disco. null = pode seguir; int = código de saída (5).
+     * Roda ANTES do lock, da ordem e de qualquer acesso ao banco.
+     */
+    private function preVooDisco(array $opts, bool $dry): ?int
+    {
+        $disco = new srvDisco((array)($this->cfg['disco'] ?? []), $this->discoProvider);
+        $baixos = $disco->abaixoDoMinimoMb();
+        foreach ($disco->avisos() as $a) $this->say('AVISO ' . $a);
+
+        if ($baixos === []) {
+            $desc = [];
+            foreach ($disco->medir() as $m) {
+                if ($m['disponivel']) $desc[] = $disco->descrever($m);
+            }
+            if ($desc !== []) $this->say('Pré-voo de disco ok: ' . implode(' | ', $desc));
+            return null;
+        }
+
+        $desc = [];
+        foreach ($baixos as $m) $desc[] = $disco->descrever($m) . ' (mínimo ' . $disco->minLivreMb() . ' MB)';
+        $txt = implode(' | ', $desc);
+
+        if (!empty($opts['ignorar_disco'])) {
+            $this->say('PRÉ-VOO DE DISCO IGNORADO (--ignorar-disco): ' . $txt);
+            Logger::warning('extracao', 'extract_diaria: pré-voo de disco ignorado (--ignorar-disco)', ['disco' => $txt]);
+            return null;
+        }
+        if ($dry) {
+            $this->say('dry-run: o pré-voo bloquearia (exit 5): ' . $txt);
+            return null;
+        }
+
+        $this->say('PRÉ-VOO DE DISCO REPROVADO: ' . $txt);
+        Logger::error('extracao', 'extract_diaria: pré-voo de disco reprovado, job não executado (exit 5)', ['disco' => $txt]);
+        $this->falhaNotifier->notificarFalha('?', [
+            'codigo_saida' => self::EXIT_DISCO,
+            'erros'        => array_merge(['Disco insuficiente: job NÃO executado (pré-voo).'], $desc),
+            'log'          => 'data/logs/extracao.log',
+        ]);
+        return self::EXIT_DISCO;
     }
 
     private function rodar(array $opts, bool $dry, string &$piRotulo): int

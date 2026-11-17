@@ -129,8 +129,15 @@ class srvProcessadorFila
                     $sprints = array_values((array)($piDef['sprints'] ?? []));
                     $rotulo  = "{$jornada} / {$pi}";
                     Logger::info('extracao', "Ordem #{$id}: início da jornada {$rotulo}", ['ordem' => $id, 'jornada' => $jornada, 'pi' => $pi, 'projetos' => $projetos, 'sprints' => $sprints]);
+                    $t0 = microtime(true);
+                    $this->say("Jornada {$rotulo}: buscando no Jira");
+                    $opcoesLote = $opcoes + ['progresso' => function (string $fase, int $n) use ($rotulo, $t0): void {
+                        if ($fase === 'buscou') {
+                            $this->say("Jornada {$rotulo}: buscou {$n} itens em " . round(microtime(true) - $t0, 1) . 's; gravando');
+                        }
+                    }];
                     try {
-                        $r = $this->service->extract($projetos, $pi, $sprints ?: null, $fonte, false, null, $opcoes);
+                        $r = $this->service->extract($projetos, $pi, $sprints ?: null, $fonte, false, null, $opcoesLote);
                         $totalItens += $r['total_itens'];
                         $totalApag  += $r['registros_apagados'];
                         $totalFb    += (int)($r['itens_fallback'] ?? 0);

@@ -39,6 +39,18 @@ return [
     'checagem_horas_max'   => 25,
     'checagem_queda_pct'   => 0.8,
     'estado_check'         => 'data/extract_check_estado.json',
+    // Salvaguardas operacionais (incidente de 15/11: /var cheia travou o MySQL com log_bin).
+    // Verificador: ordem 'processando' sem atualização há mais de N min => alerta.
+    'checagem_processando_min'   => 30,
+    // Verificador: ordem 'pendente' do job vencida há mais de N min além do agendado_para => alerta.
+    'checagem_pendente_venc_min' => 15,
+    // Disco: caminhos medidos (caminho inexistente, ex. Windows/dev, é ignorado com aviso).
+    // Pré-voo do job (exit 5) usa só min_livre_mb; o verificador alerta por MB OU %.
+    'disco' => [
+        'caminhos'      => ['/var'],
+        'min_livre_mb'  => 500,
+        'min_livre_pct' => 10,
+    ],
     // Rótulo do ambiente nos avisos (APP_ENV no servidor: producao, dev...).
     'ambiente'             => getenv('APP_ENV') ?: 'dev',
 ];

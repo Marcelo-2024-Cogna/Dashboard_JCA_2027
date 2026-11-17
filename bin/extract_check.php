@@ -6,9 +6,14 @@
  *   - cada jornada ativa com dados recentes (MIN data_carga <= 25 h);
  *   - o job enfileirou ordem hoje e a última ordem não está em erro/parcial;
  *   - a contagem de itens da PI não caiu bruscamente (< 80% do último
- *     valor guardado em data/extract_check_estado.json).
+ *     valor guardado em data/extract_check_estado.json);
+ *   - salvaguardas: ordem 'processando' parada (> checagem_processando_min),
+ *     ordem 'pendente' do job vencida (> checagem_pendente_venc_min) e espaço
+ *     livre em disco (config/extracao.php, chave 'disco').
  * Alertas vão para o log (data/logs/extracao.log), data/notificacoes.log e
  * e-mail (mail() nativo). Só LÊ o banco; grava apenas o arquivo de estado.
+ * Sem conexão com o banco: registra, notifica e sai com 4.
+ * A lógica vive em App\Srv\srvVerificadorCli / srvVerificadorExtracao.
  *
  * Execute `php bin/extract_check.php --help` para opções e códigos de saída.
  */
@@ -31,8 +36,7 @@ require_once BASE_DIR . '/config/jira.php';
 
 use App\Database;
 use App\Services\Logger;
-use App\Srv\srvNotificadorEmail;
-use App\Srv\srvVerificadorExtracao;
+use App\Srv\srvVerificadorCli;
 
 function extract_check_ajuda(): string
 {
@@ -45,11 +49,17 @@ Opções:
   --dry-run   verifica e imprime; não notifica nem grava o arquivo de estado
   --help      esta ajuda
 
+Alertas: defasagem de dados, job não rodou hoje, ordem do job em erro/parcial,
+queda brusca, ordem 'processando' parada há mais de checagem_processando_min,
+ordem 'pendente' do job vencida há mais de checagem_pendente_venc_min e disco
+abaixo do limite (config/extracao.php: disco.caminhos, min_livre_mb, min_livre_pct).
+
 Códigos de saída:
   0  tudo ok
-  1  alerta (defasagem, job não rodou hoje, ordem em erro/parcial, queda brusca)
+  1  alerta (defasagem, job não rodou hoje, ordem em erro/parcial, queda brusca,
+     ordem travada, disco)
   2  configuração/PI inválida (sem PI cadastrada ou fora do período de graça)
-  4  erro fatal (ex.: banco indisponível)
+  4  erro fatal (ex.: banco indisponível; registra, notifica e sai)
 TXT;
 }
 
@@ -66,53 +76,19 @@ if (array_key_exists('help', $opts)) {
 }
 $dry = array_key_exists('dry-run', $opts);
 
-function chk(string $m): void
-{
-    echo '[' . date('Y-m-d H:i:s') . '] ' . $m . "\n";
-}
-
 try {
-    $cfg    = require BASE_DIR . '/config/extracao.php';
-    $pdo    = Database::pdo();
-    $estado = BASE_DIR . '/' . ltrim((string)$cfg['estado_check'], '/\\');
-
-    try {
-        $r = (new srvVerificadorExtracao($pdo, $cfg, $estado))->verificar(new DateTimeImmutable('now'), $dry);
-    } catch (RuntimeException $e) {
-        if ($e->getCode() !== 2) throw $e;
-        chk('CONFIGURAÇÃO/PI INVÁLIDA: ' . $e->getMessage());
-        Logger::error('extracao', 'extract_check: configuração/PI inválida', ['erro' => $e->getMessage()]);
-        if (!$dry) {
-            $n = new srvNotificadorEmail(BASE_DIR . '/' . ltrim((string)$cfg['log_notificacoes'], '/\\'), (string)$cfg['ambiente']);
-            $n->notificarFalha('?', ['tipo' => 'Verificacao', 'codigo_saida' => 2, 'erros' => [$e->getMessage()], 'log' => 'data/logs/extracao.log']);
-        }
-        exit(2);
-    }
-
-    chk("PI {$r['pi']}: {$r['itens']} itens em extracao_jira.");
-    foreach ($r['jornadas'] as $j) {
-        chk(sprintf('  %-28s itens=%-6d MIN data_carga=%s (%s h)', $j['jornada'], $j['itens'], $j['min'] ?? '-', $j['horas'] ?? '-'));
-    }
-
-    if ($r['ok']) {
-        chk('VERIFICAÇÃO OK' . ($dry ? ' (dry-run: estado não gravado)' : ($r['estado_gravado'] ? ' (estado gravado)' : '')));
-        Logger::info('extracao', "extract_check: ok (PI {$r['pi']}, {$r['itens']} itens)");
-        exit(0);
-    }
-
-    foreach ($r['alertas'] as $a) {
-        chk('ALERTA: ' . $a);
-        Logger::error('extracao', 'extract_check: alerta: ' . $a);
-    }
-    if (!$dry) {
-        $n = new srvNotificadorEmail(BASE_DIR . '/' . ltrim((string)$cfg['log_notificacoes'], '/\\'), (string)$cfg['ambiente']);
-        $n->notificarFalha($r['pi'], ['tipo' => 'Verificacao', 'codigo_saida' => 1, 'erros' => $r['alertas'], 'log' => 'data/logs/extracao.log']);
-    } else {
-        chk('dry-run: nenhuma notificação enviada.');
-    }
-    exit(1);
+    $cfg = require BASE_DIR . '/config/extracao.php';
+    $codigo = (new srvVerificadorCli())->executar(
+        function () {
+            return Database::pdo();
+        },
+        $cfg,
+        BASE_DIR,
+        $dry
+    );
 } catch (Throwable $e) {
     fwrite(STDERR, 'ERRO FATAL: ' . Logger::sanitize($e->getMessage()) . "\n");
     Logger::exception('extracao', 'extract_check: erro fatal', $e);
-    exit(4);
+    $codigo = 4;
 }
+exit($codigo);

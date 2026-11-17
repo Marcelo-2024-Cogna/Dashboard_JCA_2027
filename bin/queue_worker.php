@@ -64,6 +64,8 @@ if (!in_array($fonte, ['jira', 'fixture'], true)) {
 function logw(string $msg): void
 {
     echo '[' . date('Y-m-d H:i:s') . '] ' . $msg . "\n";
+    if (function_exists('flush')) flush();
+    if (defined('STDOUT')) @fflush(STDOUT);
 }
 
 $cfg      = require BASE_DIR . '/config/extracao.php';

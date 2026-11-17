@@ -1,0 +1,31 @@
+# =====================================================================
+#  logrotate do Metricas JCA  ->  /etc/logrotate.d/metricas_jca
+#  Cobre os logs do app (Logger, worker, job noturno, limpeza do /var)
+#  e o log de notificacoes. Instalacao e simulacao: deploy/LEIAME.md,
+#  secao 8c.
+#
+#  su www-data www-data : a pasta data/logs pertence ao www-data; sem esta
+#       linha o logrotate recusa o diretorio ("insecure permissions").
+#  weekly + rotate 8    : 8 semanas de historico.
+#  maxsize 20M          : gira antes da semana se o log inflar (checagem
+#       diaria do cron.daily do logrotate).
+#  missingok / notifempty : sem erro se o log ainda nao existe; nao gira
+#       arquivo vazio.
+#  compress + delaycompress : a rotacao mais recente fica legivel (.1) e a
+#       compressao so ocorre na rodada seguinte.
+#  copytruncate         : os escritores mantem o arquivo aberto (o cron
+#       redireciona com ">>" e o Logger anexa); copia e zera o original sem
+#       sinal/reload. Custo: linhas gravadas entre a copia e o truncamento
+#       podem se perder.
+# =====================================================================
+/apps/metricas_jca/data/logs/*.log /apps/metricas_jca/data/notificacoes.log {
+    su www-data www-data
+    weekly
+    maxsize 20M
+    rotate 8
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+}
