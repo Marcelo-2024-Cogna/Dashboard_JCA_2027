@@ -111,7 +111,7 @@
     const ja = ant ? j.por_pi[ant.desc_pi] : null;
 
     // melhor/pior time na PI de referência (menor h/ponto = melhor)
-    const times = ref ? d.por_time.filter(t => t.por_pi[ref.desc_pi] && t.por_pi[ref.desc_pi].produtividade != null)
+    const times = ref ? d.por_time.filter(t => t.por_pi[ref.desc_pi] && t.por_pi[ref.desc_pi].produtividade != null && Number(t.por_pi[ref.desc_pi].horas) > 0)
       .map(t => ({ nome: t.time, v: t.por_pi[ref.desc_pi].produtividade })).sort((a, b) => a.v - b.v) : [];
     const melhor = times[0], pior = times.length > 1 ? times[times.length - 1] : null;
 
