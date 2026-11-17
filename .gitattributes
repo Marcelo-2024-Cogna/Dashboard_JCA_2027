@@ -4,6 +4,7 @@
 deploy/cron/*          text eol=lf
 deploy/apache/*        text eol=lf
 deploy/config/*        text eol=lf
+deploy/logrotate/*     text eol=lf
 deploy/sql/*.sql       text eol=lf
 deploy/excluir.txt     text eol=lf
 *.sh                   text eol=lf
