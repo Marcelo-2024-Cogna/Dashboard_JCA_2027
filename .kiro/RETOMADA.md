@@ -534,3 +534,30 @@ conta privilegiada); trocar a senha do usuário de aplicação por uma forte;
 **Dados**: base será zerada e reimportada pelo modal de importação (Baseline ×
 Velocity) quando existir; sem ele, usar `bin/seed_catalogo.php`,
 `bin/seed_sustentacao.php`, `bin/import_baseline.php` e os runners de extração.
+
+## PONTO DE PARADA — 17/11/2026 (noite)
+
+**Não commitado no working tree (aprovado pelo revisor, falta corrigir 2 pontos de segurança):** deploy automatizado
+(`deploy/deploy.ps1`, `deploy/remoto/aplicar_release.sh`, `deploy/teste_deploy.ps1`, `deploy/ci/`,
+`deploy/deploy.local.ps1.exemplo`, `deploy/LEIAME.md` seções 12-13, `.gitattributes`, `.gitignore`). Testes locais 21/21;
+NUNCA rodou contra o servidor real. Antes do primeiro uso: (1) o script remoto roda como root a partir de `/tmp` com nome
+previsível e o sha256 não cobre o script (usar nome aleatório e conferir o hash do script); (2) falhas de chown/chmod são
+silenciosas e o resumo só conta os arquivos ignorados (listar nomes). Revisão em `.agents/tasks/deploy-review.md`. A primeira
+execução real deve ser pelo usuário, com `-DryRun`.
+
+**Auditoria Visão Geral x Capacity/Velocity** (relatório `.agents/tasks/auditoria-visao-geral-capacity-velocity.md`): nenhum
+dos 4 indicadores existe como tal; dados cobrem quase tudo, faltam % de disponibilidade, foto do Sprint Planning e
+identificação de suporte N1/refatoração. Achado crítico: o Painel grava `data/config/capacity.json`, que NÃO alimenta as
+views (`times_composicao`), com valores diferentes (ex.: SGGU 7,5 x 9 devs). Três "previsibilidades" para o mesmo recorte
+(71,8% / 92,9% / 97,5%). Modais: usar `<dialog>` nativo; começar pela lista da sprint anterior e pelo tempo por status.
+Os 4 indicadores e os modais NÃO estão previstos na v2.0 (sustentação e snapshot diário estão).
+
+**Decisões pendentes do usuário (bloqueiam a implementação):** fonte oficial de devs (banco x Painel); % de
+disponibilidade (80% fixo ou por time/sprint); baseline (7 h/SP fixo ou `media_produtividade_pi`); "Concluído" conta como
+Done?; tipos que contam como manutenção/dívida/N1; Debt Load em horas, SP ou horas estimadas; demais perguntas na seção 10 do relatório.
+
+**Conferir no servidor amanhã (18/11):** `tail -n 30 data/logs/extracao_diaria.log` (RESUMO exit=0 e aquecimento do cache
+depois), `df -h /var` (esperado ~48%), `ls -lh /var/log/syslog` (deve ficar pequeno), `tail data/logs/limpeza_var.log`.
+
+**Aguardando terceiros:** chamado de Infra (agente ITS/RabbitMQ, ampliar `/var` e `/opt`, MTA, DigiCert).
+Sugestão de permissões do Kiro (`~/.kiro/settings/permissions.yaml`) apresentada ao usuário; ele ainda não pediu para criar.
