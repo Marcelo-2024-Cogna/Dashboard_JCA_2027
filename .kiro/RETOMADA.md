@@ -1,6 +1,6 @@
 # Retomada — Métricas Jeito Cogna Ágil (v1.5)
 
-> Handoff para abrir a próxima sessão. Atualizado em 28/10/2026 (noite).
+> Handoff para abrir a próxima sessão. Seção do servidor atualizada em 17/11/2026 (noite).
 > A v1.0 (JSON + extração via HTTP) está congelada em `dashboard-v1.0/`
 > (http://localhost:8080/dashboard-v1.0/) e no histórico do git.
 
@@ -78,13 +78,50 @@
 - **`logrotate -d` deve usar `/etc/logrotate.conf`**: o snippet `/etc/logrotate.d/rsyslog` sozinho não
   tem `su root syslog` e dá falso "parent directory has insecure permissions". Backup de configs do
   sistema vai FORA de `/etc/logrotate.d` (ele lê tudo o que está lá).
-- **PENDENTE no servidor**: logrotate do syslog com `rotate 2`, sem `delaycompress`, `maxsize 150M` e
-  `SystemMaxUse=100M` no journald (paliativo; o agente ITS continua gerando o flood); vhost definitivo +
-  DigiCert + DNS (infra); MTA para `mail()`; trocar `metricas_jca@%` por `localhost` com senha própria;
-  ampliar `/var` (4 GB, VG sem espaço livre) e corrigir o agente ITS (chamado de infra, URGENTE).
-- **PENDENTE no código (aguardando "pode" do usuário)**: verificador alertar ordem `processando` há mais
-  de 30 min ou `pendente` vencida; checar espaço livre da `/var` (limite configurável); linha de
-  progresso por jornada no job.
+- **ESTADO EM 17/11/2026 (noite)**: o app está no ar com DNS `metricas.cogna.com.br`. Vhost **fase 1**
+  (sem DigiCert): HTTP 80 serve o app para os testadores; rotas admin (`painel|extract|baseline|capacity|
+  settings|extracao`) redirecionam para HTTPS, onde há certificado autoassinado (`ssl-cert-snakeoil`) e
+  Basic Auth (htpasswd no servidor). O nosso vhost é o default do `:443`; o Score Performance segue
+  respondendo 200 pelo próprio ServerName. **Fase 2**: trocar pelo DigiCert; a 80 vira redirect total
+  (modelo final em `deploy/apache/metricas.cogna.com.br.conf`). A rota `/extract` não é bloqueada por
+  inteiro (as telas de épicos e sustentação leem o cache por `GET /extract`).
+- **EXTRAÇÃO**: noite de 16/11 OK (ordem #4: 9.467 itens, 102,5 s, exit 0, verificador OK). O job se
+  recuperou do incidente de disco.
+- **REINCIDÊNCIA DO /var (17/11) E CONTENÇÃO**: `/var` voltou a 82% em ~1 dia. O `syslog` chegou a
+  874 MB; 94% das linhas eram do agente `ITS.Cloud.Servico.Agent`, agora com outro erro: não conecta ao
+  RabbitMQ externo (`None of the specified endpoints were reachable`), com retentativa a cada 30 s. O
+  `maxsize 150M` do logrotate não contém isso (o logrotate roda 1x/dia). Também o limite do journald
+  nunca tinha sido gravado (um comando foi colado dentro do `journald.conf`). Ações em 17/11: syslog
+  truncado; `journald.conf` corrigido e drop-in `/etc/systemd/journald.conf.d/limite.conf`
+  (`SystemMaxUse=100M`, journal 413 → 107 MB); **regra do rsyslog**
+  `/etc/rsyslog.d/00-its-agent.conf` (`:programname, isequal, "ITS.Cloud.Servico.Agent" stop`) para o
+  agente não escrever no syslog (reversível: apagar o arquivo e reiniciar o rsyslog). Resultado: `/var`
+  em 48%. A causa-raiz (rede/firewall até o RabbitMQ) é da Infra; o chamado está aberto, com a evidência
+  em `.agents/tasks/evidencia-var-cheio.md` (fora do git).
+- **IMPLANTADO NO SERVIDOR EM 17/11** (commits `874ee65`, `761d73b`, `3adcce2`): (a) pré-voo de disco no
+  job (exit code 5, `--ignorar-disco`), alertas do verificador (ordem `processando` > 30 min, `pendente`
+  vencida, espaço livre de `/var`) e progresso por jornada; (b) logrotate do app em
+  `/etc/logrotate.d/metricas_jca`; (c) `deploy/cron/limpeza_var.sh` via `/etc/cron.d/metricas_jca_limpeza`
+  (a cada 30 min, níveis 80/88/94%, dry-run por padrão e `--executar` no cron); (d) **cache de resposta da
+  Visão Geral** (`app/Srv/srvRespostaCache.php`, `bin/aquecer_cache.php`, `data/cache` do `www-data`),
+  aquecido às 02:10 UTC por cron do `www-data`: 22 respostas de ~6,6 s para ~340 ms; (e) correção do
+  ranking Melhor/Pior time da Produtividade (ignora times sem horas; o "Opm Externo 0,00 h/pt" era time
+  com 0 h e 1 pt).
+- **ARMADILHA DE DEPLOY (CRLF)**: `git archive` no Windows aplica `core.autocrlf=true` e gera CRLF nos
+  arquivos sem `eol=lf` no `.gitattributes`. O logrotate chegou com CRLF e deu erro de leitura. A regra
+  `deploy/logrotate/*` foi incluída (`e14dbcc`). Conferir com `grep -c $'\r' <arquivo>` no servidor.
+  A home do usuário no servidor era `root:root` (scp negado); corrigido com `chown`. Para subir
+  arquivos: enviar o zip para `/tmp`, extrair com `unzip` e `sudo cp -r` para o app, mantendo
+  `root:www-data` (`data/` e `data/cache` são do `www-data`). Backup antes em `/apps/_diag`.
+- **PENDENTE no servidor/Infra**: DigiCert (fase 2 do vhost); MTA para `mail()` (hoje o destino das
+  notificações de sucesso ainda é o exemplo e nada sai por e-mail); ampliar `/var` (4 GB, VG sem espaço
+  livre) e `/opt`; corrigir ou desativar o agente ITS; backup do MySQL; PPA/Ubuntu Pro; pacotes pendentes.
+  `metricas_jca@%` fica como está (decisão do usuário).
+- **PENDENTE para amanhã (18/11)**: conferir a extração das 23:00 BRT e o aquecimento do cache logo
+  depois (`tail -n 30 data/logs/extracao_diaria.log`), e `df -h /var` (esperado ~48%).
+- **PRÓXIMOS (depois de estável)**: coletar feedback da v1.5; script de deploy (`--dry-run`, rollback,
+  exclusões do `deploy/excluir.txt`) e depois GitHub Actions com runner; v2.0 só após fechar as atividades
+  atuais no servidor (decisões em `comparativo-pep.md`).
 
 ## DECISÕES DO USUÁRIO — 09/11/2026 (segunda; infra ainda sem resposta ao chamado de upgrade do PHP)
 
