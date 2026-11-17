@@ -49,4 +49,17 @@ return [
     'max_linhas_tempo_status' => 300, // teto de linhas no tempo por status
     'aviso_defasagem_dias'   => 1,   // (legado) defasagem em dias; o aviso agora usa horas
     'aviso_defasagem_horas'  => 25,  // defasagem (h) da carga mais antiga que dispara aviso
+
+    // ── Cache de resposta em arquivo (GET /graficos/visao-geral) ────────────
+    // Desligar: 'ativo' => false aqui, ou VG_CACHE=0 no ambiente (SetEnv no vhost).
+    // 'dir' relativo é resolvido contra a raiz do projeto.
+    'cache' => [
+        'ativo'           => true,
+        'ttl_s'           => 900,          // expiração máxima (cobre edições não rastreadas)
+        'dir'             => 'data/cache',
+        'max_bytes'       => 4194304,      // tamanho máximo por entrada
+        'espera_trava_s'  => 5,            // espera de quem perde a corrida da regeneração
+        'servir_stale'    => true,         // serve a versão anterior enquanto outro regenera
+        'limpeza_idade_s' => 86400,        // entradas sem regravação por 24 h são apagadas
+    ],
 ];

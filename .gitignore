@@ -25,3 +25,6 @@ data/deploy/
 # Credenciais locais (token do Jira etc.) — ambiente de desenvolvimento.
 # O modelo versionável é config/secrets.local.php.example.
 config/secrets.local.php
+# Cache de resposta da Visão Geral (runtime; mantém apenas o diretório versionado).
+data/cache/*
+!data/cache/.gitkeep

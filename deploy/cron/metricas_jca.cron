@@ -28,7 +28,11 @@ PATH=/usr/local/bin:/usr/bin:/bin
 #  - 23:00 extract_diaria.php: extracao da PI corrente (fixVersion + fallback por sprint).
 #  - 23:30 extract_check.php : verificador (defasagem, ordem em erro, queda brusca).
 #  Saida em data/logs/extracao_diaria.log (configure logrotate). Codigos de saida:
-#  0 ok | 1 falha parcial/alerta | 2 configuracao/PI invalida | 3 ja em execucao | 4 erro fatal.
+#  0 ok | 1 falha parcial/alerta | 2 configuracao/PI invalida | 3 ja em execucao | 4 erro fatal | 5 disco insuficiente.
 #  JOB_NOTIFY_TO / JOB_NOTIFY_FROM / APP_ENV vao em config/secrets.local.php (mail() exige MTA local).
 0 23 * * * /usr/bin/flock -n /var/lock/metricas_jca_diaria.lock /usr/bin/php /apps/metricas_jca/bin/extract_diaria.php >> /apps/metricas_jca/data/logs/extracao_diaria.log 2>&1
 30 23 * * * /usr/bin/flock -n /var/lock/metricas_jca_check.lock /usr/bin/php /apps/metricas_jca/bin/extract_check.php >> /apps/metricas_jca/data/logs/extracao_diaria.log 2>&1
+#
+#  CACHE DA VISAO GERAL (opcional): aquece o cache apos a extracao. Requer data/cache gravavel
+#  pelo usuario do Apache. Ajuste o horario ao fuso do servidor (UTC: 02:10 = 23:10 BRT).
+#10 23 * * * /usr/bin/flock -n /var/lock/metricas_jca_cache.lock /usr/bin/php /apps/metricas_jca/bin/aquecer_cache.php >> /apps/metricas_jca/data/logs/extracao_diaria.log 2>&1

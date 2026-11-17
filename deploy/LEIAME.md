@@ -124,13 +124,13 @@ O app grava em `data/` (logs, ordens da fila, JSONs de baseline/capacidade/confi
 
 ```bash
 cd /apps/metricas_jca
-mkdir -p data/{logs,agendamentos,baselines,progress,capacity,config,exports,import,locks}
+mkdir -p data/{logs,agendamentos,baselines,progress,capacity,config,exports,import,locks,cache}
 chown -R root:www-data . ; chmod -R u=rwX,g=rX,o= .
 chown -R www-data:www-data data ; chmod -R u=rwX,g=rwX,o= data
 chown root:www-data config/*.php ; chmod 640 config/db.php config/secrets.local.php
 ```
 
-Pastas: `data/` (raiz, para `items.json` e `notificacoes.log`), `data/logs`, `data/agendamentos`, `data/baselines`, `data/progress`, `data/capacity`, `data/config`, `data/exports` e `data/import` (estas duas so para scripts de `bin/`) e `data/locks` (locks `flock` do job noturno e das extracoes por PI; precisa de escrita pelo usuario do cron). O verificador tambem grava `data/extract_check_estado.json` (em `data/`).
+Pastas: `data/` (raiz, para `items.json` e `notificacoes.log`), `data/logs`, `data/agendamentos`, `data/baselines`, `data/progress`, `data/capacity`, `data/config`, `data/exports` e `data/import` (estas duas so para scripts de `bin/`), `data/locks` (locks `flock` do job noturno e das extracoes por PI; precisa de escrita pelo usuario do cron) e `data/cache` (cache de respostas; gerado em runtime, fora do deploy). O verificador tambem grava `data/extract_check_estado.json` (em `data/`).
 
 ## 7. Apache
 
@@ -168,9 +168,10 @@ Dois scripts novos, ambos em `bin/` e agendados no mesmo `deploy/cron/metricas_j
 | 1 | falha parcial (alguma jornada/PI) | alerta | alguma ordem em erro ou com lotes em falha |
 | 2 | configuracao/PI invalida (sem PI cadastrada, fora do periodo de graca, nenhum time ativo, opcao invalida) | idem | opcao invalida |
 | 3 | ja em execucao (lock), sem erro | n/a | n/a |
-| 4 | erro fatal / Jira indisponivel (nenhuma jornada gravada) | erro fatal (ex.: banco) | n/a |
+| 4 | erro fatal / Jira indisponivel (nenhuma jornada gravada) | erro fatal (ex.: banco indisponivel; registra, notifica e sai) | n/a |
+| 5 | disco insuficiente: pre-voo (livre < `disco.min_livre_mb`; `--ignorar-disco` forca) | n/a | n/a |
 
-**Opcoes de `extract_diaria.php`**: `--dry-run` (nao toca no Jira nem grava; so SELECT), `--pi='PI x/yy'`, `--forcar` (relaxa a protecao contra resposta parcial), `--sem-fallback`, `--refazer` (executa de novo no mesmo dia), `--help`.
+**Opcoes de `extract_diaria.php`**: `--dry-run` (nao toca no Jira nem grava; so SELECT), `--pi='PI x/yy'`, `--forcar` (relaxa a protecao contra resposta parcial), `--sem-fallback`, `--refazer` (executa de novo no mesmo dia), `--ignorar-disco` (ignora o pre-voo de disco, ver 8c), `--help`.
 
 **Protecoes**: a limpeza antes do INSERT e por **PI + prefixo de chave** dos projetos do lote (`chave LIKE 'SGSE-%'`), nunca por nome de projeto; a gravacao so ocorre depois de buscar tudo (transacao unica por lote, rollback em erro); se o Jira devolver 0 itens ou menos de 80% do que ja existe no recorte, o lote e abortado sem apagar nada (`limiar_parcial` em `config/extracao.php`); retry com backoff (4 tentativas; honra `Retry-After`; nao repete 400/401/403); lock `flock` em `data/locks/` (job noturno e extracao por PI). A extracao e sempre da PI inteira: `/extracao/agendar` recusa `sprints` preenchido (400).
 
@@ -178,17 +179,7 @@ Dois scripts novos, ambos em `bin/` e agendados no mesmo `deploy/cron/metricas_j
 
 **Fuso do servidor**: o cron usa o horario do servidor. Confira com `timedatectl`; se estiver em UTC, `0 23` roda as 20:00 em Brasilia (ou ajuste o fuso do servidor para `America/Sao_Paulo`).
 
-**logrotate** (exemplo `/etc/logrotate.d/metricas_jca`):
-```
-/apps/metricas_jca/data/logs/extracao_diaria.log /apps/metricas_jca/data/logs/worker.log {
-    weekly
-    rotate 8
-    compress
-    missingok
-    notifempty
-    copytruncate
-}
-```
+**logrotate**: use `deploy/logrotate/metricas_jca` (cobre todos os logs do app); instalacao e simulacao na secao 8c.
 
 **Windows (dev)** com o Agendador de Tarefas:
 ```powershell
@@ -200,6 +191,90 @@ schtasks /Create /TN "MetricasJCA-Verificacao" /SC DAILY /ST 23:30 /TR "C:\xampp
 
 **Classes novas** (prefixo `srv`, namespace `App\Srv`, pasta `app/Srv/`, mapeadas pelo mesmo autoload `App\X\Y` -> `app/X/Y.php`; nomes de arquivo = nome da classe, sensiveis a maiusculas no Linux).
 
+## 8c. Operacao e contencao de disco
+Contexto: na noite de 15/11 a particao `/var` (4 GB) encheu (syslog e journal inundados por um agente de terceiros). O MySQL com `log_bin` ligado ESPERA espaco livre para gravar o binlog em vez de falhar ("Disk is full writing './binlog.000798'... Waiting for someone to free space") e travou o job noturno por ~17 h; o `flock -n` fez os demais workers serem ignorados. As salvaguardas abaixo detectam a repeticao ANTES de travar e tornam o problema visivel rapido.
+
+**A. Pre-voo de disco (`extract_diaria.php`)**: antes do lock, da ordem e de qualquer acesso ao banco, mede os caminhos de `config/extracao.php` -> `disco.caminhos`. Se o livre de algum for menor que `disco.min_livre_mb`, NAO executa, registra no log, notifica (log + e-mail) e sai com **codigo 5**. `--ignorar-disco` forca a execucao (registra "IGNORADO"). Com `--dry-run` so avisa que o pre-voo bloquearia. Caminho inexistente (Windows/dev) e ignorado com aviso.
+
+**B. Verificador (`extract_check.php`, 23:30)**: mantem todos os alertas anteriores e acrescenta (sempre SOMENTE leitura no banco):
+| Alerta | Chave de `config/extracao.php` | Padrao |
+|--------|--------------------------------|--------|
+| Ordem `processando` sem atualizacao ha mais de N min ("possivel travamento no banco ou no disco"; mostra id, `atualizado_em` e minutos) | `checagem_processando_min` | 30 |
+| Ordem `pendente` do job noturno vencida ha mais de N min alem do `agendado_para` (nenhum worker a pegou) | `checagem_pendente_venc_min` | 15 |
+| Disco: livre < `min_livre_mb` OU livre% < `min_livre_pct` (mostra caminho, MB e %) | `disco.caminhos`, `disco.min_livre_mb`, `disco.min_livre_pct` | `['/var']`, 500, 10 |
+Sem conexao com o banco: registra, notifica e sai com 4. Todo alerta vai para o log, `data/notificacoes.log` e e-mail (`mail()`, se houver MTA). Exit 1 em qualquer alerta. Limite conhecido: se a PI estiver invalida (exit 2) o verificador nao chega a medir o disco.
+*Interacao do alerta de `pendente`*: a ordem do job nasce com `agendado_para` = criacao + 60 min (para o worker de 1 min nao pega-la antes do claim local). As 23:30 ela ainda esta ~30 min no futuro, entao o alerta "vencida" NAO dispara e quem acusa e o alerta antigo "A ordem #X do job noturno ainda esta 'pendente'". A partir de 00:15 os dois disparam (mensagens diferentes, sem deduplicacao). O alerta novo cobre verificacoes tardias/manuais e ordens de dias anteriores esquecidas.
+
+**C. Progresso por jornada** em `data/logs/extracao_diaria.log` (cada linha com hora; stdout com flush). Exemplo:
+```
+[2026-11-16 23:00:03] Jornada Secretaria / PI 4/26: buscando no Jira
+[2026-11-16 23:03:41] Jornada Secretaria / PI 4/26: buscou 637 itens em 218.4s; gravando
+[2026-11-16 23:03:44]   OK   Secretaria / PI 4/26: 637 itens, 12 apagados
+```
+Uma jornada "buscando" sem a linha "buscou" por muito tempo indica Jira lento; "buscou" sem "OK" indica gravacao travada (banco/disco).
+
+**Codigos de saida** (`limpeza_var.sh`): 0 nada a fazer (inclui dry-run) | 1 acao executada | 2 erro | 3 ja em execucao. Os dos demais scripts estao na tabela da secao 8b.
+
+**D. logrotate** (`deploy/logrotate/metricas_jca`: `/apps/metricas_jca/data/logs/*.log` e `data/notificacoes.log`; `su www-data www-data`, semanal, `maxsize 20M`, 8 rotacoes, `compress`/`delaycompress`, `copytruncate` pois os escritores mantem o arquivo aberto; o custo do `copytruncate` e poder perder linhas entre a copia e o truncamento):
+```bash
+sudo cp /apps/metricas_jca/deploy/logrotate/metricas_jca /etc/logrotate.d/metricas_jca
+sudo chown root:root /etc/logrotate.d/metricas_jca ; sudo chmod 644 /etc/logrotate.d/metricas_jca
+sudo logrotate -d /etc/logrotate.conf 2>&1 | grep -A12 metricas_jca    # simulacao (-d = debug, nao gira nada)
+ls -la /apps/metricas_jca/data/logs/
+```
+Simule com o `logrotate.conf` completo, NAO com `logrotate -d /etc/logrotate.d/metricas_jca` sozinho: o snippet isolado da um falso "insecure permissions" porque falta o `su root syslog` global do `logrotate.conf`. Para girar de verdade uma vez: `sudo logrotate -f /etc/logrotate.conf` (gira tambem os logs do sistema).
+
+**E. Contencao do /var (`deploy/cron/limpeza_var.sh` + `deploy/cron/metricas_jca_limpeza.cron`)**: paliativo (nao resolve o agente que inunda o log). Roda como root a cada 30 min. Por padrao e DRY-RUN (so mostra); `--executar` aplica. Niveis pelo uso % de `/var`:
+| Nivel | Uso de /var | Acao |
+|-------|-------------|------|
+| 1 | >= 80% | so registra "atencao" |
+| 2 | >= 88% | `journalctl --vacuum-size=50M`; `apt-get clean`; remove SOMENTE `syslog.N` e `syslog.N.gz` rotacionados com mais de 3 dias em `/var/log` e copias `syslog_AAAAMMDD_HHMMSS.log` com mais de 7 dias em `/apps/_diag` |
+| 3 | >= 94% | alem do nivel 2: se `/apps` tiver >= 5 GB livres (cria `/apps/_diag` com `chmod 700` se faltar), copia `/var/log/syslog` para `/apps/_diag/syslog_AAAAMMDD_HHMMSS.log`, confere a copia (`cp` ok e tamanho igual) e so entao `truncate -s 0`. Se a copia falhar ou divergir, NAO trunca e registra erro (exit 2) |
+Nunca toca em `/var/lib/mysql`, binlogs, `/var/log/mysql`, `/var/log/apache2`, `/var/lib/guardicore`, logs de terceiros (`gc-*`) nem em nada fora dessas listas; nao usa `rm -rf`. Limitacao do nivel 3: linhas gravadas entre a copia e o truncate se perdem. Parametros por variavel de ambiente (`LIMPEZA_NIVEL1_PCT`, `LIMPEZA_NIVEL2_PCT`, `LIMPEZA_NIVEL3_PCT`, `LIMPEZA_LOG`, `LIMPEZA_DIAG`, `LIMPEZA_APPS_MIN_GB` etc.; veja `--help`). Log: `/apps/metricas_jca/data/logs/limpeza_var.log` (dono `www-data` para o logrotate conseguir truncar).
+```bash
+sudo chmod 755 /apps/metricas_jca/deploy/cron/limpeza_var.sh
+sudo /apps/metricas_jca/deploy/cron/limpeza_var.sh --help
+sudo /apps/metricas_jca/deploy/cron/limpeza_var.sh            # DRY-RUN: confira o que ele faria
+sudo cp /apps/metricas_jca/deploy/cron/metricas_jca_limpeza.cron /etc/cron.d/metricas_jca_limpeza
+sudo chown root:root /etc/cron.d/metricas_jca_limpeza ; sudo chmod 644 /etc/cron.d/metricas_jca_limpeza
+tail -n 20 /apps/metricas_jca/data/logs/limpeza_var.log       # apos 30 min
+```
+O arquivo em `/etc/cron.d` nao pode ter ponto no nome (por isso sem `.cron`) e leva o campo de usuario `root`. O servidor esta em UTC e a cada 30 min nao depende do fuso.
+
+**F. Vhost de teste por IP:porta (sem DNS)** (`deploy/apache/metricas-teste-ip.conf`), usado ate o DNS de `metricas.cogna.com.br` existir:
+- HTTP `:8088` (usuarios): telas de leitura; rotas que gravam ou disparam algo devolvem 403 antes do PHP.
+- HTTPS `:8443` (administrador): as mesmas rotas pedem Basic Auth; certificado autoassinado do Ubuntu (`ssl-cert-snakeoil`).
+- Bloqueadas: `/painel`, `/baseline/*`, `/capacity/*`, `/settings*`, `/extracao/*` e `/metrics` (confirmado em `public/index.php`, `public/views` e `assets/js`: so a pagina `/painel` e o modal "Extrair" as usam; as telas publicas usam `/filtros`, `/graficos/*` e `/extract` simples). `/extract` NAO e bloqueada por inteiro porque `/metricas/epicos` e `/metricas/sustentacao` leem o cache por `GET /extract`; qualquer metodo diferente de GET/HEAD ou qualquer query string (`force`, `jql`, `sprints`, inclusive codificados) e bloqueada no HTTP e pede senha no HTTPS (sem isso dispararia o Jira).
+```bash
+sudo a2enmod ssl rewrite headers        # auth_basic, authn_file e authz_user ja vem habilitados
+sudo htpasswd -c /etc/apache2/.htpasswd_metricas <usuario>
+sudo chown root:www-data /etc/apache2/.htpasswd_metricas ; sudo chmod 640 /etc/apache2/.htpasswd_metricas
+sudo ufw status                          # se ativo: liberar 8088 e 8443 SO da sub-rede da VPN
+sudo ufw allow from <sub-rede-vpn> to any port 8088 proto tcp
+sudo ufw allow from <sub-rede-vpn> to any port 8443 proto tcp
+sudo cp /apps/metricas_jca/deploy/apache/metricas-teste-ip.conf /etc/apache2/sites-available/
+sudo a2ensite metricas-teste-ip
+sudo apache2ctl configtest
+sudo systemctl restart apache2           # 1a vez: o Listen novo exige restart; depois, reload basta
+```
+Bateria de testes por `curl` (ajuste `<ip>`; HTTPS com `-k`; `-w "%{http_code}"`):
+| Chamada | Esperado |
+|---------|----------|
+| `http://<ip>:8088/`, `/filtros`, `/graficos/velocidade?jornada=...&versao=...`, `/extract` | 200 |
+| `http://<ip>:8088/painel`, `/settings`, `/baseline/list`, `/capacity/plan`, `/metrics`, `/extracao/catalogo`, `/extracao/fila` | 403 |
+| `curl -X POST http://<ip>:8088/extracao/agendar`; `POST /extract`; `GET /extract?force=1` | 403 |
+| `https://<ip>:8443/painel`, `/extracao/catalogo`, `/settings` sem credencial | 401 |
+| `https://<ip>:8443/painel` com `-u <usuario>:<senha>` | 200 |
+| `https://<ip>:8443/` e `/filtros` sem credencial | 200 |
+URLs: usuarios `http://<ip>:8088/`; administrador `https://<ip>:8443/painel`. Quando o DNS existir: `sudo a2dissite metricas-teste-ip`, remover os `Listen 8088/8443` (o arquivo todo) e ativar o vhost definitivo. Observacao: o vhost ja foi provado num httpd de teste (Apache 2.4.58 do XAMPP, portas de teste); no Apache 2.4.41 do servidor ainda nao.
+
+**Verificacao rapida de disco**:
+```bash
+df -h /var /apps
+ls -la /apps/metricas_jca/data/logs/ /apps/_diag
+journalctl --disk-usage
+sudo du -xh --max-depth=1 /var | sort -h | tail
+```
 ## 9. Smoke test
 
 Navegador (VPN) e `curl -I`:
@@ -223,4 +298,5 @@ O app **nao tem autenticacao**. Endpoints POST como `/settings/*` e `/extracao/a
 - `.htaccess`/mod_rewrite, vhost, TLS e cron: nao executados localmente. O servidor embutido do PHP simula `SCRIPT_NAME=/index.php` mas ignora `.htaccess`. Validar no primeiro smoke test.
 - Chamada real ao Jira com `JIRA_CA_BUNDLE` (so a leitura da config foi verificada).
 - Importacao do dump com `mysql` em Linux e contas reais; grants minimos (testado apenas com a conta root local e o schema descartavel).
+- Salvaguardas operacionais (secao 8c) NAO executadas no Ubuntu: `limpeza_var.sh` (testado so em dry-run e em pastas temporarias no Git Bash, sem `flock`, `journalctl` nem `apt-get`), `cron.d`, `logrotate` (sem `logrotate` na maquina de desenvolvimento; validado por leitura) e o vhost `metricas-teste-ip.conf` (provado no Apache 2.4.58 do XAMPP, nao no 2.4.41 do servidor). `mail()` com MTA real tambem nao foi testado.
 - PHP 7.4: testado localmente com o PHP 7.4.33 (lint de todos os .php, boot via servidor embutido e comparacao das respostas HTTP com o PHP 8.2.12). Nao testado: o PHP 7.4.3-4ubuntu2.28 real do servidor, Apache com mod_php/php-fpm e o worker (`bin/queue_worker.php`) com chamadas reais ao Jira em 7.4.
