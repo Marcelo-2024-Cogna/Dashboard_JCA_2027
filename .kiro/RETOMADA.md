@@ -561,3 +561,24 @@ depois), `df -h /var` (esperado ~48%), `ls -lh /var/log/syslog` (deve ficar pequ
 
 **Aguardando terceiros:** chamado de Infra (agente ITS/RabbitMQ, ampliar `/var` e `/opt`, MTA, DigiCert).
 Sugestão de permissões do Kiro (`~/.kiro/settings/permissions.yaml`) apresentada ao usuário; ele ainda não pediu para criar.
+
+## BACKLOG PARA A v2.0 (decidido em 18/11/2026: amadurecer quando as interfaces do PEP forem portadas para o JCA)
+
+Material de base (todos em `.agents/tasks/`, fora do git): `auditoria-visao-geral-capacity-velocity.md` e
+`velocidade-vs-jira-sp-26-4-2.md`.
+
+1. **Capacity & Velocity** (4 indicadores: Commitment Load Factor, Predictability Index, Efficiency Baseline Ratio, Debt Load
+   Ratio): nenhum existe como tal na v1.5. Pré-requisitos: fonte única de capacidade (o Painel grava `capacity.json`, que não
+   alimenta `times_composicao`), % de disponibilidade, foto do Sprint Planning (`snapshot_sprint_dia`), natureza da atividade
+   (N1/manutenção/refatoração) e horas dos itens de Sustentação (hoje 0 h). Decisões pendentes do usuário: seção 10 do relatório.
+2. **Visão Geral**: 11 campos calculados no backend e não exibidos; fórmulas só em tooltips; listas em modal/lightbox
+   (`<dialog>` nativo; começar pela lista da sprint anterior e pelo tempo por status; botão "Ver dados" para teclado).
+3. **Velocidade do JCA x gadget Team Velocity do Jira (SP 26.4.2, SGGS)**: o JCA reproduz o print; a divergência vem de regras
+   (Inicial = baseline do PI Planning; Final em SPE; carry-over contado como Removido; Concluído em SP pelo status de hoje,
+   com sustentação; Mudança de Escopo com outro significado; média só das fechadas). O 69 e o Inicial 91 do Jira não foram
+   reproduzidos: falta changelog do Jira. Decisões em aberto: Concluído em SP ou SPE, estado atual ou do fim da sprint;
+   carry-over como Removido; sustentação na Velocidade; Escopo Inicial pela baseline ou pelo início da sprint. Perguntas à
+   usuária: app e configuração do gadget, data dos prints, exportação da Issue List de Concluído/Inicial/Adicionado.
+   Sugestões sem implementar: legenda de fórmula, unidade SPE x SP explícita, aviso de comparação com o Jira, sustentação
+   separada no Concluído, drill-down por item, data da carga visível.
+4. **Os indicadores e os modais NÃO estão no roadmap atual da v2.0** (sustentação e snapshot diário estão): incluir no escopo.
