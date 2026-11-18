@@ -1,0 +1,16 @@
+# Modelo de configuracao LOCAL do deploy. Copie para deploy\deploy.local.ps1
+# (esse arquivo e ignorado pelo git; NUNCA versione o alvo real).
+#
+#   Copy-Item deploy\deploy.local.ps1.exemplo deploy\deploy.local.ps1
+#
+# Alvo do deploy: host ou usuario@host (a senha e pedida pelo ssh/scp).
+$JcaDeployAlvo = 'usuario@servidor'
+
+# URL base do smoke test executado NO servidor (padrao: http://localhost).
+$JcaSmokeUrl = 'http://localhost'
+
+# Cabecalho Host do smoke test (deixe vazio se o vhost responde em localhost).
+$JcaSmokeHost = ''
+
+# (Opcional) php.exe local para o lint. Padrao: C:\xampp\php\php.exe.
+# $JcaPhpLint = 'C:\xampp\php\php.exe'

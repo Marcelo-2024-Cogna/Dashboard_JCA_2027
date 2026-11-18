@@ -8,6 +8,12 @@ deploy/logrotate/*     text eol=lf
 deploy/sql/*.sql       text eol=lf
 deploy/excluir.txt     text eol=lf
 *.sh                   text eol=lf
+# Deploy automatizado: o script remoto roda no Linux; os demais ficam em LF por consistencia.
+deploy/remoto/*        text eol=lf
+deploy/ci/*            text eol=lf
+deploy/*.exemplo       text eol=lf
+deploy/*.ps1           text eol=lf
+deploy/*.md            text eol=lf
 
 # Biblioteca minificada de terceiros: nao converter quebras de linha.
 public/assets/vendor/*.js  -text

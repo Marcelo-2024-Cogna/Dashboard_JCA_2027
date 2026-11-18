@@ -28,3 +28,5 @@ config/secrets.local.php
 # Cache de resposta da Visão Geral (runtime; mantém apenas o diretório versionado).
 data/cache/*
 !data/cache/.gitkeep
+# Alvo do deploy (usuario@servidor) deste computador; nunca versionar.
+deploy/deploy.local.ps1

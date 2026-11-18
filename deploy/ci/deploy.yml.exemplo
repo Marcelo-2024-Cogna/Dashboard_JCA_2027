@@ -1,0 +1,52 @@
+# =====================================================================
+#  ESBOCO (NAO ATIVO) de workflow GitHub Actions para o deploy.
+#
+#  NAO copie para .github/workflows sem antes ler deploy/LEIAME.md (secao 13).
+#  Premissas:
+#   - Runner self-hosted Windows, dentro da rede com acesso ao servidor.
+#   - Chave SSH SEM senha instalada no runner (usuario do servico do runner),
+#     com a chave publica autorizada no servidor.
+#   - sudo nao interativo: regra de sudoers restrita a UM script fixo, de
+#     propriedade do root, em /apps/_deploy/bin/ (nunca NOPASSWD curinga
+#     sobre /tmp). Ajuste deploy.ps1/aplicar_release.sh para esse fluxo
+#     antes de ativar.
+#   - O alvo (usuario@servidor) fica em variavel/segredo do repositorio,
+#     nunca no YAML.
+#   - Proteja o environment "homologacao" com aprovacao manual.
+# =====================================================================
+name: deploy-homologacao
+
+on:
+  workflow_dispatch:
+    inputs:
+      referencia:
+        description: 'Commit, tag ou branch a publicar'
+        required: true
+        default: 'main'
+      dry_run:
+        description: 'Somente simular (nao copia nada)'
+        type: boolean
+        default: true
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, windows]
+    environment: homologacao
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.referencia }}
+
+      - name: Deploy
+        shell: powershell
+        env:
+          JCA_DEPLOY_ALVO: ${{ secrets.JCA_DEPLOY_ALVO }}
+          REFERENCIA: ${{ inputs.referencia }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          $extra = @()
+          if ($env:DRY_RUN -eq 'true') { $extra += '-DryRun' }
+          powershell -NoProfile -ExecutionPolicy Bypass -File deploy/deploy.ps1 `
+            -Alvo $env:JCA_DEPLOY_ALVO -Referencia $env:REFERENCIA -Sim @extra
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
