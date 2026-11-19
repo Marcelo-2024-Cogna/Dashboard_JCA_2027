@@ -278,39 +278,93 @@ Caso 'A5' 'sem alvo: erro claro e codigo != 0' {
 $Stubs = Join-Path $T 'stubs'
 $null = New-Item -ItemType Directory -Path $Stubs -Force
 [System.IO.File]::WriteAllText((Join-Path $Stubs 'scp.cmd'), "@echo %*>>`"%JCA_STUB_DIR%\scp.log`"`r`n@exit /b 0`r`n")
-[System.IO.File]::WriteAllText((Join-Path $Stubs 'ssh.cmd'), "@echo %*>>`"%JCA_STUB_DIR%\ssh.log`"`r`n@exit /b 0`r`n")
+[System.IO.File]::WriteAllText((Join-Path $Stubs 'ssh.cmd'), "@echo %*>>`"%JCA_STUB_DIR%\ssh.log`"`r`n@if defined JCA_STUB_DF echo %JCA_STUB_DF%`r`n@exit /b 0`r`n")
 
-function Invoke-ComStubs([string[]]$Extra) {
+function Invoke-ComStubs([string[]]$Extra, [hashtable]$EnvExtra = @{}) {
     foreach ($l in 'scp.log', 'ssh.log') { Remove-Item (Join-Path $Stubs $l) -ErrorAction SilentlyContinue }
     $args2 = @($Deploy, '-RepoRaiz', $RepoT, '-SemTestes', '-Sim', '-Saida', (Join-Path $T 'pacotesA6')) + $Extra
-    $r = Invoke-Ps $args2 @{ JCA_STUB_DIR = $Stubs; PATH = ($Stubs + ';' + $env:PATH) }
+    $envStub = @{ JCA_STUB_DIR = $Stubs; PATH = ($Stubs + ';' + $env:PATH) }
+    foreach ($k in $EnvExtra.Keys) { $envStub[$k] = $EnvExtra[$k] }
+    $r = Invoke-Ps $args2 $envStub
     [string[]]$scpLog = if (Test-Path (Join-Path $Stubs 'scp.log')) { @(Get-Content (Join-Path $Stubs 'scp.log')) } else { @() }
     [string[]]$sshLog = if (Test-Path (Join-Path $Stubs 'ssh.log')) { @(Get-Content (Join-Path $Stubs 'ssh.log')) } else { @() }
     return [pscustomobject]@{ R = $r; Scp = $scpLog; Ssh = $sshLog }
 }
 
-Caso 'A6a' 'stubs: deploy = 1 scp (2 arquivos) + 1 ssh -t com sudo' {
-    $x = Invoke-ComStubs @('-Alvo', 'usuario@servidor')
+Caso 'A6a' 'stubs: deploy = 1 scp (2 arquivos) + ssh de espaco + ssh -t com sudo, nomes com GUID e hash do script' {
+    $x = Invoke-ComStubs @('-Alvo', 'usuario@servidor') @{ JCA_STUB_DF = '99999999' }
     Afirmar ($x.R.Codigo -eq 0) ('codigo ' + $x.R.Codigo + ': ' + $x.R.Saida)
     Afirmar ($x.Scp.Count -eq 1) ('chamadas scp: ' + $x.Scp.Count)
-    Afirmar ($x.Scp[0] -match 'jca_release_.*\.zip' -and $x.Scp[0] -match 'jca_aplicar_.*\.sh' -and $x.Scp[0] -match 'usuario@servidor:/tmp/') ('scp: ' + $x.Scp[0])
-    Afirmar ($x.Ssh.Count -eq 1) ('chamadas ssh: ' + $x.Ssh.Count)
-    Afirmar ($x.Ssh[0] -match '(^| )-t ' -and $x.Ssh[0] -match 'sudo bash /tmp/jca_aplicar_') ('ssh: ' + $x.Ssh[0])
-    Afirmar (-not ($x.Ssh[0] -match '--dry-run')) 'dry-run indevido'
+    Afirmar ($x.Scp[0] -match 'jca_release_.*_[0-9a-f]{32}\.zip' -and $x.Scp[0] -match 'jca_aplicar_[0-9a-f]{32}\.sh' -and $x.Scp[0] -match 'usuario@servidor:/tmp/') ('scp: ' + $x.Scp[0])
+    Afirmar ($x.Ssh.Count -eq 2) ('chamadas ssh: ' + $x.Ssh.Count)
+    Afirmar ($x.Ssh[0] -match 'df -Pk /tmp') ('1o ssh deveria medir /tmp: ' + $x.Ssh[0])
+    Afirmar ($x.Ssh[1] -match '(^| )-t ' -and $x.Ssh[1] -match 'sudo bash /tmp/jca_aplicar_[0-9a-f]{32}\.sh') ('ssh: ' + $x.Ssh[1])
+    Afirmar ($x.Ssh[1] -match 'h=[0-9a-f]{64}; ' -and $x.Ssh[1] -match '-L \$f' -and $x.Ssh[1] -match '-O \$f' -and $x.Ssh[1] -match 'sha256sum') ('ssh sem checagem do script: ' + $x.Ssh[1])
+    Afirmar (-not ($x.Ssh[1] -match '--dry-run')) 'dry-run indevido'
+    $x2 = Invoke-ComStubs @('-Alvo', 'usuario@servidor') @{ JCA_STUB_DF = '99999999' }
+    $n1 = [regex]::Match($x.Scp[0], 'jca_aplicar_[0-9a-f]{32}').Value; $n2 = [regex]::Match($x2.Scp[0], 'jca_aplicar_[0-9a-f]{32}').Value
+    Afirmar ($n1 -ne $n2) 'nome do script repetiu entre execucoes'
 }
 
 Caso 'A6b' 'stubs: -DryRun repassa --dry-run' {
     $x = Invoke-ComStubs @('-Alvo', 'usuario@servidor', '-DryRun')
     Afirmar ($x.R.Codigo -eq 0) ('codigo ' + $x.R.Codigo)
-    Afirmar ($x.Ssh.Count -eq 1 -and $x.Ssh[0] -match '--dry-run') ('ssh: ' + ($x.Ssh -join '|'))
+    Afirmar ($x.Ssh.Count -eq 2 -and $x.Ssh[1] -match '--dry-run') ('ssh: ' + ($x.Ssh -join '|'))
 }
 
 Caso 'A6c' 'stubs: -Rollback envia so o script' {
     $x = Invoke-ComStubs @('-Alvo', 'usuario@servidor', '-Rollback')
     Afirmar ($x.R.Codigo -eq 0) ('codigo ' + $x.R.Codigo + ': ' + $x.R.Saida)
     Afirmar ($x.Scp.Count -eq 1 -and $x.Scp[0] -match 'jca_aplicar_' -and -not ($x.Scp[0] -match 'jca_release_')) ('scp: ' + ($x.Scp -join '|'))
-    Afirmar ($x.Ssh.Count -eq 1 -and $x.Ssh[0] -match '--rollback') ('ssh: ' + ($x.Ssh -join '|'))
+    Afirmar ($x.Ssh.Count -eq 2 -and $x.Ssh[1] -match '--rollback') ('ssh: ' + ($x.Ssh -join '|'))
 }
+
+Caso 'A6e' 'stubs: -SemChecagemEspaco faz so o ssh de execucao' {
+    $x = Invoke-ComStubs @('-Alvo', 'usuario@servidor', '-SemChecagemEspaco')
+    Afirmar ($x.R.Codigo -eq 0) ('codigo ' + $x.R.Codigo + ': ' + $x.R.Saida)
+    Afirmar ($x.Ssh.Count -eq 1 -and $x.Ssh[0] -match 'sudo bash') ('ssh: ' + ($x.Ssh -join '|'))
+}
+
+Caso 'A6f' 'stubs: /tmp do servidor sem espaco para o pacote: aborta antes do scp (exit 10)' {
+    $x = Invoke-ComStubs @('-Alvo', 'usuario@servidor') @{ JCA_STUB_DF = '100' }
+    Afirmar ($x.R.Codigo -eq 10) ('esperado 10, obtido ' + $x.R.Codigo + ': ' + $x.R.Saida)
+    Afirmar ($x.R.Saida -match 'Espaco insuficiente em /tmp') 'mensagem ausente'
+    Afirmar ($x.Scp.Count -eq 0) 'chamou scp mesmo sem espaco'
+    Afirmar ($x.Ssh.Count -eq 1) ('esperado so o ssh de medicao: ' + $x.Ssh.Count)
+}
+
+# stubs de sudo/chown/chmod para bash (grupo A7 e B12+); LF obrigatorio
+$StubsSh = Join-Path $T 'stubs_sh'
+$null = New-Item -ItemType Directory -Path $StubsSh -Force
+Write-Texto (Join-Path $StubsSh 'sudo') "#!/bin/bash`nexec `"`$@`"`n"
+Write-Texto (Join-Path $StubsSh 'chown') "#!/bin/bash`necho `"chown `$*`" >> `"`$JCA_STUB_LOG`"`nif [ -n `"`${JCA_CHOWN_FALHA:-}`" ] && [[ `"`$*`" == *`"`$JCA_CHOWN_FALHA`"* ]]; then exit 1; fi`nexit 0`n"
+Write-Texto (Join-Path $StubsSh 'chmod') "#!/bin/bash`necho `"chmod `$*`" >> `"`$JCA_STUB_LOG`"`nexec /usr/bin/chmod `"`$@`"`n"
+$StubsShU = if ($script:Cygpath) { (& $script:Cygpath -u $StubsSh) } else { $StubsSh.Replace('\', '/') }
+
+Caso 'A7' 'comando remoto: executa com hash certo; recusa script adulterado (sem executar)' {
+    $sc = Join-Path $T 'a7_script.sh'
+    Write-Texto $sc "#!/bin/bash`necho EXECUTOU `$*`n"
+    $hash = Get-Sha $sc
+    $scM = ConvertTo-Misto $sc
+    $cmdOk = & { . $Deploy; New-ComandoRemoto $scM $null $hash @('--teste') }
+    $pre = 'PATH="' + $StubsShU + ':$PATH"; '
+    $salvo = [Environment]::GetEnvironmentVariable('MSYS_NO_PATHCONV')
+    try {
+        [Environment]::SetEnvironmentVariable('MSYS_NO_PATHCONV', '1')
+        $cmdOk = $pre + $cmdOk
+        $o1 = (& $script:Bash -c $cmdOk 2>&1) -join '|'; $rc1 = $LASTEXITCODE
+        $apagou = -not (Test-Path -LiteralPath $sc)
+        Write-Texto $sc "#!/bin/bash`necho EXECUTOU `$*`n"
+        $cmdRuim = & { . $Deploy; New-ComandoRemoto $scM $null ('0' * 64) @('--teste') }
+        $o2 = (& $script:Bash -c ($pre + $cmdRuim) 2>&1) -join '|'; $rc2 = $LASTEXITCODE
+        $cmdSem = & { . $Deploy; New-ComandoRemoto (ConvertTo-Misto (Join-Path $T 'nao_existe.sh')) $null $hash @('--teste') }
+        $o3 = (& $script:Bash -c ($pre + $cmdSem) 2>&1) -join '|'; $rc3 = $LASTEXITCODE
+    } finally { [Environment]::SetEnvironmentVariable('MSYS_NO_PATHCONV', $salvo) }
+    Afirmar ($rc1 -eq 0 -and $o1 -match 'EXECUTOU --teste') ("hash certo deveria executar: rc=$rc1 $o1")
+    Afirmar $apagou 'script nao foi apagado no fim'
+    Afirmar ($rc2 -eq 2 -and -not ($o2 -match 'EXECUTOU') -and $o2 -match 'ERRO') ("hash errado deveria abortar com 2 sem executar: rc=$rc2 $o2")
+    Afirmar ($rc3 -eq 2 -and -not ($o3 -match 'EXECUTOU')) ("script ausente deveria abortar: rc=$rc3 $o3")
+} $true
 
 Caso 'A6d' 'alvo invalido e recusado sem chamar ssh/scp' {
     $x = Invoke-ComStubs @('-Alvo', 'x; rm -rf')
@@ -332,7 +386,12 @@ function Invoke-Remoto([hashtable]$Env, [string[]]$Argumentos) {
     $salvo = @{}
     foreach ($k in $todo.Keys) { $salvo[$k] = [Environment]::GetEnvironmentVariable($k); [Environment]::SetEnvironmentVariable($k, $todo[$k]) }
     try {
-        $out = & $script:Bash $ShMisto @Argumentos 2>&1
+        if ($todo.ContainsKey('JCA_STUB_PATH') -and $todo['JCA_STUB_PATH']) {
+            # o bash.exe do Git poe /usr/bin na frente do PATH: os stubs entram aqui, dentro do bash
+            $out = & $script:Bash -c 'PATH="$JCA_STUB_PATH:$PATH"; exec bash "$@"' _ $ShMisto @Argumentos 2>&1
+        } else {
+            $out = & $script:Bash $ShMisto @Argumentos 2>&1
+        }
         $rc = $LASTEXITCODE
     } finally {
         foreach ($k in $todo.Keys) { [Environment]::SetEnvironmentVariable($k, $salvo[$k]) }
@@ -398,6 +457,18 @@ Caso 'B1' 'dry-run nao altera nada' {
     Afirmar ((Get-Backups $a).Count -eq 0) 'criou backup no dry-run'
     Afirmar (-not (Test-Path (Join-Path $a.DepW 'deploy.log'))) 'escreveu deploy.log no dry-run'
     Afirmar ($r.Saida -match 'app/a\.php' -and $r.Saida -match 'app/novo\.php') ('lista incompleta: ' + $r.Saida)
+    Afirmar (@(Get-ChildItem -LiteralPath $a.DepW -Force).Count -eq 0) ('dry-run criou algo em DEPLOY_DIR: ' + ((Get-ChildItem -LiteralPath $a.DepW -Force | ForEach-Object Name) -join ','))
+    Afirmar (@(Get-ChildItem -LiteralPath $a.Base -Force | Where-Object { $_.Name -like 'run.*' }).Count -eq 0) 'sobrou diretorio temporario run.* ao lado do zip'
+    Afirmar ($r.Saida -match 'nada criado') 'resumo do dry-run nao diz o que cria'
+    # DEPLOY_DIR inexistente: dry-run nao pode cria-lo
+    $a2 = New-Arvore
+    Remove-Item -LiteralPath $a2.DepW -Recurse -Force
+    $zip2 = Join-Path $a2.Base 'r.zip'; $sha2 = New-ZipOk $zip2
+    $r2 = Invoke-Deploy $a2 $zip2 $sha2 @('--dry-run')
+    Afirmar ($r2.Codigo -eq 0) ("dry-run sem DEPLOY_DIR: codigo " + $r2.Codigo + ": " + $r2.Saida)
+    Afirmar (-not (Test-Path -LiteralPath $a2.DepW)) 'dry-run criou DEPLOY_DIR'
+    $r3 = Invoke-Remoto @{ APP_DIR = $a2.App; DEPLOY_DIR = $a2.Dep } @('--rollback', '--dry-run')
+    Afirmar ($r3.Codigo -eq 2 -and -not (Test-Path -LiteralPath $a2.DepW)) ('rollback dry-run sem backups: codigo ' + $r3.Codigo)
 } $true
 
 Caso 'B2' 'deploy aplica so o esperado e preserva data/ e segredos' {
@@ -421,6 +492,7 @@ Caso 'B2' 'deploy aplica so o esperado e preserva data/ e segredos' {
     Afirmar ($man -match 'M app/a\.php' -and $man -match 'N app/novo\.php') "manifesto: $man"
     Afirmar ((Get-Content -Raw (Join-Path $a.DepW 'deploy.log')) -match 'DEPLOY concluido') 'deploy.log sem a linha de conclusao'
     Afirmar ($r.Saida -match 'Cache de resposta limpo') 'cache nao foi limpo (app/ mudou)'
+    Afirmar ($r.Saida -match 'ignorado\s+LICENSE') ('arquivo ignorado sem nome no resumo: ' + $r.Saida)
 } $true
 
 Caso 'B3' 'idempotencia: repetir nao faz nada' {
@@ -558,7 +630,7 @@ Caso 'B9' 'segundo deploy simultaneo e recusado pelo lock (exit 5)' {
     }
     Afirmar $achou 'o primeiro deploy nao tomou o lock'
     $r2 = Invoke-Deploy $a $zip $sha
-    $null = $p.WaitForExit(60000)
+    $null = $p.WaitForExit(300000)
     Afirmar ($r2.Codigo -eq 5) ("segundo: esperado 5, obtido " + $r2.Codigo + ": " + $r2.Saida)
     Afirmar ($r2.Saida -match 'lock') 'mensagem de lock ausente'
     Afirmar ($p.ExitCode -eq 0) ("primeiro deploy terminou com " + $p.ExitCode)
@@ -597,6 +669,77 @@ Caso 'B11' 'caminhos perigosos sao recusados (exit 2)' {
         Afirmar ($r.Codigo -eq 2) ("APP_DIR=" + $c.APP_DIR + " DEPLOY_DIR=" + $c.DEPLOY_DIR + ": esperado 2, obtido " + $r.Codigo + ": " + $r.Saida)
     }
     Afirmar (-not (Test-Path (Join-Path $a.App 'dentro'))) 'criou diretorio dentro de APP_DIR'
+} $true
+
+# ---- permissoes/donos com stubs de chown/chmod (o Git Bash nao e root)
+function Get-StubEnv([string]$Log, [string]$Falha = '') {
+    return @{ JCA_STUB_PATH = $StubsShU; JCA_STUB_LOG = (ConvertTo-Misto $Log); PULAR_CHOWN = '0'; JCA_CHOWN_FALHA = $Falha }
+}
+
+Caso 'B12' 'donos e modos (stubs): chown/chmod so no que foi tocado, sem -R; rollback reajusta data/cache' {
+    $a = New-Arvore
+    $log = Join-Path $a.Base 'stub.log'
+
+    $zip = Join-Path $a.Base 'r.zip'; $sha = New-ZipOk $zip
+    $r = Invoke-Deploy $a $zip $sha @() (Get-StubEnv $log)
+    Afirmar ($r.Codigo -eq 0) ("deploy: codigo " + $r.Codigo + ": " + $r.Saida)
+    $l = Get-Content -Raw -LiteralPath $log
+    foreach ($f in 'app/a.php', 'app/novo.php', 'deploy/remoto/x.sh') {
+        Afirmar ($l -match [regex]::Escape("chown root:www-data") -and $l -match ("chown root:www-data [^\r\n]*" + [regex]::Escape($f))) "sem chown em $f"
+    }
+    Afirmar ($l -match 'chmod 755 [^\r\n]*deploy/remoto/x\.sh' -and $l -match 'chmod 644 [^\r\n]*app/novo\.php') 'modos 755 (.sh) / 644 (demais) nao aplicados'
+    Afirmar ($l -match 'chmod 755 [^\r\n]*deploy/remoto\r?\n') 'diretorio novo sem chmod 755'
+    Afirmar ($l -match 'chown www-data:www-data [^\r\n]*data/cache') 'data/cache sem chown www-data'
+    Afirmar (-not ($l -match 'config/db\.php|secrets\.local|config/visao_geral\.php|data/logs|bin/b\.php|public/index\.php')) 'chown/chmod tocou arquivo que nao era do deploy'
+    Afirmar (-not ($l -match ' -R ')) 'usou chown/chmod recursivo'
+    Remove-Item -LiteralPath $log -Force
+    $rb = Invoke-Remoto (@{ APP_DIR = $a.App; DEPLOY_DIR = $a.Dep } + (Get-StubEnv $log)) @('--rollback')
+    Afirmar ($rb.Codigo -eq 0) ("rollback: codigo " + $rb.Codigo + ": " + $rb.Saida)
+    Afirmar ($rb.Saida -match 'Rollback concluido' -and -not ($rb.Saida -match 'falhou em')) ('rollback com aviso de permissao: ' + $rb.Saida)
+    $l2 = Get-Content -Raw -LiteralPath $log
+    Afirmar ($l2 -match 'chown www-data:www-data [^\r\n]*data/cache') 'rollback nao reajustou o dono de data/cache'
+} $true
+
+Caso 'B13' 'falha de chown: [AVISO] por arquivo, deploy aplicado e saida 6' {
+    $a = New-Arvore
+    $log = Join-Path $a.Base 'stub.log'
+    $zip = Join-Path $a.Base 'r.zip'; $sha = New-ZipOk $zip
+    $r = Invoke-Deploy $a $zip $sha @() (Get-StubEnv $log 'app/novo.php')
+    Afirmar ($r.Codigo -eq 6) ("esperado 6, obtido " + $r.Codigo + ": " + $r.Saida)
+    Afirmar ($r.Saida -match '\[AVISO\] chown root:www-data falhou em app/novo\.php') ('aviso por arquivo ausente: ' + $r.Saida)
+    Afirmar ($r.Saida -match '1 falha\(s\) de dono/permissao') 'aviso final destacado ausente'
+    Afirmar ((Get-Content -Raw (Join-Path $a.AppW 'app\a.php')) -match 'novo') 'deploy nao foi aplicado'
+    Afirmar ((Get-Content -Raw (Join-Path $a.DepW 'deploy.log')) -match 'CONCLUIDO COM 1 AVISO') 'deploy.log sem o aviso'
+    Afirmar ((Get-Backups $a).Count -eq 1) 'backup ausente'
+} $true
+
+Caso 'B14' 'backup so com arquivos novos (tar -T vazio): cria, tem manifesto e o rollback remove' {
+    $a = New-Arvore
+    $zip = Join-Path $a.Base 'r.zip'
+    New-ZipFalso $zip ([ordered]@{ 'app/so_novo.php' = "<?php echo 1;`n"; 'bin/outro_novo.php' = "<?php echo 2;`n" })
+    $sha = Get-Sha $zip
+    $antes = Get-HashArvore $a.AppW
+    $r = Invoke-Deploy $a $zip $sha
+    Afirmar ($r.Codigo -eq 0) ("deploy: codigo " + $r.Codigo + ": " + $r.Saida)
+    Afirmar (Test-Path (Join-Path $a.AppW 'app\so_novo.php')) 'arquivo novo nao foi criado'
+    $bk = Get-Backups $a
+    Afirmar ($bk.Count -eq 1) ('backups: ' + $bk.Count)
+    $lst = @(& $script:Bash -c "tar --force-local -tzf '$(ConvertTo-Misto $bk[0].FullName)'")
+    Afirmar ($lst.Count -eq 1 -and $lst[0] -match 'manifesto\.txt') ('backup so deveria ter o manifesto: ' + ($lst -join '|'))
+    $man = (& $script:Bash -c "tar --force-local -xzOf '$(ConvertTo-Misto $bk[0].FullName)' .deploy/manifesto.txt") -join '|'
+    Afirmar ($man -match 'N app/so_novo\.php' -and -not ($man -match '(^|\|)M ')) "manifesto: $man"
+    $rb = Invoke-Remoto @{ APP_DIR = $a.App; DEPLOY_DIR = $a.Dep } @('--rollback')
+    Afirmar ($rb.Codigo -eq 0) ("rollback: codigo " + $rb.Codigo + ": " + $rb.Saida)
+    Afirmar ((Get-HashArvore $a.AppW) -eq $antes) 'rollback nao devolveu a arvore ao estado anterior'
+} $true
+
+Caso 'B15' 'espaco insuficiente (MIN_LIVRE_MB enorme) aborta com 2 sem criar nada' {
+    $a = New-Arvore
+    $zip = Join-Path $a.Base 'r.zip'; $sha = New-ZipOk $zip
+    $antes = Get-HashArvore $a.AppW
+    $r = Invoke-Deploy $a $zip $sha @() @{ MIN_LIVRE_MB = '999999999' }
+    Afirmar ($r.Codigo -eq 2 -and $r.Saida -match 'Espaco livre insuficiente') ("codigo " + $r.Codigo + ": " + $r.Saida)
+    Afirmar ((Get-HashArvore $a.AppW) -eq $antes) 'arvore mudou'
 } $true
 
 } finally {

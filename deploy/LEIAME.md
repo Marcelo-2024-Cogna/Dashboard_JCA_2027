@@ -302,7 +302,7 @@ O app **nao tem autenticacao**. Endpoints POST como `/settings/*` e `/extracao/a
 - Importacao do dump com `mysql` em Linux e contas reais; grants minimos (testado apenas com a conta root local e o schema descartavel).
 - Salvaguardas operacionais (secao 8c) NAO executadas no Ubuntu: `limpeza_var.sh` (testado so em dry-run e em pastas temporarias no Git Bash, sem `flock`, `journalctl` nem `apt-get`), `cron.d`, `logrotate` (sem `logrotate` na maquina de desenvolvimento; validado por leitura) e o vhost `metricas-teste-ip.conf` (provado no Apache 2.4.58 do XAMPP, nao no 2.4.41 do servidor). `mail()` com MTA real tambem nao foi testado.
 - PHP 7.4: testado localmente com o PHP 7.4.33 (lint de todos os .php, boot via servidor embutido e comparacao das respostas HTTP com o PHP 8.2.12). Nao testado: o PHP 7.4.3-4ubuntu2.28 real do servidor, Apache com mod_php/php-fpm e o worker (`bin/queue_worker.php`) com chamadas reais ao Jira em 7.4.
-- Deploy automatizado (secao 12): testado so localmente (`deploy\teste_deploy.ps1`, Git Bash 5.3 contra arvore falsa, ssh/scp substituidos por stubs). NAO testado: execucao real contra o servidor, prompts de senha, `sudo`/`chown` reais, `flock` real (o Git Bash nao tem; o teste usa o lock por diretorio), `curl` contra o vhost real, Ubuntu 20.04/bash 5.0/PHP 7.4 reais.
+- Deploy automatizado (secao 12): testado so localmente (`deploy\teste_deploy.ps1`, Git Bash 5.3 contra arvore falsa, ssh/scp substituidos por stubs). Donos e modos sao testados com stubs de `chown`/`chmod` (registram a chamada; `chown` pode simular falha). NAO testado: execucao real contra o servidor, prompts de senha, `sudo`/`chown` reais, restauracao real de dono e modo pelo `tar -xzp` como root (NTFS nao guarda modo Unix), `flock` real (o Git Bash nao tem; o teste usa o lock por diretorio), conferencia `[ -O ]`/`find -perm` do script com outro usuario local, `df` real do `/tmp` do servidor, `curl` contra o vhost real, Ubuntu 20.04/bash 5.0/GNU tar 1.30/PHP 7.4 reais.
 
 ## 12. Deploy automatizado
 
@@ -317,7 +317,7 @@ Substitui a copia manual (secao 2). Dois scripts: `deploy\deploy.ps1` (Windows) 
 ### Primeira vez
 
 1. `Copy-Item deploy\deploy.local.ps1.exemplo deploy\deploy.local.ps1` e preencha `$JcaDeployAlvo = 'usuario@servidor'` (arquivo ignorado pelo git). Alternativas: `-Alvo` ou a variavel de ambiente `JCA_DEPLOY_ALVO`.
-2. `/apps/_deploy` (tmp, backups e `deploy.log`; dono `root:root`, modo 750) e criado pelo proprio script na primeira execucao, pois ele roda com `sudo`. Se preferir criar antes: `sudo install -d -m 750 -o root -g root /apps/_deploy /apps/_deploy/tmp /apps/_deploy/backups`. Nada e gravado em `/var` nem em `/tmp` (so o zip e o script passam por `/tmp`, e sao apagados no fim).
+2. `/apps/_deploy` (tmp, backups e `deploy.log`; dono `root:root`, modo 750) e criado pelo proprio script na primeira execucao, pois ele roda com `sudo`. Se preferir criar antes: `sudo install -d -m 750 -o root -g root /apps/_deploy /apps/_deploy/tmp /apps/_deploy/backups`. Nada e gravado em `/var` nem em `/tmp`, exceto o zip e o script, que passam por `/tmp` com nome aleatorio (GUID) e sao apagados no fim. Se o `ssh` cair antes do fim, eles ficam em `/tmp/jca_aplicar_<guid>.sh` e `/tmp/jca_release_*_<guid>.zip`; apague a mao.
 3. Faca primeiro um `-DryRun` (abaixo).
 
 ### Uso diario
@@ -326,17 +326,17 @@ Substitui a copia manual (secao 2). Dois scripts: `deploy\deploy.ps1` (Windows) 
 powershell -NoProfile -ExecutionPolicy Bypass -File deploy\deploy.ps1
 ```
 
-Fluxo: confere working tree e `origin/main` (avisos), lint PHP local do pacote, monta o zip (`git archive` com `core.autocrlf=false`, exclusoes de `deploy/excluir.txt` e `data/` inteiro), verifica CRLF e segredos, calcula o sha256, pede confirmacao e conecta duas vezes: 1 `scp` (zip + script) e 1 `ssh -t` (script com `sudo`). Com senha, o `ssh` pede a senha do ssh e depois a do `sudo`; com chave, so a do `sudo`.
+Fluxo: confere working tree e `origin/main` (avisos), lint PHP local do pacote, monta o zip (`git archive` com `core.autocrlf=false`, exclusoes de `deploy/excluir.txt` e `data/` inteiro), verifica CRLF e segredos, calcula o sha256 do zip e do script remoto, pede confirmacao e conecta tres vezes: 1 `ssh` curto que mede o espaco livre de `/tmp` (aborta com codigo 10, antes do envio, se nao couber zip + script + 1 MB; `-SemChecagemEspaco` pula), 1 `scp` (zip + script) e 1 `ssh -t`. Neste ultimo, ANTES do `sudo`, o servidor confere que o script e arquivo regular, nao e link simbolico, pertence ao usuario do ssh, nao e gravavel por grupo/outros e tem o sha256 calculado no Windows (passado como argumento do ssh, canal separado do `scp`); se algo nao bater, nada e executado (codigo 22). Com senha, o `ssh` pede a senha a cada conexao e depois a do `sudo`; com chave, so a do `sudo`.
 
-Parametros: `-Alvo`, `-DryRun`, `-Rollback`, `-Timestamp AAAAMMDD-HHMMSS`, `-Referencia` (commit, tag ou branch), `-SemTestes` (pula so o lint local), `-Forcar` (aceita working tree sujo), `-LimparCache`, `-ManterCache`, `-SomentePacote` (monta e verifica, nao conecta), `-Sim` (sem confirmacao), `-Saida`, `-SmokeUrl`, `-SmokeHost`.
+Parametros: `-Alvo`, `-DryRun`, `-Rollback`, `-Timestamp AAAAMMDD-HHMMSS`, `-Referencia` (commit, tag ou branch), `-SemTestes` (pula so o lint local), `-Forcar` (aceita working tree sujo), `-LimparCache`, `-ManterCache`, `-SomentePacote` (monta e verifica, nao conecta), `-Sim` (sem confirmacao), `-SemChecagemEspaco`, `-Saida`, `-SmokeUrl`, `-SmokeHost`.
 
 ### Dry-run
 
-`deploy\deploy.ps1 -DryRun` faz tudo local e, no servidor, so lista o que seria modificado (`modificado`) ou criado (`novo`), sem copiar, sem backup e sem gravar no log.
+`deploy\deploy.ps1 -DryRun` faz tudo local e, no servidor, so lista o que seria modificado (`modificado`), criado (`novo`) ou ignorado (`ignorado`). No servidor ele nao cria nada em `/apps/metricas_jca` nem em `/apps/_deploy` (sem `mkdir`, sem lock, sem backup, sem log). O unico efeito e um diretorio temporario `run.XXXXXX` ao lado do zip em `/tmp` (no `-Rollback -DryRun`, em `$TMPDIR` ou `/tmp`) para extrair o pacote, removido ao sair, alem do proprio zip e script enviados (apagados no fim). Sem lock, um dry-run pode rodar ao mesmo tempo que um deploy; a lista reflete o momento da leitura.
 
 ### O que o servidor faz
 
-Confere o sha256 antes de extrair; extrai em `/apps/_deploy/tmp`; recusa pacote com `config/db.php`, `config/secrets.local.php`, `data/`, `.git`, `.kiro`, `.agents`, caminho com `..` ou CR em `.sh`/`deploy/`; so aplica `app bin config public deploy db`; compara byte a byte e ignora arquivos identicos (idempotente); cria backup so dos arquivos que serao sobrescritos em `/apps/_deploy/backups/<AAAAMMDD-HHMMSS>.tar.gz` (guarda os ultimos 10; manifesto interno com arquivos modificados `M`, novos `N` e diretorios criados `D`); copia; ajusta dono `root:www-data` e modo (755 para diretorios novos e `.sh`, 644 para os demais) so no que tocou; garante `data/cache` como `www-data`; `php -l` em cada `.php` aplicado; limpa o cache (abaixo); smoke test (`/filtros` e `/graficos/produtividade` devem dar 200 em `http://localhost`; ajuste com `-SmokeUrl`/`-SmokeHost`). Se o lint ou o smoke falhar, restaura o backup sozinho (rollback automatico). Um `flock` impede duas execucoes ao mesmo tempo.
+Confere o sha256 antes de extrair; extrai em `/apps/_deploy/tmp`; recusa pacote com `config/db.php`, `config/secrets.local.php`, `data/`, `.git`, `.kiro`, `.agents`, caminho com `..` ou CR em `.sh`/`deploy/`; confere se ha espaco para extrair (2x o tamanho descompactado + 10 MB); so aplica `app bin config public deploy db` e lista pelo nome (`ignorado`, ate 50, com `[AVISO]`) os arquivos do pacote fora dessas pastas, como `.htaccess` da raiz; compara byte a byte e ignora arquivos identicos (idempotente); cria backup so dos arquivos que serao sobrescritos em `/apps/_deploy/backups/<AAAAMMDD-HHMMSS>.tar.gz` (guarda os ultimos 10; manifesto interno com arquivos modificados `M`, novos `N` e diretorios criados `D`); copia; ajusta dono `root:www-data` e modo (755 para diretorios novos e `.sh`, 644 para os demais) so no que tocou; garante `data/cache` como `www-data`; cada `chown`/`chmod` que falhar gera um `[AVISO]` com o nome do arquivo e uma linha no `deploy.log`; `php -l` em cada `.php` aplicado; limpa o cache (abaixo); smoke test (`/filtros` e `/graficos/produtividade` devem dar 200 em `http://localhost`; ajuste com `-SmokeUrl`/`-SmokeHost`). Se o lint ou o smoke falhar, restaura o backup sozinho (rollback automatico). Um `flock` impede duas execucoes ao mesmo tempo.
 
 ### Rollback
 
@@ -349,7 +349,11 @@ Restaura os arquivos modificados, apaga os criados pelo deploy e remove os diret
 
 ### Codigos de saida
 
-Remoto (`aplicar_release.sh`): 0 ok ou nada a aplicar; 1 erro inesperado; 2 argumento, hash, caminho ou conteudo invalido (nada alterado); 3 lint ou smoke falhou e o rollback automatico concluiu; 4 rollback falhou (intervencao manual; o backup fica preservado); 5 outra execucao em andamento. O `deploy.ps1` devolve `20 + codigo remoto`, 10 se o `scp` falhar, 1 para erro local e 2 para uso invalido ou cancelamento.
+Remoto (`aplicar_release.sh`): 0 ok ou nada a aplicar; 1 erro inesperado; 2 argumento, hash, caminho ou conteudo invalido (nada alterado); 3 lint ou smoke falhou e o rollback automatico concluiu; 4 rollback falhou (intervencao manual; o backup fica preservado); 5 outra execucao em andamento; 6 deploy (ou rollback) concluido e validado, mas algum `chown`/`chmod` falhou. O `deploy.ps1` devolve `20 + codigo remoto`, 10 se o `/tmp` do servidor nao tiver espaco ou o `scp` falhar, 1 para erro local e 2 para uso invalido ou cancelamento.
+
+### Decisao sobre falhas de dono/permissao
+
+Uma falha de `chown`/`chmod` nao dispara rollback: o lint e o smoke ja validaram o codigo, e reverter por causa do dono trocaria um problema pequeno por outro deploy. O script imprime `[AVISO]` por arquivo, um aviso final destacado com o total e termina com **codigo 6** (`deploy.ps1`: 26), para nao parecer sucesso limpo. Corrija com `sudo chown root:www-data <arquivo>` e `sudo chmod 644 <arquivo>` (755 para `.sh` e diretorios) e confira com `ls -l`.
 
 ### Decisao sobre o cache da Visao Geral
 
@@ -371,7 +375,7 @@ O cache (`data/cache/*.vgc`) ja se invalida sozinho: `GraficosController::ARQUIV
 
 ### Teste local
 
-`powershell -NoProfile -ExecutionPolicy Bypass -File deploy\teste_deploy.ps1` (opcional `-Grupo A` ou `-Grupo B`). Grupo A: pacote real, CRLF, segredos, ssh/scp falsos. Grupo B: `aplicar_release.sh` no Git Bash contra uma arvore falsa em `%TEMP%` (dry-run, deploy, idempotencia, rollback automatico e manual, hash errado, lock, poda, caminhos perigosos, smoke com servidor PHP embutido). Limitacao: o Git Bash nao tem `flock` nem `sudo`; o teste usa o lock por diretorio e `PULAR_SUDO`/`PULAR_CHOWN`. Sem bash, o grupo B e pulado e o script sai com codigo 3 (nao e sucesso total).
+`powershell -NoProfile -ExecutionPolicy Bypass -File deploy\teste_deploy.ps1` (opcional `-Grupo A` ou `-Grupo B`). Grupo A: pacote real, CRLF, segredos, ssh/scp falsos (nomes com GUID, hash do script no comando, medicao de `/tmp`) e o comando remoto de conferencia do script executado no Git Bash (hash certo executa; hash errado ou script ausente nao executa). Grupo B: `aplicar_release.sh` no Git Bash contra uma arvore falsa em `%TEMP%` (dry-run sem criar nada, deploy, nomes ignorados, idempotencia, rollback automatico e manual, hash errado, lock, poda, caminhos perigosos, smoke com servidor PHP embutido, donos e modos com stubs de `chown`/`chmod`, falha de `chown` com saida 6, backup so com arquivos novos, espaco insuficiente). Limitacao: o Git Bash nao tem `flock` nem `sudo` reais e o NTFS nao guarda dono/modo Unix; o teste usa o lock por diretorio, `PULAR_SUDO` e stubs. Sem bash, o grupo B e pulado e o script sai com codigo 3 (nao e sucesso total).
 
 ## 13. PROXIMO PASSO: GitHub Actions com runner self-hosted
 
@@ -379,6 +383,6 @@ Somente plano; nada disto esta implementado nem ativo.
 
 1. Instalar um runner self-hosted Windows numa maquina da rede com acesso ssh ao servidor.
 2. Gerar um par de chaves SSH sem senha para o runner, autorizar a chave publica no usuario de deploy e guardar o alvo (`usuario@servidor`) em segredo do repositorio (`JCA_DEPLOY_ALVO`). Nenhum host ou usuario vai para o YAML.
-3. Tornar o `sudo` nao interativo de forma restrita: instalar `aplicar_release.sh` em `/apps/_deploy/bin/` com dono `root` e uma regra de sudoers que permita so esse script (nunca `NOPASSWD` curinga sobre `/tmp`). Ajustar `deploy.ps1` para enviar o pacote para um diretorio e chamar o script fixo.
+3. Tornar o `sudo` nao interativo de forma restrita: instalar `aplicar_release.sh` em `/apps/_deploy/bin/` com dono `root` e uma regra de sudoers que permita so esse script (nunca `NOPASSWD` curinga sobre `/tmp`). Ajustar `deploy.ps1` para enviar o pacote para um diretorio e chamar o script fixo. O fluxo manual atual reduz o risco do `/tmp` (nome GUID e conferencia de tipo, dono e sha256 do script antes do `sudo`, secao 12), mas isso nao substitui o script fixo de dono `root` para um `sudo` nao interativo.
 4. Workflow manual (`workflow_dispatch`) com entradas `referencia` e `dry_run`, executando `deploy/deploy.ps1 -Sim`. Esboco em `deploy/ci/deploy.yml.exemplo` (NAO copiar para `.github/workflows` antes de cumprir os itens acima).
 5. Proteger o environment `homologacao` com aprovacao manual e restringir quem pode disparar o workflow.

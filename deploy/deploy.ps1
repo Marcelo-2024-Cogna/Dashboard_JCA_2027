@@ -15,7 +15,8 @@
 
   Codigos de saida: 0 ok; 1 erro local (git, lint, pacote); 2 uso invalido;
   10 falha no scp; 20+N falha remota com codigo N do aplicar_release.sh
-  (21 erro, 22 invalido, 23 rollback automatico, 24 rollback falhou, 25 lock);
+  (21 erro, 22 invalido, 23 rollback automatico, 24 rollback falhou, 25 lock,
+  26 aplicado, mas com falha de dono/permissao em algum arquivo);
   sem alvo/sem confirmacao: 2.
 .PARAMETER Alvo          host ou usuario@host.
 .PARAMETER DryRun        monta o pacote e pede ao servidor so a lista do que mudaria.
@@ -28,6 +29,7 @@
 .PARAMETER ManterCache   nao limpa o cache.
 .PARAMETER SomentePacote monta e verifica o pacote, imprime o caminho e termina.
 .PARAMETER Sim           nao pede confirmacao.
+.PARAMETER SemChecagemEspaco  pula a consulta previa (1 ssh extra) ao espaco livre de /tmp no servidor.
 .PARAMETER Saida         pasta dos pacotes (padrao data\deploy\pacotes; ignorada pelo git).
 .PARAMETER SmokeUrl      URL base do smoke test no servidor (padrao http://localhost).
 .PARAMETER SmokeHost     cabecalho Host do smoke test (opcional).
@@ -48,6 +50,7 @@ param(
     [switch]$ManterCache,
     [switch]$SomentePacote,
     [switch]$Sim,
+    [switch]$SemChecagemEspaco,
     [string]$Saida,
     [string]$SmokeUrl,
     [string]$SmokeHost,
@@ -296,9 +299,23 @@ function Get-MensagemCodigo([int]$Codigo) {
         3 { return 'Lint ou smoke test falhou no servidor; o rollback automatico foi concluido (estado anterior restaurado).' }
         4 { return 'ROLLBACK FALHOU. Intervencao manual necessaria; o backup foi preservado em /apps/_deploy/backups.' }
         5 { return 'Outro deploy esta em andamento no servidor (lock). Tente novamente depois.' }
+        6 { return 'Deploy APLICADO e validado, mas chown/chmod falhou em algum arquivo (ver os [AVISO] acima). Corrija dono/modo manualmente; nao houve rollback.' }
         255 { return 'Falha de conexao/autenticacao ssh (ou sudo recusado).' }
         default { return "Codigo remoto inesperado: $Codigo." }
     }
+}
+
+# Comando executado no servidor (ssh). Antes do sudo, confere que o script enviado
+# e arquivo regular, nao e link simbolico, pertence ao usuario do deploy, nao e
+# gravavel por grupo/outros e tem o sha256 calculado aqui no Windows.
+# Sem aspas duplas (o PowerShell 5.1 as remove ao chamar programas nativos).
+function New-ComandoRemoto([string]$RemotoScript, [string]$RemotoZip, [string]$ShaScript, [string[]]$Opcoes) {
+    $verif = 'f=' + $RemotoScript + '; h=' + $ShaScript + '; ' +
+             '[ -f $f ] && [ ! -L $f ] && [ -O $f ] && [ -z $(find $f -maxdepth 0 -perm /022) ] && ' +
+             '[ $(sha256sum -- $f | awk ''{print $1}'') = $h ] || ' +
+             '{ echo ERRO: script remoto ausente, link, de outro dono, gravavel por outros ou com hash diferente. Nada foi executado. >&2; exit 2; }; '
+    $limpeza = 'rm -f ' + $RemotoScript + $(if ($RemotoZip) { ' ' + $RemotoZip } else { '' })
+    return ($verif + 'sudo bash ' + $RemotoScript + ' ' + ($Opcoes -join ' ') + '; rc=$?; ' + $limpeza + '; exit $rc')
 }
 
 # ---------------------------------------------------------------- principal
@@ -362,14 +379,17 @@ function Invoke-Principal {
         Write-Info ("Pacote: {0} ({1} arquivos, {2:N0} bytes, sha256 {3})" -f $zip, $script:PacoteArquivos, $tamanho, $sha256)
         if ($SomentePacote) { Write-Output $zip; exit 0 }
         $null = New-Item -ItemType Directory -Path $envio -Force
-        $zipEnvio = Join-Path $envio ([System.IO.Path]::GetFileName($zip))
+        $zipEnvio = Join-Path $envio ("jca_release_{0}_{1}_{2}.zip" -f $ts, $sha.Substring(0, 7), [guid]::NewGuid().ToString('N'))
         Move-Item -LiteralPath $zip -Destination $zipEnvio
     }
 
     $null = New-Item -ItemType Directory -Path $envio -Force
-    $scriptEnvio = Join-Path $envio "jca_aplicar_$ts.sh"
+    # nomes imprevisiveis (GUID): ninguem consegue pre-criar o arquivo em /tmp
+    $id = [guid]::NewGuid().ToString('N')
+    $scriptEnvio = Join-Path $envio "jca_aplicar_$id.sh"
     Copy-ScriptRemoto $scriptEnvio
-    $remotoScript = "/tmp/jca_aplicar_$ts.sh"
+    $shaScript = Get-Sha256 $scriptEnvio
+    $remotoScript = "/tmp/jca_aplicar_$id.sh"
     $remotoZip = $null
     if ($zipEnvio) { $remotoZip = '/tmp/' + [System.IO.Path]::GetFileName($zipEnvio) }
 
@@ -387,8 +407,7 @@ function Invoke-Principal {
         $opcoes.Add($remotoZip)
         $opcoes.Add($sha256)
     }
-    $limpeza = "rm -f $remotoScript" + $(if ($remotoZip) { " $remotoZip" } else { '' })
-    $cmd = 'sudo bash ' + $remotoScript + ' ' + ($opcoes -join ' ') + '; rc=$?; ' + $limpeza + '; exit $rc'
+    $cmd = New-ComandoRemoto $remotoScript $remotoZip $shaScript @($opcoes)
 
     $modo = if ($Rollback) { 'ROLLBACK' } elseif ($DryRun) { 'DRY-RUN (so simula)' } else { 'DEPLOY' }
     Write-Host ''
@@ -407,12 +426,29 @@ function Invoke-Principal {
 
     $arquivosEnvio = @($scriptEnvio)
     if ($zipEnvio) { $arquivosEnvio = @($zipEnvio, $scriptEnvio) }
+    if ($SemChecagemEspaco) {
+        Write-Aviso 'Checagem de espaco livre em /tmp do servidor pulada (-SemChecagemEspaco).'
+    } else {
+        Write-Info 'Conferindo o espaco livre em /tmp do servidor (ssh)... digite a senha se solicitado.'
+        $precisa = $tamanho + (Get-Item -LiteralPath $scriptEnvio).Length + 1MB
+        $df = @(& $ssh -o ConnectTimeout=15 $alvoFinal 'df -Pk /tmp | awk ''NR==2{print $4}''' 2>&1 | ForEach-Object { "$_".Trim() })
+        $livreKb = $df | Where-Object { $_ -match '^[0-9]+$' } | Select-Object -Last 1
+        if ($livreKb) {
+            $livre = [int64]$livreKb * 1024
+            if ($livre -lt $precisa) {
+                Stop-Deploy ("Espaco insuficiente em /tmp no servidor ({0:N0} bytes livres; o envio precisa de {1:N0}). Nada foi enviado." -f $livre, $precisa) 10
+            }
+            Write-Info ("/tmp do servidor: {0:N0} bytes livres (envio: {1:N0})." -f $livre, $precisa)
+        } else {
+            Write-Aviso 'Nao foi possivel medir o espaco livre de /tmp no servidor; seguindo.'
+        }
+    }
     Write-Info 'Enviando arquivos (scp)... digite a senha se solicitado.'
     $scpArgs = @('-o', 'ConnectTimeout=15') + $arquivosEnvio + @("${alvoFinal}:/tmp/")
     & $scp @scpArgs
     if ($LASTEXITCODE -ne 0) { Stop-Deploy "scp falhou (codigo $LASTEXITCODE). Verifique rede, usuario/senha e o alvo." 10 }
 
-    Write-Info 'Executando no servidor (ssh + sudo)... digite a senha do ssh/sudo se solicitado.'
+    Write-Info 'Executando no servidor (ssh; confere o script e roda com sudo)... digite a senha do ssh/sudo se solicitado.'
     & $ssh -t -o ConnectTimeout=15 $alvoFinal $cmd
     $rc = $LASTEXITCODE
     Remove-Item -LiteralPath $envio -Recurse -Force -ErrorAction SilentlyContinue
@@ -421,7 +457,7 @@ function Invoke-Principal {
     $msg = Get-MensagemCodigo $rc
     if ($rc -eq 0) { Write-Info $msg } else { Write-Erro "Codigo remoto ${rc}: $msg" }
     if ($rc -eq 0) { exit 0 }
-    if ($rc -ge 1 -and $rc -le 5) { exit (20 + $rc) }
+    if ($rc -ge 1 -and $rc -le 6) { exit (20 + $rc) }
     exit 20
 }
 

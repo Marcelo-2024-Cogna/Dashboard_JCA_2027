@@ -16,6 +16,8 @@
 #    3 lint ou smoke falhou; rollback automatico concluido
 #    4 rollback falhou (intervencao manual; backup preservado)
 #    5 outra execucao em andamento (lock)
+#    6 deploy/rollback CONCLUIDO e validado, mas chown/chmod falhou em algum
+#      arquivo (cada um sai como [AVISO]); sem rollback, corrigir a mao
 #
 #  Variaveis sobrescreviveis (principalmente para teste):
 #    APP_DIR (/apps/metricas_jca)   DEPLOY_DIR (/apps/_deploy)
@@ -26,6 +28,10 @@
 #    SMOKE_URL (http://localhost)   SMOKE_HOST (cabecalho Host opcional)
 #    MIN_LIVRE_MB (1024)            WEB_GRUPO / WEB_USUARIO (www-data)
 #    DEPLOY_TESTE_ESPERA_S          SO PARA TESTE: dorme N s apos o lock
+#
+#  --dry-run: nao cria nada em APP_DIR nem em DEPLOY_DIR (sem mkdir, lock,
+#  log ou backup). Unico efeito: um diretorio temporario run.XXXXXX ao lado do
+#  ZIP (ou em $TMPDIR/tmp, no --rollback), para extrair o pacote; removido ao sair.
 #
 #  NUNCA grava em /var nem /tmp (so o zip chega la, de passagem).
 #  NUNCA toca em data/ (exceto garantir o dono de data/cache), em
@@ -57,6 +63,7 @@ META=""
 LOCK_FALLBACK=0
 LOCK_DIR=""
 LOG_ATIVO=0
+AVISOS_PERM=0
 LIMPEZA_CACHE_FEITA=0
 BACKUP_NOME=""
 BACKUP_ARQ=""
@@ -139,7 +146,7 @@ tem_cr() { ! tr -d '\r' < "$1" | cmp -s - "$1"; }
 # ---------------------------------------------------------------- limpeza
 limpeza() {
   local rc=$?
-  if [ -n "$RUN" ] && caminho_sob "$DEPLOY_DIR/tmp" "$RUN" && [[ ${RUN##*/} == run.* ]]; then
+  if [ -n "$RUN" ] && [[ ${RUN##*/} == run.* ]] && { [ "$DRY" = "1" ] || caminho_sob "$DEPLOY_DIR/tmp" "$RUN"; }; then
     rm -rf -- "$RUN"
   fi
   if [ "$LOCK_FALLBACK" = "1" ] && [ -n "$LOCK_DIR" ] && caminho_sob "$DEPLOY_DIR" "$LOCK_DIR"; then
@@ -205,12 +212,16 @@ fi
 command -v "$PHP_BIN" >/dev/null 2>&1 || { erro "PHP nao encontrado: $PHP_BIN"; exit 2; }
 
 # ---------------------------------------------------------------- preparo
-mkdir -p "$DEPLOY_DIR/tmp" "$DEPLOY_DIR/backups" || { erro "Nao foi possivel criar $DEPLOY_DIR."; exit 1; }
-chmod 750 "$DEPLOY_DIR" "$DEPLOY_DIR/tmp" "$DEPLOY_DIR/backups" 2>/dev/null
 trap limpeza EXIT
+if [ "$DRY" != "1" ]; then
+  mkdir -p "$DEPLOY_DIR/tmp" "$DEPLOY_DIR/backups" || { erro "Nao foi possivel criar $DEPLOY_DIR."; exit 1; }
+  chmod 750 "$DEPLOY_DIR" "$DEPLOY_DIR/tmp" "$DEPLOY_DIR/backups" 2>/dev/null || aviso "chmod 750 falhou em $DEPLOY_DIR (ou subpastas)."
+fi
 
-# lock: flock quando existe; senao mkdir (fallback so para teste local)
-if command -v flock >/dev/null 2>&1; then
+# lock: flock quando existe; senao mkdir (fallback so para teste local). Dry-run nao usa lock.
+if [ "$DRY" = "1" ]; then
+  :
+elif command -v flock >/dev/null 2>&1; then
   exec 9>"$DEPLOY_DIR/deploy.lock" || { erro "Nao foi possivel abrir o lock."; exit 1; }
   if ! flock -n 9; then erro "Outro deploy esta em andamento (lock). Tente novamente depois."; exit 5; fi
 else
@@ -226,7 +237,16 @@ fi
 [ "$DRY" = "1" ] || LOG_ATIVO=1
 if [ -n "$DEPLOY_TESTE_ESPERA_S" ]; then sleep "$DEPLOY_TESTE_ESPERA_S"; fi
 
-livre_kb=$(df -Pk "$DEPLOY_DIR" 2>/dev/null | awk 'NR==2{print $4}')
+# espaco livre (KB) do diretorio, ou do ancestral mais proximo que exista
+livre_kb_de() {
+  local d=$1
+  while [ ! -d "$d" ] && [ "$d" != "/" ] && [ "$d" != "." ]; do
+    case "$d" in */*) d=${d%/*}; [ -n "$d" ] || d=/ ;; *) d=. ;; esac
+  done
+  df -Pk "$d" 2>/dev/null | awk 'NR==2{print $4}'
+}
+
+livre_kb=$(livre_kb_de "$DEPLOY_DIR")
 if [[ ${livre_kb:-} =~ ^[0-9]+$ ]]; then
   if [ $((livre_kb / 1024)) -lt "$MIN_LIVRE_MB" ]; then
     erro "Espaco livre insuficiente em $DEPLOY_DIR ($((livre_kb / 1024)) MB; minimo $MIN_LIVRE_MB MB)."; exit 2
@@ -236,8 +256,15 @@ else
 fi
 
 criar_run() {
-  RUN=$(mktemp -d -p "$DEPLOY_DIR/tmp" run.XXXXXX) || { erro "Nao foi possivel criar diretorio temporario."; exit 1; }
-  caminho_sob "$DEPLOY_DIR/tmp" "$RUN" || { erro "Diretorio temporario fora do esperado: $RUN"; exit 1; }
+  local base
+  if [ "$DRY" = "1" ]; then
+    # dry-run: nada em APP_DIR/DEPLOY_DIR; area temporaria ao lado do ZIP (removida ao sair)
+    if [ "$MODO" = "deploy" ]; then base=${ZIP%/*}; [ "$base" != "$ZIP" ] || base=.; else base=${TMPDIR:-/tmp}; fi
+    RUN=$(mktemp -d -p "$base" run.XXXXXX) || { erro "Nao foi possivel criar diretorio temporario em $base."; exit 1; }
+  else
+    RUN=$(mktemp -d -p "$DEPLOY_DIR/tmp" run.XXXXXX) || { erro "Nao foi possivel criar diretorio temporario."; exit 1; }
+    caminho_sob "$DEPLOY_DIR/tmp" "$RUN" || { erro "Diretorio temporario fora do esperado: $RUN"; exit 1; }
+  fi
   META="$RUN/meta"
   STAGE="$RUN/stage"
   mkdir -p "$META" "$STAGE" "$META/man/.deploy" || { erro "Nao foi possivel preparar $RUN."; exit 1; }
@@ -293,13 +320,44 @@ limpar_cache() {
   return 0
 }
 
+# falha de chown/chmod: [AVISO] por arquivo, contada; o deploy termina com exit 6
+perm_falhou() {
+  AVISOS_PERM=$((AVISOS_PERM + 1))
+  aviso "$*"
+  registrar "AVISO: $*"
+}
+
+# ajustar_modo MODO ALVO / ajustar_dono DONO:GRUPO ALVO (ALVO dentro de APP_DIR)
+ajustar_modo() {
+  chmod "$1" -- "$2" 2>/dev/null || perm_falhou "chmod $1 falhou em ${2#"$APP_DIR"/}"
+  return 0
+}
+ajustar_dono() {
+  [ "$PULAR_CHOWN" = "1" ] && return 0
+  chown "$1" -- "$2" 2>/dev/null || perm_falhou "chown $1 falhou em ${2#"$APP_DIR"/}"
+  return 0
+}
+
 garantir_cache_dono() {
   # unico acesso a data/: garantir o dono de data/cache (se existir)
   [ "$PULAR_CHOWN" = "1" ] && return 0
   if [ -d "$APP_DIR/data/cache" ]; then
-    chown "$WEB_USUARIO:$WEB_GRUPO" "$APP_DIR/data/cache" 2>/dev/null || aviso "Nao foi possivel ajustar o dono de data/cache."
+    ajustar_dono "$WEB_USUARIO:$WEB_GRUPO" "$APP_DIR/data/cache"
   fi
   return 0
+}
+
+# encerra com 6 se alguma permissao falhou, senao com 0
+sair_ok() {
+  if [ "$AVISOS_PERM" -gt 0 ]; then
+    aviso "=============================================================="
+    aviso "$AVISOS_PERM falha(s) de dono/permissao (chown/chmod). O resultado foi aplicado e validado,"
+    aviso "mas confira com 'ls -l' os arquivos listados acima e corrija a mao. Saida 6."
+    aviso "=============================================================="
+    registrar "CONCLUIDO COM $AVISOS_PERM AVISO(S) de dono/permissao"
+    exit 6
+  fi
+  exit 0
 }
 
 # ---------------------------------------------------------------- backup
@@ -406,7 +464,7 @@ fluxo_rollback() {
   info "Seriam restaurados: $(wc -l < "$META/sel_M.txt" | tr -d ' ') arquivo(s); removidos: $(wc -l < "$META/sel_N.txt" | tr -d ' ') arquivo(s) novo(s)."
   sed 's/^/  restaura  /' "$META/sel_M.txt"
   sed 's/^/  remove    /' "$META/sel_N.txt"
-  if [ "$DRY" = "1" ]; then info "Dry-run: nada foi alterado."; exit 0; fi
+  if [ "$DRY" = "1" ]; then info "Dry-run: nada foi alterado em APP_DIR nem em DEPLOY_DIR (nada criado; temporario removido ao sair)."; exit 0; fi
 
   # backup "pre-rollback" para permitir desfazer o rollback
   : > "$META/pre_M.txt"; : > "$META/pre_N.txt"; : > "$META/pre_D.txt"
@@ -428,7 +486,7 @@ fluxo_rollback() {
     podar_backups
     registrar "ROLLBACK concluido para $alvo"
     info "Rollback concluido."
-    exit 0
+    sair_ok
   fi
   registrar "ROLLBACK FALHOU para $alvo"
   erro "Rollback falhou. Backup preservado: $bk (pre-rollback: $BACKUP_NOME). Intervencao manual necessaria."
@@ -474,6 +532,17 @@ fluxo_deploy() {
     if negado "$n"; then erro "Pacote contem caminho proibido: $n"; exit 2; fi
   done < "$META/nomes.txt"
 
+  local bytes_desc kb_run
+  bytes_desc=$(unzip -Zt -- "$ZIP" 2>/dev/null | awk 'NR==1{print $3}')
+  kb_run=$(livre_kb_de "$RUN")
+  if [[ ${bytes_desc:-} =~ ^[0-9]+$ && ${kb_run:-} =~ ^[0-9]+$ ]]; then
+    # extracao (1x) + backup (ate 1x) + folga de 10 MB
+    if [ $((kb_run / 1024)) -lt $((bytes_desc * 2 / 1048576 + 10)) ]; then
+      erro "Espaco livre insuficiente para extrair o pacote ($((kb_run / 1024)) MB livres; precisa ~$((bytes_desc * 2 / 1048576 + 10)) MB). Nada foi alterado."; exit 2
+    fi
+  else
+    aviso "Nao foi possivel medir o espaco para extrair o pacote."
+  fi
   unzip -q -o -- "$ZIP" -d "$STAGE" || { erro "Falha ao extrair o pacote."; exit 1; }
   if [ -n "$(find "$STAGE" -type l 2>/dev/null | head -n 1)" ]; then erro "Pacote contem link simbolico."; exit 2; fi
   (cd "$STAGE" && find . -type f | sed 's|^\./||' | LC_ALL=C sort) > "$META/todos.txt"
@@ -506,8 +575,13 @@ fluxo_deploy() {
   info "Resumo: $nm modificado(s), $nn novo(s), $ni identico(s), $ng ignorado(s)."
   sed 's/^/  modificado  /' "$META/M.txt"
   sed 's/^/  novo        /' "$META/N.txt"
+  if [ "$ng" != "0" ]; then
+    aviso "$ng arquivo(s) do pacote FORA das pastas aplicadas (app bin config public deploy db) NAO serao publicados:"
+    head -n 50 "$META/ignorados.txt" | sed 's/^/  ignorado    /'
+    [ "$ng" -le 50 ] || aviso "  ... e mais $((ng - 50)) ignorado(s)."
+  fi
   if [ "$nm" = "0" ] && [ "$nn" = "0" ]; then info "Nada a aplicar."; exit 0; fi
-  if [ "$DRY" = "1" ]; then info "Dry-run: nada foi alterado."; exit 0; fi
+  if [ "$DRY" = "1" ]; then info "Dry-run: nada foi alterado em APP_DIR nem em DEPLOY_DIR (nada criado: sem mkdir, lock, log ou backup; a extracao temporaria ao lado do zip e removida ao sair)."; exit 0; fi
 
   cat "$META/M.txt" "$META/N.txt" | LC_ALL=C sort > "$META/aplicar.txt"
   : > "$META/D.txt"
@@ -529,12 +603,12 @@ fluxo_deploy() {
   # donos e permissoes, so no que esta execucao tocou
   while IFS= read -r d; do
     [ -n "$d" ] || continue
-    chmod 755 -- "$APP_DIR/$d" 2>/dev/null
-    [ "$PULAR_CHOWN" = "1" ] || chown "root:$WEB_GRUPO" -- "$APP_DIR/$d" 2>/dev/null
+    ajustar_modo 755 "$APP_DIR/$d"
+    ajustar_dono "root:$WEB_GRUPO" "$APP_DIR/$d"
   done < "$META/D.txt"
   while IFS= read -r f; do
-    case "$f" in *.sh) chmod 755 -- "$APP_DIR/$f" 2>/dev/null ;; *) chmod 644 -- "$APP_DIR/$f" 2>/dev/null ;; esac
-    [ "$PULAR_CHOWN" = "1" ] || chown "root:$WEB_GRUPO" -- "$APP_DIR/$f" 2>/dev/null
+    case "$f" in *.sh) ajustar_modo 755 "$APP_DIR/$f" ;; *) ajustar_modo 644 "$APP_DIR/$f" ;; esac
+    ajustar_dono "root:$WEB_GRUPO" "$APP_DIR/$f"
   done < "$META/aplicar.txt"
   garantir_cache_dono
 
@@ -553,7 +627,7 @@ fluxo_deploy() {
 
   registrar "DEPLOY concluido sha256=$SHA M=$nm N=$nn backup=$BACKUP_NOME"
   info "Deploy concluido. Backup: $BACKUP_NOME"
-  exit 0
+  sair_ok
 }
 
 if [ "$MODO" = "rollback" ]; then fluxo_rollback; else fluxo_deploy; fi

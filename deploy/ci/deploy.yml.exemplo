@@ -9,7 +9,8 @@
 #   - sudo nao interativo: regra de sudoers restrita a UM script fixo, de
 #     propriedade do root, em /apps/_deploy/bin/ (nunca NOPASSWD curinga
 #     sobre /tmp). Ajuste deploy.ps1/aplicar_release.sh para esse fluxo
-#     antes de ativar.
+#     antes de ativar. O fluxo manual atual (nome GUID em /tmp e conferencia
+#     de tipo, dono e sha256 do script antes do sudo) NAO basta para NOPASSWD.
 #   - O alvo (usuario@servidor) fica em variavel/segredo do repositorio,
 #     nunca no YAML.
 #   - Proteja o environment "homologacao" com aprovacao manual.
