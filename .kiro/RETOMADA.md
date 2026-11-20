@@ -562,6 +562,35 @@ depois), `df -h /var` (esperado ~48%), `ls -lh /var/log/syslog` (deve ficar pequ
 **Aguardando terceiros:** chamado de Infra (agente ITS/RabbitMQ, ampliar `/var` e `/opt`, MTA, DigiCert).
 Sugestão de permissões do Kiro (`~/.kiro/settings/permissions.yaml`) apresentada ao usuário; ele ainda não pediu para criar.
 
+## ESTADO EM 20/11/2026 (pausa do usuário)
+
+- **GitHub (`origin/main`) em `95d2bbf`**: Visão Geral Fase 1 (`fe2473e`: modais, legendas "Como é calculado", Efficiency
+  Baseline Ratio) e script de deploy com correção do modo do script remoto (`95d2bbf`, chmod 600 antes de conferir).
+- **Fase 2 (Fator de Carga) PRONTA E APROVADA, NÃO COMMITADA** (aguarda o "pode" do usuário). Arquivos: `GraficosController.php`,
+  `ConfigRepository.php`, `VisaoGeralRepository.php`, `VisaoGeralCalculator.php`, `config/visao_geral.php`, `vw_overview.php` e
+  novo `bin/teste_fator_carga.php`. Relatório: `.agents/tasks/visao-geral-fase2-fator-carga.md` (8 perguntas ao usuário na seção 9).
+  Regras: capacidade do PAINEL (`ConfigRepository::getCapacity`, sem entrada = "sem dados"), disponibilidade 80%, baseline =
+  `media_produtividade_pi`, planejado = SPE do Sprint Planning, padrão SÓ VALOR (`incluir_sustentacao=false`), agregação por
+  soma de horas. Medido (dump 13/11): Secretaria SP 26.4.3 = 108,3% só valor (138,8% com sustentação); PI 101,3% (parcial).
+  Painel x banco divergem em 21 times (Secretaria 33 x 31,5 devs): FC com o Painel fica ~5 pontos abaixo do banco.
+  Verificação do orquestrador: lint 8.2 ok, 11/11 unitários, sem segredos; workflow relatou 27/27 em 7.4 e 8.2 e 15/15 endpoints
+  idênticos. Não validado: servidor real, como a edição do Painel chega ao servidor (`data/**` não é implantado; só
+  `config/capacity.php` chega), ramo de config inválida, `teste_job_noturno`.
+- **Deploy (script novo)**: a primeira tentativa de `-DryRun` falhou por modo 664 do script enviado (corrigido em `95d2bbf`). A
+  segunda tentativa foi barrada por working tree suja (a Fase 2 não commitada); contornar com `-DryRun -Forcar` (o pacote sai
+  do commit HEAD, não do disco) ou commitar a Fase 2 antes. Ainda NÃO houve deploy real da Fase 1 no servidor.
+  Antes de repetir, apagar `/tmp/jca_aplicar_*.sh` e `/tmp/jca_release_*.zip` do servidor (o usuário já apagou uma vez).
+- **Servidor (conferência de 19/11)**: extração #6 OK (exit 0, 104 s, 9.760 itens), `/var` 49%, syslog 11 MB, limpeza em nível 0,
+  sem erros novos. Chamado de Infra atendido; **aguardando só o upgrade do PHP** (`/var` ainda 4 GB).
+- **Decisões do usuário (20/11)**: Velocidade/Concluído mantém a regra atual (desconsiderar "fim da sprint"); Fator de Carga usa o
+  Sprint Planning; Efficiency: horas de itens sem SP ficam no numerador, Débito Técnico fica no h/SP, sem série por sprint;
+  Fase 1b (modais de itens por balde/dia/chamados) fica para depois.
+- **Próximos passos**: (1) usuário aprova a Fase 2 e responde as 8 perguntas (principalmente: sustentação no planejado, como o
+  Painel chega ao servidor, times sem entrada no Painel); (2) commit + push da Fase 2; (3) deploy real com `deploy.ps1`
+  (primeiro `-DryRun`); depois regenerar o cache no servidor (`aquecer_cache.php`); (4) após o upgrade do PHP, roteiro de
+  regressão (código já passa em 7.4 e 8.2); (5) Debt Load Ratio (SP; Débito Técnico + Suporte); (6) reconciliar Painel x
+  `times_composicao`; (7) decidir `deploy/excluir.txt` para os testes de `bin/` e corrigir `deploy/LEIAME.md:62`.
+
 ## BACKLOG PARA A v2.0 (decidido em 18/11/2026: amadurecer quando as interfaces do PEP forem portadas para o JCA)
 
 Material de base (todos em `.agents/tasks/`, fora do git): `auditoria-visao-geral-capacity-velocity.md` e
