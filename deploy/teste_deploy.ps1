@@ -299,7 +299,7 @@ Caso 'A6a' 'stubs: deploy = 1 scp (2 arquivos) + ssh de espaco + ssh -t com sudo
     Afirmar ($x.Ssh.Count -eq 2) ('chamadas ssh: ' + $x.Ssh.Count)
     Afirmar ($x.Ssh[0] -match 'df -Pk /tmp') ('1o ssh deveria medir /tmp: ' + $x.Ssh[0])
     Afirmar ($x.Ssh[1] -match '(^| )-t ' -and $x.Ssh[1] -match 'sudo bash /tmp/jca_aplicar_[0-9a-f]{32}\.sh') ('ssh: ' + $x.Ssh[1])
-    Afirmar ($x.Ssh[1] -match 'h=[0-9a-f]{64}; ' -and $x.Ssh[1] -match '-L \$f' -and $x.Ssh[1] -match '-O \$f' -and $x.Ssh[1] -match 'sha256sum') ('ssh sem checagem do script: ' + $x.Ssh[1])
+    Afirmar ($x.Ssh[1] -match 'h=[0-9a-f]{64}; ' -and $x.Ssh[1] -match '-L \$p' -and $x.Ssh[1] -match 'stat -c %U' -and $x.Ssh[1] -match 'chmod 600' -and $x.Ssh[1] -match 'sha256sum') ('ssh sem checagem do script: ' + $x.Ssh[1])
     Afirmar (-not ($x.Ssh[1] -match '--dry-run')) 'dry-run indevido'
     $x2 = Invoke-ComStubs @('-Alvo', 'usuario@servidor') @{ JCA_STUB_DF = '99999999' }
     $n1 = [regex]::Match($x.Scp[0], 'jca_aplicar_[0-9a-f]{32}').Value; $n2 = [regex]::Match($x2.Scp[0], 'jca_aplicar_[0-9a-f]{32}').Value
@@ -341,13 +341,22 @@ Write-Texto (Join-Path $StubsSh 'chown') "#!/bin/bash`necho `"chown `$*`" >> `"`
 Write-Texto (Join-Path $StubsSh 'chmod') "#!/bin/bash`necho `"chmod `$*`" >> `"`$JCA_STUB_LOG`"`nexec /usr/bin/chmod `"`$@`"`n"
 $StubsShU = if ($script:Cygpath) { (& $script:Cygpath -u $StubsSh) } else { $StubsSh.Replace('\', '/') }
 
+# stubs de stat/chmod (A7, A8): o NTFS nao guarda dono nem modo Unix
+$st = Join-Path $T 'stubs_a8'
+$null = New-Item -ItemType Directory -Path $st -Force
+Write-Texto (Join-Path $st 'stat') ("#!/bin/bash`nif [ `"`$1`" = -c ] && [ -n `"`${JCA_MODOF:-}`" ]; then`n  case `"`$2`" in`n    %U) if [ -n `"`${JCA_DONO:-}`" ]; then echo `"`$JCA_DONO`"; exit 0; fi ;;`n    %a) cat `"`$JCA_MODOF`"; exit 0 ;;`n  esac`nfi`nexec /usr/bin/stat `"`$@`"`n")
+Write-Texto (Join-Path $st 'chmod') ("#!/bin/bash`nif [ -n `"`${JCA_CHMOD_FALHA:-}`" ]; then exit 1; fi`nif [ `"`$1`" = 600 ] && [ -z `"`${JCA_CHMOD_NOOP:-}`" ]; then echo 600 > `"`$JCA_MODOF`"; fi`nexit 0`n")
+$stU = if ($script:Cygpath) { (& $script:Cygpath -u $st) } else { $st.Replace('\', '/') }
+
 Caso 'A7' 'comando remoto: executa com hash certo; recusa script adulterado (sem executar)' {
     $sc = Join-Path $T 'a7_script.sh'
     Write-Texto $sc "#!/bin/bash`necho EXECUTOU `$*`n"
     $hash = Get-Sha $sc
     $scM = ConvertTo-Misto $sc
     $cmdOk = & { . $Deploy; New-ComandoRemoto $scM $null $hash @('--teste') }
-    $pre = 'PATH="' + $StubsShU + ':$PATH"; '
+    $modo7 = Join-Path $T 'a7_modo.txt'; [System.IO.File]::WriteAllText($modo7, "755`n")
+    [Environment]::SetEnvironmentVariable('JCA_MODOF', (ConvertTo-Misto $modo7))
+    $pre = 'PATH="' + $stU + ':' + $StubsShU + ':$PATH"; '
     $salvo = [Environment]::GetEnvironmentVariable('MSYS_NO_PATHCONV')
     try {
         [Environment]::SetEnvironmentVariable('MSYS_NO_PATHCONV', '1')
@@ -359,11 +368,69 @@ Caso 'A7' 'comando remoto: executa com hash certo; recusa script adulterado (sem
         $o2 = (& $script:Bash -c ($pre + $cmdRuim) 2>&1) -join '|'; $rc2 = $LASTEXITCODE
         $cmdSem = & { . $Deploy; New-ComandoRemoto (ConvertTo-Misto (Join-Path $T 'nao_existe.sh')) $null $hash @('--teste') }
         $o3 = (& $script:Bash -c ($pre + $cmdSem) 2>&1) -join '|'; $rc3 = $LASTEXITCODE
-    } finally { [Environment]::SetEnvironmentVariable('MSYS_NO_PATHCONV', $salvo) }
+    } finally { [Environment]::SetEnvironmentVariable('MSYS_NO_PATHCONV', $salvo); [Environment]::SetEnvironmentVariable('JCA_MODOF', $null) }
     Afirmar ($rc1 -eq 0 -and $o1 -match 'EXECUTOU --teste') ("hash certo deveria executar: rc=$rc1 $o1")
     Afirmar $apagou 'script nao foi apagado no fim'
     Afirmar ($rc2 -eq 2 -and -not ($o2 -match 'EXECUTOU') -and $o2 -match 'ERRO') ("hash errado deveria abortar com 2 sem executar: rc=$rc2 $o2")
     Afirmar ($rc3 -eq 2 -and -not ($o3 -match 'EXECUTOU')) ("script ausente deveria abortar: rc=$rc3 $o3")
+} $true
+
+Caso 'A8' 'conferencia remota: modo 664/666 do scp e corrigido; ausente, link, dono, chmod, modo e hash dizem qual falhou' {
+    $modof = Join-Path $T 'a8_modo.txt'
+    $salvoNp = [Environment]::GetEnvironmentVariable('MSYS_NO_PATHCONV')
+    # roda New-ComandoRemoto no Git Bash; $Cfg: Modo, Dono, Hash, ChmodFalha, ChmodNoop, Ausente, Link, Zip, ZipDono
+    function Rodar([hashtable]$Cfg) {
+        $sc = Join-Path $T 'a8_script.sh'
+        Remove-Item -LiteralPath $sc -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath ($sc + '.lnk') -Force -ErrorAction SilentlyContinue
+        $real = Join-Path $T 'a8_real.sh'
+        Write-Texto $real "#!/bin/bash`necho EXECUTOU `$*`n"
+        $hash = Get-Sha $real
+        if ($Cfg.Link) {
+            [Environment]::SetEnvironmentVariable('MSYS', 'winsymlinks:lnk')
+            try { & $script:Bash -c ("cd '" + (ConvertTo-Misto $T) + "' && ln -s a8_real.sh a8_script.sh") 2>&1 | Out-Null } finally { [Environment]::SetEnvironmentVariable('MSYS', $null) }
+        } elseif (-not $Cfg.Ausente) {
+            Copy-Item -LiteralPath $real -Destination $sc
+        }
+        $zip = $null
+        if ($Cfg.Zip) { $zp = Join-Path $T 'a8_pacote.zip'; Write-Texto $zp "zip`n"; $zip = ConvertTo-Misto $zp }
+        $hashUsado = if ($Cfg.Hash) { $Cfg.Hash } else { $hash }
+        $cmd = & { . $Deploy; New-ComandoRemoto ((ConvertTo-Misto $T) + '/a8_script.sh') $zip $hashUsado @('--teste') }
+        [System.IO.File]::WriteAllText($modof, "$($Cfg.Modo)`n")
+        $vars = @{ JCA_MODOF = (ConvertTo-Misto $modof); JCA_DONO = $Cfg.Dono; JCA_CHMOD_FALHA = $Cfg.ChmodFalha; JCA_CHMOD_NOOP = $Cfg.ChmodNoop; MSYS_NO_PATHCONV = '1' }
+        if ($Cfg.Link) { $vars.MSYS = 'winsymlinks:lnk' }
+        foreach ($k in $vars.Keys) { [Environment]::SetEnvironmentVariable($k, $vars[$k]) }
+        try {
+            $o = (& $script:Bash -c ('PATH="' + $stU + ':' + $StubsShU + ':$PATH"; ' + $cmd) 2>&1) -join '|'
+            $rc = $LASTEXITCODE
+        } finally {
+            foreach ($k in $vars.Keys) { [Environment]::SetEnvironmentVariable($k, $null) }
+            [Environment]::SetEnvironmentVariable('MSYS_NO_PATHCONV', $salvoNp)
+        }
+        return @{ Rc = $rc; Saida = $o; Sumiu = -not (Test-Path -LiteralPath $sc) }
+    }
+    foreach ($modo in '664', '666') {
+        $r = Rodar @{ Modo = $modo }
+        Afirmar ($r.Rc -eq 0 -and $r.Saida -match 'EXECUTOU --teste') ("modo ${modo}: deveria executar: rc=$($r.Rc) $($r.Saida)")
+        Afirmar ($r.Saida -match "modo original do script remoto era $modo, ajustado para 600") ("modo ${modo}: sem aviso: $($r.Saida)")
+        Afirmar $r.Sumiu "modo ${modo}: script nao foi apagado"
+    }
+    $r = Rodar @{ Modo = '600'; Zip = $true }
+    Afirmar ($r.Rc -eq 0 -and $r.Saida -match 'EXECUTOU' -and -not ($r.Saida -match 'AVISO')) ("modo 600 com zip: rc=$($r.Rc) $($r.Saida)")
+    $r = Rodar @{ Modo = '664'; Dono = 'outro' }
+    Afirmar ($r.Rc -eq 2 -and $r.Saida -match 'dono do script remoto outro, esperado \S+\.' -and -not ($r.Saida -match 'EXECUTOU')) ("dono: rc=$($r.Rc) $($r.Saida)")
+    $r = Rodar @{ Modo = '664'; Zip = $true; Dono = 'outro' }
+    Afirmar ($r.Rc -eq 2 -and $r.Saida -match 'dono do script remoto outro' -and -not ($r.Saida -match 'EXECUTOU')) ("dono com zip: rc=$($r.Rc) $($r.Saida)")
+    $r = Rodar @{ Modo = '664'; Link = $true }
+    Afirmar ($r.Rc -eq 2 -and $r.Saida -match 'script remoto e link simbolico' -and -not ($r.Saida -match 'EXECUTOU')) ("link: rc=$($r.Rc) $($r.Saida)")
+    $r = Rodar @{ Modo = '664'; Hash = ('0' * 64) }
+    Afirmar ($r.Rc -eq 2 -and $r.Saida -match 'hash do script remoto obtido [0-9a-f]{12} esperado 000000000000\. ' -and -not ($r.Saida -match 'EXECUTOU')) ("hash: rc=$($r.Rc) $($r.Saida)")
+    $r = Rodar @{ Modo = '664'; Ausente = $true }
+    Afirmar ($r.Rc -eq 2 -and $r.Saida -match 'script remoto ausente' -and -not ($r.Saida -match 'EXECUTOU')) ("ausente: rc=$($r.Rc) $($r.Saida)")
+    $r = Rodar @{ Modo = '664'; ChmodFalha = '1' }
+    Afirmar ($r.Rc -eq 2 -and $r.Saida -match 'chmod 600 falhou em \S+, modo atual 664' -and -not ($r.Saida -match 'EXECUTOU')) ("chmod falhou: rc=$($r.Rc) $($r.Saida)")
+    $r = Rodar @{ Modo = '664'; ChmodNoop = '1' }
+    Afirmar ($r.Rc -eq 2 -and $r.Saida -match 'modo do script remoto 664, esperado 600 apos chmod' -and -not ($r.Saida -match 'EXECUTOU')) ("modo apos chmod: rc=$($r.Rc) $($r.Saida)")
 } $true
 
 Caso 'A6d' 'alvo invalido e recusado sem chamar ssh/scp' {

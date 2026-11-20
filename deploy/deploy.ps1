@@ -309,11 +309,32 @@ function Get-MensagemCodigo([int]$Codigo) {
 # e arquivo regular, nao e link simbolico, pertence ao usuario do deploy, nao e
 # gravavel por grupo/outros e tem o sha256 calculado aqui no Windows.
 # Sem aspas duplas (o PowerShell 5.1 as remove ao chamar programas nativos).
+#
+# Causa do erro da primeira execucao real: o scp cria o arquivo com o modo local
+# filtrado pelo umask do servidor (0002 => 664). A conferencia antiga exigia
+# "sem escrita por grupo/outros" ANTES de qualquer ajuste e reprovava esse 664.
+# Agora, ja que o arquivo pertence ao usuario do deploy (conferido antes),
+# o proprio usuario faz chmod 600 e SO ENTAO o modo e conferido (tem de ser 600).
+# Em /tmp (sticky) um arquivo 600 do usuario nao pode ser trocado nem lido por
+# outros: entre a conferencia do hash e o sudo so o proprio usuario ou o root
+# poderiam alterar o arquivo, o que dispensa copia intermediaria (e nada e criado
+# em /apps, nem em dry-run). O nome tem GUID, entao o chmod nao e alcancavel por link
+# pre-criado (e o link e recusado antes do chmod).
+# Cada falha diz qual condicao reprovou (ausente, link, tipo, dono, chmod, modo, hash).
 function New-ComandoRemoto([string]$RemotoScript, [string]$RemotoZip, [string]$ShaScript, [string[]]$Opcoes) {
-    $verif = 'f=' + $RemotoScript + '; h=' + $ShaScript + '; ' +
-             '[ -f $f ] && [ ! -L $f ] && [ -O $f ] && [ -z $(find $f -maxdepth 0 -perm /022) ] && ' +
-             '[ $(sha256sum -- $f | awk ''{print $1}'') = $h ] || ' +
-             '{ echo ERRO: script remoto ausente, link, de outro dono, gravavel por outros ou com hash diferente. Nada foi executado. >&2; exit 2; }; '
+    $chk = 'chk() { n=$1; p=$2; ' +
+           'if [ -L $p ]; then echo ERRO: $n remoto e link simbolico: $p. Nada foi executado. >&2; exit 2; fi; ' +
+           'if [ ! -e $p ]; then echo ERRO: $n remoto ausente: $p. Nada foi executado. >&2; exit 2; fi; ' +
+           'if [ ! -f $p ]; then echo ERRO: $n remoto nao e arquivo regular: $p. Nada foi executado. >&2; exit 2; fi; ' +
+           'o=$(stat -c %U $p); if [ x$o != x$u ]; then echo ERRO: dono do $n remoto $o, esperado $u. Nada foi executado. >&2; exit 2; fi; ' +
+           'm0=$(stat -c %a $p); ' +
+           'chmod 600 $p || { echo ERRO: chmod 600 falhou em $p, modo atual $m0. Nada foi executado. >&2; exit 2; }; ' +
+           'm=$(stat -c %a $p); if [ x$m != x600 ]; then echo ERRO: modo do $n remoto $m, esperado 600 apos chmod. Nada foi executado. >&2; exit 2; fi; ' +
+           'if [ x$m0 != x600 ]; then echo AVISO: modo original do $n remoto era $m0, ajustado para 600. >&2; fi; }; '
+    $verif = 'f=' + $RemotoScript + '; h=' + $ShaScript + '; u=$(id -un); ' + $chk + 'chk script $f; '
+    if ($RemotoZip) { $verif += 'chk pacote ' + $RemotoZip + '; ' }
+    $verif += 'g=$(sha256sum -- $f | cut -c1-64); ' +
+              'if [ x$g != x$h ]; then echo ERRO: hash do script remoto obtido $(echo $g | cut -c1-12) esperado $(echo $h | cut -c1-12). Nada foi executado. >&2; exit 2; fi; '
     $limpeza = 'rm -f ' + $RemotoScript + $(if ($RemotoZip) { ' ' + $RemotoZip } else { '' })
     return ($verif + 'sudo bash ' + $RemotoScript + ' ' + ($Opcoes -join ' ') + '; rc=$?; ' + $limpeza + '; exit $rc')
 }
