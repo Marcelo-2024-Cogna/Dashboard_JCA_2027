@@ -248,6 +248,77 @@
     initFilters();
   });
 
+  // ── Modal de detalhe (<dialog> nativo, um só, criado sob demanda) ────────
+  // abrir({ titulo, subtitulo, construir(corpo), origem }): todo texto entra por
+  // textContent (quem chama monta o corpo com DOM). Esc, botão Fechar e clique no
+  // fundo fecham; o foco volta a 'origem' se ela ainda estiver no DOM.
+  const Modal = (function () {
+    let dlg = null, h3 = null, sub = null, corpo = null, origem = null;
+
+    function criar() {
+      dlg = document.createElement('dialog');
+      dlg.id = 'dlg-detalhe';
+      dlg.className = 'modal';
+      dlg.setAttribute('aria-labelledby', 'dlg-detalhe-titulo');
+
+      const head = document.createElement('header');
+      head.className = 'modal-head';
+      const tit = document.createElement('div');
+      h3 = document.createElement('h3');
+      h3.id = 'dlg-detalhe-titulo';
+      h3.tabIndex = -1;
+      sub = document.createElement('div');
+      sub.className = 'pr-sub';
+      tit.append(h3, sub);
+      const x = document.createElement('button');
+      x.type = 'button';
+      x.className = 'btn btn-ghost modal-x';
+      x.setAttribute('aria-label', 'Fechar');
+      x.textContent = '✕';
+      x.addEventListener('click', fechar);
+      head.append(tit, x);
+
+      corpo = document.createElement('div');
+      corpo.className = 'modal-body';
+
+      const foot = document.createElement('footer');
+      foot.className = 'modal-foot';
+      const f = document.createElement('button');
+      f.type = 'button';
+      f.className = 'btn';
+      f.textContent = 'Fechar';
+      f.addEventListener('click', fechar);
+      foot.appendChild(f);
+
+      dlg.append(head, corpo, foot);
+      dlg.addEventListener('click', ev => { if (ev.target === dlg) fechar(); });
+      dlg.addEventListener('close', () => {
+        corpo.textContent = '';
+        const o = origem; origem = null;
+        if (o && document.body.contains(o) && typeof o.focus === 'function') o.focus();
+      });
+      document.body.appendChild(dlg);
+    }
+
+    function abrir(opts) {
+      opts = opts || {};
+      if (!dlg) criar();
+      if (dlg.open) dlg.close();
+      origem = opts.origem || document.activeElement;
+      h3.textContent = opts.titulo || '';
+      sub.textContent = opts.subtitulo || '';
+      sub.hidden = !opts.subtitulo;
+      corpo.textContent = '';
+      if (typeof opts.construir === 'function') opts.construir(corpo);
+      dlg.showModal();
+      h3.focus();
+    }
+
+    function fechar() { if (dlg && dlg.open) dlg.close(); }
+
+    return { abrir, fechar };
+  })();
+
   // Exporta para as views usarem
-  window.App = { Api, Filters, Util, BASE };
+  window.App = { Api, Filters, Util, BASE, Modal };
 })();

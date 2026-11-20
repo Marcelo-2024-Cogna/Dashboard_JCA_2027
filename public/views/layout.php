@@ -31,7 +31,7 @@ $menuMain = ['overview','velocidade','cycle-time','previsibilidade','plan-real',
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title><?= htmlspecialchars($pageTitle) ?> · Métricas Jeito Cogna Ágil</title>
-  <link rel="stylesheet" href="<?= $base ?>/assets/css/app.css" />
+  <link rel="stylesheet" href="<?= $base ?>/assets/css/app.css?v=<?= (int) @filemtime(__DIR__ . '/../assets/css/app.css') ?>" />
   <!-- Base URL + libs + núcleo JS carregados ANTES do conteúdo, para que os
        scripts inline das views já encontrem window.App e window.Charts. -->
   <script>
@@ -45,9 +45,9 @@ $menuMain = ['overview','velocidade','cycle-time','previsibilidade','plan-real',
     window.VALUE_TYPES = <?= json_encode($valueTypes ?? []) ?>;
   </script>
   <script src="<?= $base ?>/assets/vendor/chart.umd.min.js"></script>
-  <script src="<?= $base ?>/assets/js/charts.js"></script>
-  <script src="<?= $base ?>/assets/js/app.js"></script>
-  <script src="<?= $base ?>/assets/js/extracao.js"></script>
+  <script src="<?= $base ?>/assets/js/charts.js?v=<?= (int) @filemtime(__DIR__ . '/../assets/js/charts.js') ?>"></script>
+  <script src="<?= $base ?>/assets/js/app.js?v=<?= (int) @filemtime(__DIR__ . '/../assets/js/app.js') ?>"></script>
+  <script src="<?= $base ?>/assets/js/extracao.js?v=<?= (int) @filemtime(__DIR__ . '/../assets/js/extracao.js') ?>"></script>
 </head>
 <body>
 <div class="layout">

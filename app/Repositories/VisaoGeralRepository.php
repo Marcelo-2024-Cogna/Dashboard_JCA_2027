@@ -170,7 +170,7 @@ class VisaoGeralRepository
         $gadgets = $this->montarGadgets(
             $universeRows, $rows, $foco, $isPi, $refsFoco, $modoPi, $catalogo, $hoje,
             $sprintsFechadas, $porSprint, $pisCorrente, $periodo,
-            $velocidadeResp, $keys, (int) $pi['id'], $avisos
+            $velocidadeResp, $keys, (int) $pi['id'], $avisos, $times
         );
 
         return $this->montar($ctx, $hoje, $modoSolicitado, $modoEfetivo, $janela, $extracao, $universo['times'], $universo['itens_pi'], $gadgets, $avisos, $ctx['times_sem_extracao']);
@@ -203,6 +203,29 @@ class VisaoGeralRepository
             ],
             'gadgets'  => $gadgets,
             'avisos'   => $avisos,
+            'metodologia' => $this->metodologia(),
+        ];
+    }
+
+    /** Regras de classificação lidas dos arquivos de config (para as legendas da tela). */
+    private function metodologia(): array
+    {
+        $baseline = require dirname(__DIR__, 2) . '/config/baseline.php';
+        return [
+            'done_statuses'       => array_values($baseline['done_statuses'] ?? []),
+            'tipos_valor'         => array_values($baseline['value_delivery_types'] ?? []),
+            'tipos_sustentacao'   => array_values($this->tiposSustentacao),
+            'status'              => [
+                'cancelado'    => array_values($this->statusCfg['cancelado'] ?? []),
+                'bloqueado'    => array_values($this->statusCfg['bloqueado'] ?? []),
+                'backlog'      => array_values($this->statusCfg['backlog'] ?? []),
+                'em_andamento' => array_values($this->statusCfg['em_andamento'] ?? []),
+            ],
+            'chamados'            => [
+                'janela_dias' => (int) ($this->config['janela_chamados_dias'] ?? 30),
+                'limite_dias' => (int) ($this->config['limite_chamado_dias'] ?? 2),
+            ],
+            'limite_linhas_lista' => (int) ($this->config['max_linhas_lista'] ?? 500),
         ];
     }
 
@@ -244,7 +267,7 @@ class VisaoGeralRepository
     private function montarGadgets(
         array $rows, array $todasRows, array $foco, bool $isPi, array $refsFoco, array $modoPi, array $catalogo, string $hoje,
         array $sprintsFechadas, array $porSprint, bool $piCorrente, ?array $periodo,
-        array $velocidadeResp, array $keys, int $piId, array &$avisos
+        array $velocidadeResp, array $keys, int $piId, array &$avisos, array $times = []
     ): array {
         $cancelado = $this->statusCfg['cancelado'] ?? ['Cancelado'];
         $maxLista  = (int) ($this->config['max_linhas_lista'] ?? 500);
@@ -317,6 +340,18 @@ class VisaoGeralRepository
         // ── G6 Lista da sprint anterior ─────────────────────────────────
         $listaSprintAnterior = $this->gadgetListaSprintAnterior($rows, $foco, $piId, $keys);
 
+        // ── Efficiency Baseline Ratio ───────────────────────────────────
+        $nomesTimes = [];
+        foreach ($times as $t) {
+            $nomesTimes[$t['projeto_key']] = $t['time'];
+        }
+        $efficiency = VisaoGeralCalculator::efficiencyBaseline(
+            $rows, $refsFoco, $foco['sprints_pi'], $this->produtividade->referenciaPlanejamento($keys),
+            $nomesTimes, $escopoLabel, $rotuloEscopo
+        );
+        $efficiency['classe'] = 'exato';
+        $efficiency['aviso_multissprint_pct'] = (float) ($this->config['efficiency']['aviso_multissprint_pct'] ?? 10);
+
         // ── Avisos derivados ──────────────────────────────────────────────
         $naoMapeados = $andamento['diagnosticos']['status_nao_mapeados'] ?? [];
         if (is_array($naoMapeados) && $naoMapeados !== []) {
@@ -344,6 +379,7 @@ class VisaoGeralRepository
             'tempo_status'          => $tempoStatus,
             'chamados'              => $chamados,
             'lista_sprint_anterior' => $listaSprintAnterior,
+            'efficiency_baseline'   => $efficiency,
             'sustentacao'           => [
                 'estado' => 'aguardando_modulo',
                 'classe' => 'aguardando_modulo',
@@ -775,6 +811,7 @@ class VisaoGeralRepository
             'tempo_status'          => $vazioAprox,
             'chamados'              => $vazioAprox,
             'lista_sprint_anterior' => $vazioExato,
+            'efficiency_baseline'   => $vazioExato,
             'sustentacao'           => [
                 'estado' => 'aguardando_modulo',
                 'classe' => 'aguardando_modulo',

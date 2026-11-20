@@ -552,6 +552,163 @@ class VisaoGeralCalculator
         ];
     }
 
+    /**
+     * Efficiency Baseline Ratio: horas gastas ÷ SP entregues (só entrega de valor) contra o
+     * baseline h/SP de cada time (times_composicao.media_produtividade_pi), ponderado por SP.
+     * Mesma população da produtividade_ate_agora: categoria 'valor', entregue = 1, sprint_ref nas refs.
+     * Estado de hoje (não há histórico de status). Função pura, sem banco.
+     *
+     * @param list<array>          $rows       Q1 (universo valor + sustentação).
+     * @param list<string>         $refs       sprint_ref da janela.
+     * @param list<array>          $sprintsPi  {nome,data_fim,status,...}
+     * @param array<string,float>  $baselines  projeto_key => h/SP
+     * @param array<string,string> $nomesTimes projeto_key => nome do time
+     */
+    public static function efficiencyBaseline(
+        array $rows, array $refs, array $sprintsPi, array $baselines, array $nomesTimes, string $escopo, ?string $rotulo
+    ): array {
+        $refSet = array_flip($refs);
+        $fimDe = [];
+        $statusDe = [];
+        foreach ($sprintsPi as $s) {
+            $fimDe[$s['nome']] = $s['data_fim'] ?? null;
+            $statusDe[$s['nome']] = $s['status'] ?? null;
+        }
+        $parcial = false;
+        foreach ($refs as $n) {
+            if (($statusDe[$n] ?? null) !== 'fechada') {
+                $parcial = true;
+            }
+        }
+
+        $tot = ['h' => 0.0, 'p' => 0.0, 'n' => 0];
+        $semSp = ['n' => 0, 'h' => 0.0];
+        $debito = ['n' => 0, 'p' => 0.0, 'h' => 0.0];
+        $multi = ['n' => 0, 'p' => 0.0, 'h' => 0.0];
+        $apos = ['n' => 0, 'p' => 0.0];
+        $semData = 0;
+        $porKey = [];
+
+        foreach ($rows as $r) {
+            if (($r['categoria'] ?? null) !== 'valor' || (int) ($r['entregue'] ?? 0) !== 1) {
+                continue;
+            }
+            $ref = $r['sprint_ref'] ?? null;
+            if ($ref === null || !isset($refSet[$ref])) {
+                continue;
+            }
+            $h = (float) ($r['tempo_gasto_horas'] ?? 0);
+            $p = (float) ($r['story_points'] ?? 0);
+            $key = (string) ($r['projeto_key'] ?? '');
+
+            $tot['h'] += $h; $tot['p'] += $p; $tot['n']++;
+            if (!isset($porKey[$key])) {
+                $porKey[$key] = ['h' => 0.0, 'p' => 0.0, 'n' => 0];
+            }
+            $porKey[$key]['h'] += $h; $porKey[$key]['p'] += $p; $porKey[$key]['n']++;
+
+            if (($r['story_points'] ?? null) === null) {
+                $semSp['n']++; $semSp['h'] += $h;
+            }
+            if (($r['tipo_item'] ?? null) === 'Débito Técnico') {
+                $debito['n']++; $debito['p'] += $p; $debito['h'] += $h;
+            }
+            if (count(SprintRef::todas($r['sprint'] ?? null)) > 1) {
+                $multi['n']++; $multi['p'] += $p; $multi['h'] += $h;
+            }
+            if (($statusDe[$ref] ?? null) === 'fechada') {
+                $dc = self::dataConclusao($r);
+                $fim = $fimDe[$ref] ?? null;
+                if ($dc === null) {
+                    $semData++;
+                } elseif ($fim !== null && $dc > substr((string) $fim, 0, 10)) {
+                    $apos['n']++; $apos['p'] += $p;
+                }
+            }
+        }
+
+        $base = [
+            'classe'        => 'exato',
+            'escopo'        => $escopo,
+            'rotulo_escopo' => $rotulo,
+            'sprints'       => array_values($refs),
+            'parcial'       => $parcial,
+        ];
+        if ($tot['n'] === 0) {
+            return $base + [
+                'estado' => 'vazio',
+                'motivo' => 'Nenhum item de valor entregue na janela.',
+            ];
+        }
+
+        $hBase = 0.0; $hComBase = 0.0; $pComBase = 0.0; $pSemBase = 0.0;
+        $semBaseline = [];
+        $porTime = [];
+        foreach ($porKey as $key => $a) {
+            $b = $baselines[$key] ?? null;
+            $temBase = $b !== null && (float) $b > 0;
+            if ($temBase) {
+                $hComBase += $a['h']; $pComBase += $a['p']; $hBase += $a['p'] * (float) $b;
+            } else {
+                $pSemBase += $a['p'];
+                $semBaseline[] = $nomesTimes[$key] ?? $key;
+            }
+            $esperado = $temBase ? $a['p'] * (float) $b : 0.0;
+            $porTime[] = [
+                'projeto_key' => $key,
+                'time'        => $nomesTimes[$key] ?? $key,
+                'horas'       => round($a['h'], 2),
+                'pontos'      => round($a['p'], 2),
+                'h_por_sp'    => $a['p'] > 0 ? round($a['h'] / $a['p'], 2) : null,
+                'baseline'    => $temBase ? round((float) $b, 2) : null,
+                'razao_pct'   => ($temBase && $esperado > 0) ? round($a['h'] / $esperado * 100, 1) : null,
+                'itens'       => $a['n'],
+            ];
+        }
+        usort($porTime, static function (array $x, array $y): int {
+            return [-$x['pontos'], $x['projeto_key']] <=> [-$y['pontos'], $y['projeto_key']];
+        });
+        sort($semBaseline);
+
+        $razao = ($hBase > 0 && $pComBase > 0) ? $hComBase / $hBase * 100 : null;
+        $semSpAlt = ($tot['p'] > 0) ? round(($tot['h'] - $semSp['h']) / $tot['p'], 2) : null;
+
+        return $base + [
+            'estado'            => 'ok',
+            'horas'             => round($tot['h'], 2),
+            'pontos'            => round($tot['p'], 2),
+            'h_por_sp'          => $tot['p'] > 0 ? round($tot['h'] / $tot['p'], 2) : null,
+            'itens'             => $tot['n'],
+            'baseline_h_por_sp' => $razao !== null ? round($hBase / $pComBase, 2) : null,
+            'razao_pct'         => $razao !== null ? round($razao, 1) : null,
+            'variacao_pct'      => $razao !== null ? round($razao - 100, 1) : null,
+            'cobertura_baseline' => [
+                'pontos_com_baseline' => round($pComBase, 2),
+                'pontos_sem_baseline' => round($pSemBase, 2),
+                'times_sem_baseline'  => $semBaseline,
+            ],
+            'sem_sp' => [
+                'itens'    => $semSp['n'],
+                'horas'    => round($semSp['h'], 2),
+                'h_por_sp_sem_itens_sem_sp' => $semSpAlt,
+            ],
+            'debito_tecnico' => [
+                'itens'  => $debito['n'],
+                'pontos' => round($debito['p'], 2),
+                'horas'  => round($debito['h'], 2),
+            ],
+            'multissprint' => [
+                'itens'  => $multi['n'],
+                'horas'  => round($multi['h'], 2),
+                'pontos' => round($multi['p'], 2),
+            ],
+            'concluidos_apos_fim_sprint' => ['itens' => $apos['n'], 'pontos' => round($apos['p'], 2)],
+            'sem_data_conclusao'         => ['itens' => $semData],
+            'por_time' => $porTime,
+            'regra'    => 'Horas gastas ÷ SP dos itens de valor aceitos (estado de hoje) contra o h/SP médio de cada time, ponderado pelo SP entregue.',
+        ];
+    }
+
     // ════════════════════════════════════════════════════════════════════
     // D.5 G7 — Burndown (só entrega de valor)
     // ════════════════════════════════════════════════════════════════════

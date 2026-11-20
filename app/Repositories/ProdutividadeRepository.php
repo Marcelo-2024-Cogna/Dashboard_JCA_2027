@@ -386,7 +386,7 @@ class ProdutividadeRepository
     }
 
     /** @return array<string,float> projeto_key → h/ponto planejado (Velocity) */
-    private function referenciaPlanejamento(array $keys): array
+    public function referenciaPlanejamento(array $keys): array
     {
         if ($keys === []) return [];
         $par = [];

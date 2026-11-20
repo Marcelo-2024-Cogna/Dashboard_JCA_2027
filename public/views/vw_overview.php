@@ -150,6 +150,282 @@
     thead.appendChild(trh); tb.appendChild(thead);
   }
 
+  // ── Modais (App.Modal): botão real é o caminho por teclado; clique no ──
+  // gráfico/KPI é só atalho. Todo texto do servidor entra por textContent.
+  function botaoModal(rotulo, abrirFn) {
+    const b = el('button', 'btn vg-ajuda', rotulo);
+    b.type = 'button';
+    b.setAttribute('aria-haspopup', 'dialog');
+    b.addEventListener('click', () => abrirFn(b));
+    return b;
+  }
+  // KPI com botão equivalente; clicar no cartão também abre (atalho de mouse).
+  function kpiAcao(k, rotulo, abrirFn) {
+    const b = botaoModal(rotulo, abrirFn);
+    b.style.marginTop = '6px';
+    k.appendChild(b);
+    k.style.cursor = 'pointer';
+    k.addEventListener('click', ev => { if (ev.target !== b) abrirFn(b); });
+    return k;
+  }
+  // Tabela dentro do corpo do modal. Célula: texto ou { t, title }.
+  function tabelaModal(corpo, legenda, cols, linhas, minWidth) {
+    const { wrap, tb } = tabelaBase(null, legenda, minWidth);
+    cabecalho(tb, cols);
+    const tbody = el('tbody');
+    linhas.forEach(l => {
+      const tr = el('tr');
+      l.forEach((c, i) => {
+        const obj = c != null && typeof c === 'object';
+        const td = el('td', cols[i][1] || null, obj ? c.t : c);
+        if (obj && c.title) td.title = c.title;
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    tb.appendChild(tbody);
+    corpo.appendChild(wrap);
+  }
+  // Status que contam como pronto. O endpoint ainda não envia a lista
+  // (metodologia entra em outro passo); usa-a quando existir.
+  function statusDone(d) {
+    const m = d.metodologia && d.metodologia.done_statuses;
+    return Array.isArray(m) ? m : ['Aceito', 'Em produção', 'Pendente de Produção'];
+  }
+
+  // ── Legendas "Como é calculado" ───────────────────────────────────────
+  // Cada entrada descreve o que o código faz hoje. Listas de Done, tipos e
+  // status vêm de d.metodologia (nunca digitadas aqui).
+  const lista = a => (Array.isArray(a) && a.length ? a.join(', ') : '—');
+  const sinal = v => (v == null ? '—' : (v > 0 ? '+' : (v < 0 ? '−' : '')) + nf1.format(Math.abs(v)) + '%');
+  const seta  = v => (v == null || v === 0 ? '=' : (v > 0 ? '▲' : '▼'));
+  const LEGENDAS = {
+    andamento: (d, m) => ({
+      titulo: 'Andamento',
+      fonte: 'Extração do Jira (view vw_item), estado dos itens hoje.',
+      unidade: 'Story Points (SP) e quantidade de itens.',
+      formula: 'Cada balde é a soma dos SP dos itens do escopo naquele status. Total = backlog + em andamento + bloqueados + aceitos.',
+      entra: 'Tipos de valor: ' + lista(m.tipos_valor) + '. Tipos de sustentação: ' + lista(m.tipos_sustentacao) + '.',
+      naoEntra: 'Itens cancelados ficam fora do total (aparecem em Cancelados).',
+      done: lista(m.done_statuses),
+      observacoes: [
+        'Backlog: ' + lista((m.status || {}).backlog) + '. Bloqueados: ' + lista((m.status || {}).bloqueado) + '.',
+        'Em andamento: ' + lista((m.status || {}).em_andamento) + '. Inclui itens já prontos e ainda sem aceite; pode diferir do filtro do Jira.',
+      ],
+    }),
+    aceitos: (d, m) => {
+      const r = (d.gadgets.andamento || {}).reconciliacao || {};
+      const obs = ['Estado de hoje, não do fim da sprint.'];
+      if (r.aceitos_local_sp != null) {
+        obs.push('Conferência: cálculo local ' + fmt(r.aceitos_local_sp) + ' SP · Velocidade ' + fmt(r.aceitos_velocidade_sp) + ' SP · resíduo ' + fmt(r.residuo_aceitos) + ' SP.');
+      }
+      return {
+        titulo: 'Aceitos',
+        fonte: 'Extração do Jira (view vw_item).',
+        unidade: 'Story Points (SP).',
+        formula: 'Soma dos SP atuais dos itens cujo status está na regra de Done.',
+        entra: 'Valor e sustentação (inclui Sustentação e Suporte).',
+        naoEntra: 'Itens fora de Done. O status "Concluído" não é Done.',
+        done: lista(m.done_statuses),
+        observacoes: obs,
+      };
+    },
+    sprint_anterior: (d, m) => ({
+      titulo: 'Dados da sprint anterior',
+      fonte: 'Extração do Jira (view vw_item), estado dos itens hoje.',
+      unidade: 'Story Points (SP) e itens.',
+      formula: 'Alocados = itens que passaram pela sprint. Aceitos = alocados em Done. Não aceitos sem continuidade = fora de Done e sem transbordo. Transbordo = itens que seguiram para a sprint seguinte.',
+      entra: 'Valor e sustentação.',
+      naoEntra: 'Itens cancelados.',
+      done: lista(m.done_statuses),
+      observacoes: ['Não entregue no transbordo = SP do transbordo que ainda não está em Done.'],
+    }),
+    cycle_time: (d, m) => ({
+      titulo: 'Cycle time por status',
+      fonte: 'Datas de fluxo do Jira (início e fim de fluxo, homologação e implantação).',
+      unidade: 'Dias úteis.',
+      formula: 'Média, por fase, do tempo entre as datas de início e fim da fase nos itens entregues. Lead time = do início do fluxo ao fim.',
+      entra: 'Itens de valor entregues na janela (' + lista(m.tipos_valor) + ').',
+      naoEntra: 'Ideação não é contada. Sustentação fica fora.',
+      done: lista(m.done_statuses),
+      observacoes: ['Bate com a tela Lead Time (bloco de sprints fechadas).'],
+    }),
+    team_velocity: (d, m) => ({
+      titulo: 'Team Velocity',
+      fonte: 'Extração do Jira e baseline do PI Planning.',
+      unidade: 'Story Points (SP).',
+      formula: 'Concluído = SP atuais dos itens em Done, atribuídos à sprint_ref (a maior sprint do item). Escopo inicial = baseline do PI Planning.',
+      entra: 'Itens de valor com sprint na PI.',
+      naoEntra: 'Sustentação. O status "Concluído" não é Done.',
+      done: lista(m.done_statuses),
+      observacoes: [
+        'O escopo inicial é o baseline do PI Planning, não o início da sprint. Pode divergir do gadget do Jira.',
+        'Estado de hoje, não do fim da sprint.',
+      ],
+    }),
+    burndown: (d, m) => ({
+      titulo: 'Burndown',
+      fonte: 'Datas de fluxo do Jira (não há burndown nativo de sprint).',
+      unidade: 'Story Points (SP) por dia.',
+      formula: 'Real = escopo da sprint menos os SP concluídos até cada dia, pela data de conclusão. Ideal = queda linear até o fim da sprint.',
+      entra: 'Itens de valor da sprint.',
+      naoEntra: 'Sustentação (mostrada à parte no diagnóstico).',
+      done: lista(m.done_statuses),
+      observacoes: ['Aproximado: a data de conclusão vem das datas de fluxo, sem histórico de status.'],
+    }),
+    cfd: (d, m) => ({
+      titulo: 'Fluxo acumulado (CFD)',
+      fonte: 'Datas de fluxo do Jira.',
+      unidade: 'Story Points (SP) por dia.',
+      formula: 'Pendente, em andamento e concluído acumulados a cada dia, a partir das datas de início e fim de fluxo.',
+      entra: 'Itens de valor da sprint.',
+      naoEntra: 'Sustentação.',
+      done: lista(m.done_statuses),
+      observacoes: ['Aproximado por datas de fluxo.'],
+    }),
+    chamados: (d, m) => {
+      const c = m.chamados || {};
+      return {
+        titulo: 'Chamados',
+        fonte: 'Extração do Jira, itens de sustentação resolvidos.',
+        unidade: 'Dias úteis e quantidade.',
+        formula: 'Média e mediana de dias por tipo; % no limite = chamados resolvidos em até ' + int(c.limite_dias) + ' dia(s) útil(eis).',
+        entra: 'Tipos de sustentação: ' + lista(m.tipos_sustentacao) + '. Janela: últimos ' + int(c.janela_dias) + ' dias.',
+        naoEntra: 'Chamados sem data de fim de fluxo ficam fora das médias.',
+        done: 'Resolvido com data de fim de fluxo.',
+        observacoes: ['A cobertura de data aparece abaixo da tabela. Independe do seletor de sprint/PI.'],
+      };
+    },
+    tempo_status: (d, m) => ({
+      titulo: 'Tempo do item em cada status',
+      fonte: 'Datas de fluxo do Jira.',
+      unidade: 'Dias úteis por fase.',
+      formula: 'Média de dias úteis que os itens ficaram em cada fase.',
+      entra: 'Itens de valor da janela.',
+      naoEntra: 'Sustentação (mostrada à parte no diagnóstico).',
+      done: lista(m.done_statuses),
+      observacoes: ['Aproximado por datas de fluxo. No modo PI a lista mostra só itens em andamento; as médias usam todos os itens da janela.'],
+    }),
+    efficiency: (d, m) => ({
+      titulo: 'Efficiency: custo real por SP',
+      fonte: 'Horas apontadas no Jira (tempo gasto) e baseline h/SP de cada time (média de produtividade do PI).',
+      unidade: 'Horas por Story Point (h/SP).',
+      formula: 'h/SP = horas ÷ SP dos itens de valor em Done na janela. Baseline = média dos h/SP dos times, ponderada pelo SP entregue. Variação = horas ÷ (Σ SP × baseline do time) − 1.',
+      entra: 'Itens de valor em Done (' + lista(m.tipos_valor) + '). Débito Técnico está incluso e é destacado no detalhe.',
+      naoEntra: 'Sustentação e Suporte. Time sem baseline fica fora da razão.',
+      done: lista(m.done_statuses),
+      observacoes: [
+        'Estado de hoje, não do fim da sprint.',
+        'Horas são acumuladas na vida do item e atribuídas à última sprint.',
+        'Itens sem SP entram com as horas e sem pontos.',
+      ],
+    }),
+  };
+  function abrirLegenda(chave, d, origem) {
+    const fn = LEGENDAS[chave];
+    if (!fn) return;
+    const L = fn(d, d.metodologia || {});
+    window.App.Modal.abrir({
+      titulo: 'Como é calculado: ' + L.titulo,
+      subtitulo: 'Fonte, unidade, fórmula e regra de Done',
+      origem,
+      construir: corpo => {
+        const dl = el('dl');
+        [['Fonte', L.fonte], ['Unidade', L.unidade], ['Fórmula', L.formula], ['O que entra', L.entra],
+          ['O que não entra', L.naoEntra], ['Regra de Done', L.done]].forEach(([t, v]) => {
+          dl.appendChild(el('dt', null, t));
+          dl.appendChild(el('dd', null, v));
+        });
+        corpo.appendChild(dl);
+        if ((L.observacoes || []).length) {
+          corpo.appendChild(el('h4', null, 'Observações'));
+          const ul = el('ul');
+          L.observacoes.forEach(o => ul.appendChild(el('li', null, o)));
+          corpo.appendChild(ul);
+        }
+      },
+    });
+  }
+  function legendaBotao(chave, d, rotulo) {
+    return botaoModal(rotulo || 'ⓘ Como é calculado', origem => abrirLegenda(chave, d, origem));
+  }
+  // Insere o botão logo após o título (primeiro filho) do cartão/seção.
+  function anexarLegenda(container, chave, d) {
+    const ab = el('div', 'pr-sub');
+    ab.appendChild(legendaBotao(chave, d));
+    container.insertBefore(ab, container.firstChild ? container.firstChild.nextSibling : null);
+    return container;
+  }
+
+  // ── Efficiency: KPI e modal de detalhe ─────────────────────────────────
+  function kpiEfficiency(d) {
+    const ef = d.gadgets.efficiency_baseline || {};
+    const rotulo = 'Efficiency: custo real por SP';
+    if (ef.estado !== 'ok') {
+      return kpi(rotulo, '—', ef.motivo || 'Sem itens de valor entregues na janela.', '#22d3ee');
+    }
+    const sub = ef.baseline_h_por_sp == null
+      ? 'sem baseline cadastrado'
+      : 'baseline ' + fmt(ef.baseline_h_por_sp) + ' · ' + seta(ef.variacao_pct) + ' ' + sinal(ef.variacao_pct);
+    const k = kpi(rotulo, ef.h_por_sp == null ? '—' : fmt(ef.h_por_sp) + ' h/SP', sub, '#22d3ee',
+      'Horas gastas por ponto dos itens de valor em Done, contra o baseline h/SP dos times. Estado de hoje.');
+    if (ef.parcial) k.firstChild.appendChild(el('span', 'badge', 'parcial'));
+    const mh = ef.multissprint ? ef.multissprint.horas : 0;
+    if (ef.horas > 0 && mh / ef.horas * 100 > ef.aviso_multissprint_pct) {
+      const av = el('div', 'kpi-sub', '⚠ ' + pctF(mh / ef.horas * 100) + ' das horas vêm de itens que passaram por mais de uma sprint.');
+      av.style.color = '#f59e0b';
+      k.appendChild(av);
+    }
+    return kpiAcao(k, 'Detalhes', origem => abrirEfficiency(d, origem));
+  }
+  function abrirEfficiency(d, origem) {
+    const ef = d.gadgets.efficiency_baseline || {};
+    window.App.Modal.abrir({
+      titulo: 'Efficiency: custo real por SP',
+      subtitulo: (ef.rotulo_escopo || '') + (ef.parcial ? ' · parcial (sprint em andamento)' : ''),
+      origem,
+      construir: corpo => {
+        const ul = el('ul');
+        [
+          'Horas: ' + fmt(ef.horas) + ' h · SP: ' + fmt(ef.pontos) + ' · itens: ' + int(ef.itens) + ' · h/SP: ' + fmt(ef.h_por_sp),
+          ef.baseline_h_por_sp == null
+            ? 'Sem baseline cadastrado para os times da janela.'
+            : 'Baseline ponderado: ' + fmt(ef.baseline_h_por_sp) + ' h/SP · razão ' + pctF(ef.razao_pct) + ' · variação ' + seta(ef.variacao_pct) + ' ' + sinal(ef.variacao_pct),
+          'Estado de hoje, não do fim da sprint.',
+        ].forEach(t => ul.appendChild(el('li', null, t)));
+        corpo.appendChild(ul);
+
+        tabelaModal(corpo, 'Efficiency por time: horas, SP, h/SP, baseline e razão',
+          [['Time', ''], ['Horas', 'num'], ['SP', 'num'], ['h/SP', 'num'], ['Baseline', 'num'], ['Razão', 'num']],
+          (ef.por_time || []).map(t => [t.time || t.projeto_key, fmt(t.horas), fmt(t.pontos), fmt(t.h_por_sp),
+            t.baseline == null ? 'sem baseline' : fmt(t.baseline), pctF(t.razao_pct)]), '520px');
+
+        corpo.appendChild(el('h4', null, 'Diagnósticos'));
+        const dg = el('ul');
+        const ss = ef.sem_sp || {}, dt = ef.debito_tecnico || {}, ms = ef.multissprint || {};
+        const ca = ef.concluidos_apos_fim_sprint || {}, cb = ef.cobertura_baseline || {};
+        [
+          'Itens sem SP: ' + int(ss.itens) + ' (' + fmt(ss.horas) + ' h entram sem pontos). Sem eles o h/SP seria ' + fmt(ss.h_por_sp_sem_itens_sem_sp) + '.',
+          'Débito Técnico (incluso): ' + int(dt.itens) + ' itens, ' + fmt(dt.pontos) + ' SP, ' + fmt(dt.horas) + ' h.',
+          'Multissprint: ' + int(ms.itens) + ' itens, ' + fmt(ms.horas) + ' h, ' + fmt(ms.pontos) + ' SP. Horas acumuladas na vida do item, atribuídas à última sprint.',
+          'Concluídos depois do fim da sprint: ' + int(ca.itens) + ' itens, ' + fmt(ca.pontos) + ' SP. Sem data de conclusão: ' + int((ef.sem_data_conclusao || {}).itens) + ' itens.',
+          'Cobertura do baseline: ' + fmt(cb.pontos_com_baseline) + ' SP com baseline, ' + fmt(cb.pontos_sem_baseline) + ' SP sem'
+            + ((cb.times_sem_baseline || []).length ? ' (times: ' + cb.times_sem_baseline.join(', ') + ')' : '') + '.',
+        ].forEach(t => dg.appendChild(el('li', null, t)));
+        corpo.appendChild(dg);
+        if (ef.regra) corpo.appendChild(el('div', 'pr-sub', ef.regra));
+
+        const lk = el('div', 'pr-sub');
+        const a = document.createElement('a');
+        a.href = BASE + '/metricas/produtividade';
+        a.textContent = 'Ver o histórico na tela Produtividade';
+        a.style.color = '#a5b4fc';
+        lk.appendChild(a);
+        corpo.appendChild(lk);
+      },
+    });
+  }
+
   // ── 1. Faixa de contexto ────────────────────────────────────────────────
   function faixaContexto(d) {
     const j = d.janela || {}, fa = d.filtros || {}, ex = d.extracao || {};
@@ -250,19 +526,34 @@
     }
     const grid = el('div', 'kpi-grid vg-kpi-grid');
     grid.appendChild(kpi('Backlog', fmt(g.backlog_sp) + ' SP', int(g.itens.backlog) + ' itens', '#7c8aaa'));
-    grid.appendChild(kpi('Em andamento', fmt(g.em_andamento_sp) + ' SP', int(g.itens.em_andamento) + ' itens',
-      '#6366f1', 'Inclui itens Concluído/Homologação/Pronto — prontos, ainda sem aceite; difere do filtro Jira 19364.'));
+    const kAnd = kpi('Em andamento', fmt(g.em_andamento_sp) + ' SP', int(g.itens.em_andamento) + ' itens',
+      '#6366f1', 'Inclui itens Concluído/Homologação/Pronto — prontos, ainda sem aceite; difere do filtro Jira 19364.');
+    const porStatus = g.em_andamento_por_status || {};
+    if (Object.keys(porStatus).length) {
+      kpiAcao(kAnd, 'Ver por status', origem => window.App.Modal.abrir({
+        titulo: 'Em andamento por status',
+        subtitulo: (g.rotulo_escopo || '') + ' · ' + fmt(g.em_andamento_sp) + ' SP em ' + int(g.itens.em_andamento) + ' itens',
+        origem,
+        construir: corpo => tabelaModal(corpo, 'Story Points em andamento por status',
+          [['Status', ''], ['SP', 'num']],
+          Object.keys(porStatus).map(s => [s, fmt(porStatus[s])]), '340px'),
+      }));
+    }
+    grid.appendChild(kAnd);
     grid.appendChild(kpi('Bloqueados', fmt(g.bloqueado_sp) + ' SP', int(g.itens.bloqueado) + ' itens', '#f43f5e'));
     grid.appendChild(kpi('Aceitos', fmt(g.aceitos_sp) + ' SP',
       'valor ' + fmt(g.aceitos_valor_sp) + ' · sustentação ' + fmt(g.aceitos_sustentacao_sp), '#10b981',
       'Fonte: ' + (g.aceitos_sp_origem === 'velocidade' ? 'Velocidade (= Entregues do Planejado x Realizado)' : 'cálculo local')));
-    const prod = g.produtividade_ate_agora || {};
-    grid.appendChild(kpi('Produtividade até agora', prod.h_por_sp == null ? '—' : fmt(prod.h_por_sp) + ' h/SP',
-      'base: ' + fmt(prod.pontos) + ' SP de valor entregues', '#22d3ee',
-      'Horas totais para entregar 1 ponto. Divisor usa só SP de valor; Aceitos inclui sustentação.'));
-    grid.appendChild(kpi('Cancelados na PI', fmt(g.cancelados_pi.sp) + ' SP', int(g.cancelados_pi.itens) + ' itens', '#f97316'));
+    grid.appendChild(kpiEfficiency(d));
+    const cf = g.cancelados_foco;
+    grid.appendChild(kpi('Cancelados na PI', fmt(g.cancelados_pi.sp) + ' SP',
+      int(g.cancelados_pi.itens) + ' itens' + (cf ? ' · no foco: ' + fmt(cf.sp) + ' SP em ' + int(cf.itens) + ' itens' : ''), '#f97316'));
     sec.appendChild(grid);
 
+    anexarLegenda(sec, 'andamento', d);
+    const abLeg = sec.children[1];
+    abLeg.appendChild(legendaBotao('aceitos', d, 'ⓘ Como é calculado: Aceitos'));
+    abLeg.appendChild(legendaBotao('efficiency', d, 'ⓘ Como é calculado: Efficiency'));
     sec.appendChild(el('div', 'pr-sub', 'Total do escopo: ' + fmt(g.total_sp) + ' SP (backlog + em andamento + bloqueado + aceitos; cancelados ficam fora).'));
 
     // Modo PI: itens fora da janela.
@@ -277,6 +568,45 @@
     return sec;
   }
 
+  // ── Modal dos itens da sprint anterior (filtro no cliente) ───────────────
+  function abrirItensSprint(d, filtro, origem) {
+    const g = d.gadgets.lista_sprint_anterior;
+    if (!g || g.estado !== 'ok') return;
+    const done = statusDone(d);
+    const rotulos = {
+      todos: 'Alocados (todos os itens)',
+      aceitos: 'Aceitos (status em ' + done.join(', ') + ')',
+      nao_aceitos: 'Não aceitos sem continuidade (fora de Done e sem transbordo)',
+      transbordo: 'Transbordo (itens que seguiram para a próxima sprint)',
+    };
+    const regras = {
+      todos: () => true,
+      aceitos: it => done.indexOf(it.status) !== -1,
+      nao_aceitos: it => done.indexOf(it.status) === -1 && !it.transbordo,
+      transbordo: it => !!it.transbordo,
+    };
+    const itens = (g.itens || []).filter(regras[filtro] || regras.todos);
+    const sp = itens.reduce((s, it) => s + (Number(it.sp) || 0), 0);
+    window.App.Modal.abrir({
+      titulo: 'Itens da sprint anterior' + (g.sprint ? ' — ' + g.sprint : ''),
+      subtitulo: (rotulos[filtro] || rotulos.todos) + ' · ' + int(itens.length) + ' itens · ' + fmt(sp) + ' SP',
+      origem,
+      construir: corpo => {
+        tabelaModal(corpo, 'Itens da sprint anterior: tipo, chave, épico, resumo, status, sprint, SP e transbordo',
+          [['Tipo', ''], ['Chave', ''], ['Épico (pai)', ''], ['Resumo', ''], ['Status', ''], ['Sprint (maior)', ''], ['SP', 'num'], ['Transbordo', '']],
+          itens.map(it => [
+            it.tipo, it.chave, it.pai || '—', it.resumo || '—', it.status,
+            { t: it.sprint_maior || '—', title: Array.isArray(it.sprints) && it.sprints.length ? it.sprints.join(', ') : '' },
+            fmt(it.sp), it.transbordo ? 'Sim' : 'Não',
+          ]), '920px');
+        const notas = ['Σ lista completa: ' + fmt(g.total_sp) + ' SP em ' + int(g.total_itens) + ' itens.'];
+        if (g.resumo_disponivel_pct != null) notas.push('Resumo disponível em ' + pctF(g.resumo_disponivel_pct) + ' dos itens.');
+        if (g.truncado) notas.push('Lista truncada ao limite de linhas: o filtro vale só para as linhas recebidas.');
+        corpo.appendChild(el('div', 'pr-sub', notas.join(' ')));
+      },
+    });
+  }
+
   // ── 5. Sprint anterior ──────────────────────────────────────────────
   function cardSprintAnterior(d) {
     const g = d.gadgets.sprint_anterior;
@@ -289,19 +619,23 @@
       return sec;
     }
     const grid = el('div', 'kpi-grid vg-kpi-grid');
-    grid.appendChild(kpi('Alocados', fmt(g.alocados_sp) + ' SP', 'passaram pela sprint', '#6366f1'));
-    grid.appendChild(kpi('Aceitos na sprint', fmt(g.aceitos_sp) + ' SP',
-      'valor ' + fmt(g.aceitos_valor_sp) + ' · sustentação ' + fmt(g.aceitos_sustentacao_sp), '#10b981'));
-    grid.appendChild(kpi('Não aceitos sem continuidade', fmt(g.nao_aceitos_sem_continuidade_sp) + ' SP', 'não seguiram para a próxima', '#f59e0b'));
+    const lista = d.gadgets.lista_sprint_anterior;
+    const temLista = !!(lista && lista.estado === 'ok');
+    const comLista = (k, filtro) => (temLista ? kpiAcao(k, 'Ver itens', o => abrirItensSprint(d, filtro, o)) : k);
+    grid.appendChild(comLista(kpi('Alocados', fmt(g.alocados_sp) + ' SP', 'passaram pela sprint', '#6366f1'), 'todos'));
+    grid.appendChild(comLista(kpi('Aceitos na sprint', fmt(g.aceitos_sp) + ' SP',
+      'valor ' + fmt(g.aceitos_valor_sp) + ' · sustentação ' + fmt(g.aceitos_sustentacao_sp), '#10b981'), 'aceitos'));
+    grid.appendChild(comLista(kpi('Não aceitos sem continuidade', fmt(g.nao_aceitos_sem_continuidade_sp) + ' SP', 'não seguiram para a próxima', '#f59e0b'), 'nao_aceitos'));
     const tr = g.transbordo || {};
     if (tr.disponivel) {
-      grid.appendChild(kpi('Transbordo', fmt(tr.sp) + ' SP',
-        int(tr.itens) + ' itens → ' + (tr.para_sprint || '—'), '#a78bfa'));
+      grid.appendChild(comLista(kpi('Transbordo', fmt(tr.sp) + ' SP',
+        int(tr.itens) + ' itens → ' + (tr.para_sprint || '—') + ' · não entregue: ' + fmt(tr.nao_entregue_sp) + ' SP', '#a78bfa'), 'transbordo'));
     } else {
       const k = kpi('Transbordo', 'n/d', 'indisponível', '#a78bfa', tr.motivo || 'Transbordo indisponível para esta sprint.');
       grid.appendChild(k);
     }
     sec.appendChild(grid);
+    anexarLegenda(sec, 'sprint_anterior', d);
     sec.appendChild(el('div', 'pr-sub', 'Incidentes/Solicitações: aguardando o módulo de Sustentação.'));
     return sec;
   }
@@ -310,12 +644,12 @@
   function cardBurndown(d) {
     const g = d.gadgets.burndown;
     if (!g || g.estado !== 'ok') return cardVazio('Burndown', g);
-    const card = cardAprox('Burndown', g.regra);
+    const card = anexarLegenda(cardAprox('Burndown', g.regra), 'burndown', d);
     const wrap = el('div', 'cwrap');
     const cv = document.createElement('canvas');
     cv.id = 'vg-burndown';
     cv.setAttribute('role', 'img');
-    cv.setAttribute('aria-label', 'Burndown da sprint: linha ideal tracejada e linha real do escopo restante por dia. Valores na tabela abaixo.');
+    cv.setAttribute('aria-label', 'Burndown da sprint: linha ideal tracejada e linha real do escopo restante por dia. Valores no botão Ver dados.');
     wrap.appendChild(cv);
     card.appendChild(wrap);
 
@@ -324,18 +658,16 @@
       card.appendChild(el('div', 'pr-sub', 'Sustentação fora do escopo de valor: ' + fmt(di.sustentacao_fora_sp) + ' SP em ' + int(di.sustentacao_fora_itens) + ' itens.'));
     }
 
-    const { wrap: tw, tb } = tabelaBase(null, 'Burndown: escopo ideal e real restante por dia', '460px');
-    cabecalho(tb, [['Dia', ''], ['Ideal (SP)', 'num'], ['Real (SP)', 'num']]);
-    const tbody = el('tbody');
-    g.dias.forEach((dia, i) => {
-      const tr = el('tr');
-      tr.appendChild(el('td', null, dia === 'inicio' ? 'Início' : diaMes(dia)));
-      tr.appendChild(el('td', 'num', fmt(g.ideal[i])));
-      tr.appendChild(el('td', 'num', g.real[i] == null ? '—' : fmt(g.real[i])));
-      tbody.appendChild(tr);
-    });
-    tb.appendChild(tbody);
-    card.appendChild(tw);
+    const ab = el('div', 'pr-sub');
+    ab.appendChild(botaoModal('Ver dados', origem => window.App.Modal.abrir({
+      titulo: 'Burndown — dados por dia',
+      subtitulo: 'Escopo ideal e real restante, em Story Points',
+      origem,
+      construir: corpo => tabelaModal(corpo, 'Burndown: escopo ideal e real restante por dia',
+        [['Dia', ''], ['Ideal (SP)', 'num'], ['Real (SP)', 'num']],
+        g.dias.map((dia, i) => [dia === 'inicio' ? 'Início' : diaMes(dia), fmt(g.ideal[i]), g.real[i] == null ? '—' : fmt(g.real[i])]), '460px'),
+    })));
+    card.appendChild(ab);
 
     card._draw = () => window.Charts.make('vg-burndown', {
       type: 'line',
@@ -362,28 +694,26 @@
   function cardCfd(d) {
     const g = d.gadgets.cfd;
     if (!g || g.estado !== 'ok') return cardVazio('Fluxo acumulado (CFD)', g);
-    const card = cardAprox('Fluxo acumulado (CFD)', g.regra);
+    const card = anexarLegenda(cardAprox('Fluxo acumulado (CFD)', g.regra), 'cfd', d);
     const wrap = el('div', 'cwrap');
     const cv = document.createElement('canvas');
     cv.id = 'vg-cfd';
     cv.setAttribute('role', 'img');
-    cv.setAttribute('aria-label', 'Diagrama de fluxo acumulado: áreas empilhadas de Pendente, Em andamento e Concluído por dia. Valores na tabela abaixo.');
+    cv.setAttribute('aria-label', 'Diagrama de fluxo acumulado: áreas empilhadas de Pendente, Em andamento e Concluído por dia. Valores no botão Ver dados.');
     wrap.appendChild(cv);
     card.appendChild(wrap);
 
-    const { wrap: tw, tb } = tabelaBase(null, 'Fluxo acumulado: itens pendentes, em andamento e concluídos por dia', '520px');
-    cabecalho(tb, [['Dia', ''], ['Pendente (SP)', 'num'], ['Em andamento (SP)', 'num'], ['Concluído (SP)', 'num']]);
-    const tbody = el('tbody');
-    g.dias.forEach((dia, i) => {
-      const tr = el('tr');
-      tr.appendChild(el('td', null, diaMes(dia)));
-      tr.appendChild(el('td', 'num', g.pendente[i] == null ? '—' : fmt(g.pendente[i])));
-      tr.appendChild(el('td', 'num', g.em_andamento[i] == null ? '—' : fmt(g.em_andamento[i])));
-      tr.appendChild(el('td', 'num', g.concluido[i] == null ? '—' : fmt(g.concluido[i])));
-      tbody.appendChild(tr);
-    });
-    tb.appendChild(tbody);
-    card.appendChild(tw);
+    const ab = el('div', 'pr-sub');
+    const nv = x => (x == null ? '—' : fmt(x));
+    ab.appendChild(botaoModal('Ver dados', origem => window.App.Modal.abrir({
+      titulo: 'Fluxo acumulado (CFD) — dados por dia',
+      subtitulo: 'Pendente, em andamento e concluído, em Story Points',
+      origem,
+      construir: corpo => tabelaModal(corpo, 'Fluxo acumulado: itens pendentes, em andamento e concluídos por dia',
+        [['Dia', ''], ['Pendente (SP)', 'num'], ['Em andamento (SP)', 'num'], ['Concluído (SP)', 'num']],
+        g.dias.map((dia, i) => [diaMes(dia), nv(g.pendente[i]), nv(g.em_andamento[i]), nv(g.concluido[i])]), '520px'),
+    })));
+    card.appendChild(ab);
 
     card._draw = () => window.Charts.make('vg-cfd', {
       type: 'line',
@@ -412,7 +742,7 @@
     const g = d.gadgets.cycle_time_status;
     if (!g || g.estado !== 'ok') return cardVazio('Cycle time por status', g);
     const isPi = (d.filtros || {}).modo_efetivo === 'pi';
-    const card = cardBase('Cycle time por status', 'dias úteis');
+    const card = anexarLegenda(cardBase('Cycle time por status', 'dias úteis'), 'cycle_time', d);
     card.appendChild(el('div', 'pr-sub', 'Janela: ' + (g.sprints || []).join(', ') + ' · ' + int(g.itens) + ' itens de valor entregues.'));
 
     const grid = el('div', 'kpi-grid vg-kpi-grid');
@@ -438,7 +768,7 @@
   function cardTeamVelocity(d) {
     const g = d.gadgets.team_velocity;
     if (!g || g.estado !== 'ok' || !(g.serie || []).length) return cardVazio('Team Velocity', g);
-    const card = cardBase('Team Velocity', 'SP concluídos por sprint');
+    const card = anexarLegenda(cardBase('Team Velocity', 'SP concluídos por sprint'), 'team_velocity', d);
     const r = g.resumo || {};
     const dest = el('div');
     dest.style.cssText = 'display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:6px';
@@ -452,7 +782,7 @@
     const cv = document.createElement('canvas');
     cv.id = 'vg-velmini';
     cv.setAttribute('role', 'img');
-    cv.setAttribute('aria-label', 'Barras do Concluído por sprint (a sprint em andamento hachurada). Valores na tabela abaixo.');
+    cv.setAttribute('aria-label', 'Barras do Concluído por sprint (a sprint em andamento hachurada). Valores no botão Ver dados.');
     wrap.appendChild(cv);
     card.appendChild(wrap);
     const linkP = el('div', 'pr-sub');
@@ -463,18 +793,21 @@
     linkP.appendChild(a);
     card.appendChild(linkP);
 
-    const { wrap: tw, tb } = tabelaBase(null, 'Concluído por sprint', '340px');
-    cabecalho(tb, [['Sprint', ''], ['Status', ''], ['Concluído (SP)', 'num']]);
-    const tbody = el('tbody');
-    g.serie.forEach(s => {
-      const tr = el('tr');
-      tr.appendChild(el('td', null, s.sprint));
-      tr.appendChild(el('td', null, s.status === 'em_andamento' ? 'Ativa' : 'Fechada'));
-      tr.appendChild(el('td', 'num', fmt(s.concluido)));
-      tbody.appendChild(tr);
+    const colsVel = [['Sprint', ''], ['Status', ''], ['Escopo inicial (SP)', 'num'], ['Adicionado (SP)', 'num'], ['Removido (SP)', 'num'],
+      ['Escopo final (SP)', 'num'], ['Mudança de escopo (SP)', 'num'], ['Concluído (SP)', 'num'], ['Velocidade média (SP)', 'num']];
+    const linhaVel = s => [s.sprint, s.status === 'em_andamento' ? 'Ativa' : 'Fechada', fmt(s.escopo_inicial), fmt(s.adicionado), fmt(s.removido),
+      fmt(s.escopo_final), fmt(s.mudanca_escopo), fmt(s.concluido), fmt(s.velocidade_media)];
+    const abrirVel = (series, origem) => window.App.Modal.abrir({
+      titulo: 'Team Velocity — dados por sprint',
+      subtitulo: 'Story Points; estado atual dos itens (não o fim da sprint)',
+      origem,
+      construir: corpo => tabelaModal(corpo, 'Team Velocity: escopo, mudanças e concluído por sprint', colsVel, series.map(linhaVel), '860px'),
     });
-    tb.appendChild(tbody);
-    card.appendChild(tw);
+    const ab = el('div', 'pr-sub');
+    ab.appendChild(botaoModal('Ver dados', origem => abrirVel(g.serie, origem)));
+    card.appendChild(ab);
+    const btnVel = ab.firstChild;
+    cv.classList.add('vg-clicavel');
 
     card._draw = () => window.Charts.make('vg-velmini', {
       type: 'bar',
@@ -489,6 +822,10 @@
       },
       options: {
         responsive: true, maintainAspectRatio: false,
+        onClick: (ev, _els, chart) => {
+          const pts = chart.getElementsAtEventForMode(ev, 'nearest', { intersect: true }, true);
+          if (pts.length && g.serie[pts[0].index]) abrirVel([g.serie[pts[0].index]], btnVel);
+        },
         plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ' Concluído: ' + fmt(c.raw) + ' SP' } } },
         scales: {
           x: { grid: { display: false }, ticks: { maxRotation: 45, minRotation: 45, autoSkip: false } },
@@ -503,7 +840,7 @@
   function cardChamados(d) {
     const g = d.gadgets.chamados;
     if (!g || g.estado !== 'ok') return cardVazio('Chamados', g);
-    const card = cardAprox('Chamados', g.regra);
+    const card = anexarLegenda(cardAprox('Chamados', g.regra), 'chamados', d);
     card.appendChild(el('div', 'pr-sub', 'Últimos ' + int(g.janela_dias) + ' dias · independe do seletor · limite de ' + int(g.limite_dias) + ' dia(s) úteis.'));
 
     const { wrap: tw, tb } = tabelaBase(null, 'Chamados por tipo: quantidade, média e mediana de dias, percentual dentro do limite', '540px');
@@ -533,14 +870,14 @@
     const g = d.gadgets.tempo_status;
     if (!g || g.estado !== 'ok') return cardVazio('Tempo do item em cada status', g, true);
     const isPi = (d.filtros || {}).modo_efetivo === 'pi';
-    const card = cardAprox('Tempo do item em cada status', g.regra, true);
+    const card = anexarLegenda(cardAprox('Tempo do item em cada status', g.regra, true), 'tempo_status', d);
     const fases = g.fases || [];
 
     const wrap = el('div', 'cwrap');
     const cv = document.createElement('canvas');
     cv.id = 'vg-tempo';
     cv.setAttribute('role', 'img');
-    cv.setAttribute('aria-label', 'Barras horizontais da média de dias úteis por fase (' + fases.join(', ') + '). Valores na tabela de médias abaixo.');
+    cv.setAttribute('aria-label', 'Barras horizontais da média de dias úteis por fase (' + fases.join(', ') + '). Valores na tabela de médias abaixo; itens no botão Ver itens.');
     wrap.appendChild(cv);
     card.appendChild(wrap);
 
@@ -560,26 +897,27 @@
     tmb.appendChild(tmbody);
     card.appendChild(tmw);
 
-    // Tabela dos itens
-    const { wrap: tiw, tb: tib } = tabelaBase('Itens', 'Dias por fase de cada item', '760px');
-    const cols = [['Chave', ''], ['Tipo', ''], ['Status', ''], ['SP', 'num'], ['Fase atual', '']];
-    fases.forEach(f => cols.push([f, 'num']));
-    cols.push(['Total (dias)', 'num']);
-    cabecalho(tib, cols);
-    const tibody = el('tbody');
-    (g.itens || []).forEach(it => {
-      const tr = el('tr');
-      tr.appendChild(el('td', null, it.chave));
-      tr.appendChild(el('td', null, it.tipo));
-      tr.appendChild(el('td', null, it.status));
-      tr.appendChild(el('td', 'num', fmt(it.sp)));
-      tr.appendChild(el('td', null, it.fase_atual));
-      fases.forEach(f => tr.appendChild(el('td', 'num', it.dias && it.dias[f] != null ? fmt(it.dias[f]) : '—')));
-      tr.appendChild(el('td', 'num', fmt(it.total_dias)));
-      tibody.appendChild(tr);
-    });
-    tib.appendChild(tibody);
-    card.appendChild(tiw);
+    // Itens: modal (botão "Ver itens" ou clique na barra de uma fase)
+    const abrirItensTempo = (fase, origem) => {
+      const todos = g.itens || [];
+      const itens = fase ? todos.filter(it => it.dias && it.dias[fase] != null) : todos;
+      const cols = [['Chave', ''], ['Tipo', ''], ['Status', ''], ['SP', 'num'], ['Fase atual', '']];
+      fases.forEach(f => cols.push([f, 'num']));
+      cols.push(['Total (dias)', 'num']);
+      window.App.Modal.abrir({
+        titulo: 'Tempo por status — itens' + (fase ? ' que passaram por ' + fase : ''),
+        subtitulo: int(itens.length) + ' itens · dias úteis por fase' + (g.truncado ? ' · lista truncada: o filtro vale só para as linhas recebidas' : ''),
+        origem,
+        construir: corpo => tabelaModal(corpo, 'Dias por fase de cada item', cols,
+          itens.map(it => [it.chave, it.tipo, it.status, fmt(it.sp), it.fase_atual]
+            .concat(fases.map(f => (it.dias && it.dias[f] != null ? fmt(it.dias[f]) : '—')), [fmt(it.total_dias)])), '760px'),
+      });
+    };
+    const btnItens = botaoModal('Ver itens', o => abrirItensTempo(null, o));
+    const abItens = el('div', 'pr-sub');
+    abItens.appendChild(btnItens);
+    card.appendChild(abItens);
+    cv.classList.add('vg-clicavel');
     if (g.truncado) card.appendChild(el('div', 'pr-sub', 'Lista truncada: exibindo os primeiros itens.'));
 
     const di = g.diagnosticos || {};
@@ -596,6 +934,10 @@
       },
       options: {
         responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+        onClick: (ev, _els, chart) => {
+          const pts = chart.getElementsAtEventForMode(ev, 'nearest', { intersect: true }, true);
+          if (pts.length && fases[pts[0].index]) abrirItensTempo(fases[pts[0].index], btnItens);
+        },
         plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ' ' + fmt(c.raw) + ' dias' } } },
         scales: {
           x: { beginAtZero: true, title: { display: true, text: 'Dias úteis' }, grid: { color: '#2e3349', borderDash: [4, 4] } },
@@ -612,25 +954,9 @@
     if (!g || g.estado !== 'ok') return cardVazio('Itens da sprint anterior', g, true);
     const card = cardBase('Itens da sprint anterior' + (g.sprint ? ' — ' + g.sprint : ''), null, true);
 
-    const { wrap: tw, tb } = tabelaBase(null, 'Itens da sprint anterior: tipo, chave, épico, resumo, status, sprint, SP e transbordo', '920px');
-    cabecalho(tb, [['Tipo', ''], ['Chave', ''], ['Épico (pai)', ''], ['Resumo', ''], ['Status', ''], ['Sprint (maior)', ''], ['SP', 'num'], ['Transbordo', '']]);
-    const tbody = el('tbody');
-    (g.itens || []).forEach(it => {
-      const tr = el('tr');
-      tr.appendChild(el('td', null, it.tipo));
-      tr.appendChild(el('td', null, it.chave));
-      tr.appendChild(el('td', null, it.pai || '—'));
-      tr.appendChild(el('td', null, it.resumo || '—'));
-      tr.appendChild(el('td', null, it.status));
-      const tdS = el('td', null, it.sprint_maior || '—');
-      if (Array.isArray(it.sprints) && it.sprints.length) tdS.title = it.sprints.join(', ');
-      tr.appendChild(tdS);
-      tr.appendChild(el('td', 'num', fmt(it.sp)));
-      tr.appendChild(el('td', null, it.transbordo ? 'Sim' : 'Não'));
-      tbody.appendChild(tr);
-    });
-    tb.appendChild(tbody);
-    card.appendChild(tw);
+    const ab = el('div', 'pr-sub');
+    ab.appendChild(botaoModal('Ver itens', o => abrirItensSprint(d, 'todos', o)));
+    card.appendChild(ab);
 
     const notas = ['Σ ' + fmt(g.total_sp) + ' SP em ' + int(g.total_itens) + ' itens.'];
     if (g.resumo_disponivel_pct != null) notas.push('Resumo disponível em ' + pctF(g.resumo_disponivel_pct) + ' dos itens.');
@@ -663,7 +989,8 @@
       'Visão por jornada, consolidando os projetos dos times da seleção. Os filtros do cabeçalho (jornada, time, versão, sprint) controlam a tela; ADSE e SGSE são o mesmo time.',
       'Seletor "Sprint ativa | PI inteira": mostra a sprint em foco ou a PI inteira (sprints de valor já iniciadas). Um filtro de sprint no cabeçalho vence o seletor.',
       'Unidade: Story Points, universo de valor + sustentação (como no Planejado x Realizado). Aceitos = Entregues do Planejado x Realizado = Concluído da Velocidade.',
-      'Cycle time bate com a tela Lead Time (bloco "sprints fechadas"). O histórico de Produtividade por sprint fica na tela Produtividade; aqui só aparece a da sprint ativa.',
+      'Cycle time bate com a tela Lead Time (bloco "sprints fechadas"). Efficiency mostra as horas por SP dos itens de valor em Done contra o baseline h/SP de cada time, com o estado de hoje; o histórico por sprint fica na tela Produtividade.',
+      'O botão "ⓘ Como é calculado" de cada bloco abre fonte, unidade, fórmula, o que entra e não entra e a regra de Done.',
       'Burndown, Fluxo acumulado (CFD), Tempo por status e Chamados são aproximados por datas de fluxo (não há burndown nativo de sprint); a badge "aproximado" sinaliza isso.',
       'Os gadgets de Sustentação aguardam o módulo independente; o divisor ÷5 do Jira equivale à Produtividade (horas por ponto).',
     ].forEach(t => ul.appendChild(el('li', null, t)));

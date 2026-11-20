@@ -50,6 +50,10 @@ return [
     'aviso_defasagem_dias'   => 1,   // (legado) defasagem em dias; o aviso agora usa horas
     'aviso_defasagem_horas'  => 25,  // defasagem (h) da carga mais antiga que dispara aviso
 
+    // Efficiency Baseline Ratio: limite de apresentação (% de horas em itens multissprint)
+    // acima do qual a tela exibe aviso. Não é regra de cálculo.
+    'efficiency' => ['aviso_multissprint_pct' => 10],
+
     // ── Cache de resposta em arquivo (GET /graficos/visao-geral) ────────────
     // Desligar: 'ativo' => false aqui, ou VG_CACHE=0 no ambiente (SetEnv no vhost).
     // 'dir' relativo é resolvido contra a raiz do projeto.
