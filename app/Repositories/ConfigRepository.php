@@ -27,13 +27,13 @@ class ConfigRepository
     private array  $phpPi;        // seed de config/pi.php
     private array  $phpCapacity;  // seed de config/capacity.php
 
-    public function __construct(string $configDataDir, array $phpPi, array $phpCapacity)
+    public function __construct(string $configDataDir, array $phpPi, array $phpCapacity, bool $criarDiretorio = true)
     {
         $this->dir         = rtrim($configDataDir, '/\\');
         $this->phpPi       = $phpPi;
         $this->phpCapacity = $phpCapacity;
 
-        if (!is_dir($this->dir)) {
+        if ($criarDiretorio && !is_dir($this->dir)) {
             mkdir($this->dir, 0755, true);
         }
     }

@@ -31,13 +31,15 @@ class VisaoGeralRepository
     private array $config;
     private array $tiposSustentacao;
     private array $statusCfg;
+    private ConfigRepository $capacidade;
 
     public function __construct(
         ?PrevisibilidadeRepository $base = null,
         ?VelocidadeRepository $velocidade = null,
         ?ProdutividadeRepository $produtividade = null,
         ?PDO $pdo = null,
-        ?array $config = null
+        ?array $config = null,
+        ?ConfigRepository $capacidade = null
     ) {
         $this->pdo           = $pdo ?? Database::pdo();
         $this->base          = $base ?? new PrevisibilidadeRepository($this->pdo);
@@ -47,6 +49,13 @@ class VisaoGeralRepository
         $this->tiposSustentacao = (require dirname(__DIR__, 2) . '/config/baseline.php')['plan_real_sustentacao_types']
             ?? ['Sustentação'];
         $this->statusCfg = $this->config['status'] ?? [];
+        // Capacidade do Painel (somente leitura: não cria data/config).
+        $this->capacidade = $capacidade ?? new ConfigRepository(
+            dirname(__DIR__, 2) . '/data/config',
+            [],
+            require dirname(__DIR__, 2) . '/config/capacity.php',
+            false
+        );
     }
 
     /**
@@ -108,7 +117,7 @@ class VisaoGeralRepository
         // ── Catálogo de sprints da PI (nome => {tipo,data_ini}) ──────────
         $catalogo = [];
         foreach ($sprintsPi as $s) {
-            $catalogo[$s['nome']] = ['tipo' => $s['tipo'], 'data_ini' => $s['data_ini']];
+            $catalogo[$s['nome']] = ['tipo' => $s['tipo'], 'data_ini' => $s['data_ini'], 'dias_uteis' => $s['dias_uteis']];
         }
 
         // ── Guarda: seleção sem times → gadgets vazios ───────────────────
@@ -226,6 +235,43 @@ class VisaoGeralRepository
                 'limite_dias' => (int) ($this->config['limite_chamado_dias'] ?? 2),
             ],
             'limite_linhas_lista' => (int) ($this->config['max_linhas_lista'] ?? 500),
+            'fator_carga'         => $this->configFatorCarga()['cfg'] + [
+                'fonte_capacidade' => $this->fonteCapacidade(),
+            ],
+        ];
+    }
+
+    /** Origem da capacidade: Painel (capacity.json salvo) ou seed de config/capacity.php. */
+    private function fonteCapacidade(): string
+    {
+        return $this->capacidade->hasSaved('capacity') ? 'painel' : 'config/capacity.php';
+    }
+
+    /**
+     * Config do Fator de Carga validada. Disponibilidade fora de (0,100] volta a 80.
+     * @return array{cfg:array{disponibilidade_pct:float,incluir_sustentacao:bool,faixas:array},aviso:?string}
+     */
+    private function configFatorCarga(): array
+    {
+        $c = $this->config['fator_carga'] ?? [];
+        $aviso = null;
+        $disp = $c['disponibilidade_pct'] ?? 80;
+        if (!is_numeric($disp) || (float) $disp <= 0 || (float) $disp > 100) {
+            $aviso = 'Fator de Carga: disponibilidade_pct inválida no config; usando 80%.';
+            $disp = 80;
+        }
+        $faixas = $c['faixas'] ?? [];
+        return [
+            'cfg' => [
+                'disponibilidade_pct' => (float) $disp,
+                'incluir_sustentacao' => !empty($c['incluir_sustentacao']),
+                'faixas' => [
+                    'subutilizacao_ate' => (float) ($faixas['subutilizacao_ate'] ?? 85),
+                    'recomendada_ate'   => (float) ($faixas['recomendada_ate'] ?? 95),
+                    'limite'            => (float) ($faixas['limite'] ?? 100),
+                ],
+            ],
+            'aviso' => $aviso,
         ];
     }
 
@@ -345,12 +391,30 @@ class VisaoGeralRepository
         foreach ($times as $t) {
             $nomesTimes[$t['projeto_key']] = $t['time'];
         }
+        $refBaseline = $this->produtividade->referenciaPlanejamento($keys);
         $efficiency = VisaoGeralCalculator::efficiencyBaseline(
-            $rows, $refsFoco, $foco['sprints_pi'], $this->produtividade->referenciaPlanejamento($keys),
+            $rows, $refsFoco, $foco['sprints_pi'], $refBaseline,
             $nomesTimes, $escopoLabel, $rotuloEscopo
         );
         $efficiency['classe'] = 'exato';
         $efficiency['aviso_multissprint_pct'] = (float) ($this->config['efficiency']['aviso_multissprint_pct'] ?? 10);
+
+        // ── Fator de Carga (capacidade do Painel; baseline h/SP do time) ──
+        $diasPorSprint = [];
+        foreach ($catalogo as $nome => $c) {
+            $diasPorSprint[$nome] = $c['dias_uteis'] ?? null;
+        }
+        $cfgFc = $this->configFatorCarga();
+        if ($cfgFc['aviso'] !== null) {
+            $avisos[] = $cfgFc['aviso'];
+        }
+        $fatorCarga = VisaoGeralCalculator::fatorCarga(
+            $rows, $refsFoco, $foco['sprints_pi'], $diasPorSprint,
+            $this->capacidade->getCapacity()['teams'] ?? [], $refBaseline,
+            $nomesTimes, $keys, $cfgFc['cfg'] + ['cancelado' => $cancelado], $escopoLabel, $rotuloEscopo
+        );
+        $fatorCarga['classe'] = 'exato';
+        $fatorCarga['fonte_capacidade'] = $this->fonteCapacidade();
 
         // ── Avisos derivados ──────────────────────────────────────────────
         $naoMapeados = $andamento['diagnosticos']['status_nao_mapeados'] ?? [];
@@ -380,6 +444,7 @@ class VisaoGeralRepository
             'chamados'              => $chamados,
             'lista_sprint_anterior' => $listaSprintAnterior,
             'efficiency_baseline'   => $efficiency,
+            'fator_carga'           => $fatorCarga,
             'sustentacao'           => [
                 'estado' => 'aguardando_modulo',
                 'classe' => 'aguardando_modulo',
@@ -635,7 +700,7 @@ class VisaoGeralRepository
     private function sprintsPi(int $piId): array
     {
         $st = $this->pdo->prepare(
-            "SELECT nome, tipo, data_ini, data_fim FROM sprints
+            "SELECT nome, tipo, data_ini, data_fim, dias_uteis FROM sprints
               WHERE configuracao_pi_id = :pi AND ativo = 'S' ORDER BY data_ini, nome"
         );
         $st->execute([':pi' => $piId]);
@@ -646,6 +711,7 @@ class VisaoGeralRepository
                 'tipo'     => $r['tipo'],
                 'data_ini' => $r['data_ini'],
                 'data_fim' => $r['data_fim'],
+                'dias_uteis' => $r['dias_uteis'] === null ? null : (float) $r['dias_uteis'],
             ];
         }
         return $out;
@@ -662,7 +728,7 @@ class VisaoGeralRepository
         $k = $this->in('k', $keys, $par);
         $st = $this->pdo->prepare(
             "SELECT i.chave, i.projeto_key, i.tipo_item, i.status, i.categoria_status, i.sprint, i.sprint_ref, i.pai,
-                    i.story_points, i.tempo_gasto_horas, i.is_entrega_valor, i.entregue,
+                    i.story_points, i.story_point_estimate, i.tempo_gasto_horas, i.is_entrega_valor, i.entregue,
                     i.criado, i.inicio_fluxo, i.fim_fluxo, i.inicio_homologacao, i.fim_homologacao,
                     i.inicio_implantacao, i.fim_implantacao,
                     i.dias_desenvolvimento, i.dias_homologacao, i.dias_implantacao
@@ -691,6 +757,7 @@ class VisaoGeralRepository
                 'sprint_ref'         => $r['sprint_ref'],
                 'pai'                => $r['pai'],
                 'story_points'       => $r['story_points'] === null ? null : (float) $r['story_points'],
+                'spe'                => $r['story_point_estimate'] === null ? null : (float) $r['story_point_estimate'],
                 'tempo_gasto_horas'  => $r['tempo_gasto_horas'] === null ? null : (float) $r['tempo_gasto_horas'],
                 'is_entrega_valor'   => (int) ($r['is_entrega_valor'] ?? 0),
                 'entregue'           => (int) ($r['entregue'] ?? 0),
@@ -812,6 +879,7 @@ class VisaoGeralRepository
             'chamados'              => $vazioAprox,
             'lista_sprint_anterior' => $vazioExato,
             'efficiency_baseline'   => $vazioExato,
+            'fator_carga'           => $vazioExato,
             'sustentacao'           => [
                 'estado' => 'aguardando_modulo',
                 'classe' => 'aguardando_modulo',

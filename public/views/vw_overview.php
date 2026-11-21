@@ -320,6 +320,32 @@
         'Itens sem SP entram com as horas e sem pontos.',
       ],
     }),
+    fator_carga: (d, m) => {
+      const fc = m.fator_carga || {};
+      const fx = fc.faixas || {};
+      const fonteCap = fc.fonte_capacidade === 'painel'
+        ? 'Painel de Controle (desenvolvedores e horas/dia por time)'
+        : 'valores padrão de config/capacity.php (o Painel ainda não foi salvo)';
+      return {
+        titulo: 'Fator de Carga',
+        fonte: 'Capacidade: ' + fonteCap + ', não a tabela times_composicao. Baseline h/SP: times_composicao.media_produtividade_pi. Demanda: SPE da Sprint Planning. Dias úteis: sprints.dias_uteis.',
+        unidade: 'Horas e percentual (%).',
+        formula: 'Bruta = devs × h/dia × dias úteis. Líquida = bruta × ' + fmt(fc.disponibilidade_pct) + '% de disponibilidade. Demanda = SPE × baseline h/SP do time. Fator = demanda ÷ líquida × 100. No consolidado e na PI somam-se as horas, nunca os percentuais.',
+        entra: 'Itens de valor (' + lista(m.tipos_valor) + ') não cancelados, pela sprint atual do item. ' + (fc.incluir_sustentacao
+          ? 'A sustentação entra na demanda (regra configurada).'
+          : 'Sustentação (' + lista(m.tipos_sustentacao) + ') fica fora do fator e aparece só na decomposição.')
+          + ' Faixas: abaixo de ' + fmt(fx.subutilizacao_ate) + '% possível subutilização; até ' + fmt(fx.recomendada_ate) + '% recomendada; até ' + fmt(fx.limite) + '% atenção a sobrecarga; acima, demanda acima da capacidade líquida.',
+        naoEntra: 'Incidente, Bug e SS nunca entram. Sprints de sustentação, sprints sem dias úteis e times sem Painel ou sem baseline ficam fora.',
+        done: 'Não se aplica: o fator mede o planejado. Para Done: ' + lista(m.done_statuses) + '.',
+        observacoes: [
+          'A pertença à sprint é a atual: itens que transbordam saem da sprint de origem e reduzem o valor dela.',
+          'A versão fiel ao fim da sprint exige snapshot (v2.0).',
+          'Sprint em andamento usa os dias úteis totais e fica marcada como parcial.',
+          'Time sem dados fica fora do numerador e do denominador e é listado no detalhe.',
+          'Pode divergir de times_composicao, que traz outra composição de devs e horas.',
+        ],
+      };
+    },
   };
   function abrirLegenda(chave, d, origem) {
     const fn = LEGENDAS[chave];
@@ -422,6 +448,102 @@
         a.style.color = '#a5b4fc';
         lk.appendChild(a);
         corpo.appendChild(lk);
+      },
+    });
+  }
+
+  // ── Fator de Carga: KPI e modal de detalhe ─────────────────────────────
+  const FC_FAIXA = {
+    subutilizacao: ['possível subutilização ou margem elevada', '#38bdf8'],
+    recomendada:   ['faixa recomendada', '#10b981'],
+    atencao:       ['atenção a sobrecarga', '#f59e0b'],
+    acima:         ['demanda acima da capacidade líquida', '#f43f5e'],
+  };
+  const fcFaixaTxt = f => (FC_FAIXA[f] ? FC_FAIXA[f][0] : 'sem faixa');
+  const fcPct = v => (v == null ? 'sem dados' : pctF(v));
+  const fcHoras = v => (v == null ? '—' : fmt(v) + ' h');
+  function kpiFatorCarga(d) {
+    const fc = d.gadgets.fator_carga || {};
+    const rotulo = 'Fator de Carga';
+    if (fc.estado !== 'ok' || fc.fc_pct == null) {
+      return kpi(rotulo, '—', 'sem dados: ' + (fc.motivo || 'sem capacidade ou demanda calculável na seleção.'), '#38bdf8');
+    }
+    const cor = FC_FAIXA[fc.faixa] ? FC_FAIXA[fc.faixa][1] : '#38bdf8';
+    const k = kpi(rotulo, pctF(fc.fc_pct), fcFaixaTxt(fc.faixa), cor,
+      'Demanda (SPE × baseline h/SP) ÷ capacidade líquida do Painel. Pertença atual à sprint.');
+    k.appendChild(el('div', 'kpi-sub', 'demanda ' + fmt(fc.demanda_h) + ' h ÷ capacidade líquida ' + fmt(fc.liquida_h) + ' h'));
+    if (fc.parcial) k.firstChild.appendChild(el('span', 'badge', 'parcial'));
+    const sd = (fc.cobertura || {}).times_sem_dados || [];
+    if (sd.length) {
+      const av = el('div', 'kpi-sub', '⚠ ' + int(sd.length) + ' time(s) sem dados ficam fora do cálculo.');
+      av.style.color = '#f59e0b';
+      k.appendChild(av);
+    }
+    return kpiAcao(k, 'Detalhes', origem => abrirFatorCarga(d, origem));
+  }
+  function abrirFatorCarga(d, origem) {
+    const fc = d.gadgets.fator_carga || {};
+    const met = (d.metodologia || {}).fator_carga || {};
+    window.App.Modal.abrir({
+      titulo: 'Fator de Carga',
+      subtitulo: (fc.rotulo_escopo || '') + (fc.parcial ? ' · parcial (sprint em andamento)' : ''),
+      origem,
+      construir: corpo => {
+        const ul = el('ul');
+        if (fc.estado !== 'ok') {
+          ul.appendChild(el('li', null, 'Sem dados: ' + (fc.motivo || 'sem capacidade ou demanda calculável na seleção.')));
+          corpo.appendChild(ul);
+          return;
+        }
+        const cob = fc.cobertura || {};
+        [
+          'Demanda ' + fmt(fc.demanda_h) + ' h ÷ capacidade líquida ' + fmt(fc.liquida_h) + ' h (bruta ' + fmt(fc.bruta_h) + ' h, disponibilidade ' + fmt(fc.disponibilidade_pct) + '%) = ' + fcPct(fc.fc_pct) + ' · ' + fcFaixaTxt(fc.faixa),
+          'SP de valor: ' + fmt((fc.decomposicao || {}).sp_valor) + ' · times com dados: ' + int(cob.times_com_dados) + ' de ' + int(cob.times_total),
+          'Fonte da capacidade: ' + (met.fonte_capacidade === 'painel' ? 'Painel de Controle' : 'config/capacity.php (Painel não salvo)') + '.',
+          'Regra de sustentação: ' + (met.incluir_sustentacao ? 'entra na demanda.' : 'fora do fator; só na decomposição.'),
+        ].forEach(t => ul.appendChild(el('li', null, t)));
+        corpo.appendChild(ul);
+
+        tabelaModal(corpo, 'Fator de Carga por time: capacidade, demanda, fator e faixa',
+          [['Time', ''], ['Devs', 'num'], ['h/dia', 'num'], ['Baseline h/SP', 'num'], ['SP valor', 'num'],
+            ['Capacidade líquida', 'num'], ['Demanda', 'num'], ['Fator', 'num'], ['Faixa', '']],
+          (fc.por_time || []).map(t => [t.time || t.projeto_key, fmt(t.devs), fmt(t.horas_dia), fmt(t.baseline_h_sp),
+            fmt(t.sp_valor), fcHoras(t.liquida_h), fcHoras(t.demanda_h), fcPct(t.fc_pct), fcFaixaTxt(t.faixa)]), '760px');
+
+        tabelaModal(corpo, 'Fator de Carga por sprint: dias úteis, capacidade, demanda e fator',
+          [['Sprint', ''], ['Dias úteis', 'num'], ['Capacidade líquida', 'num'], ['Demanda', 'num'], ['Fator', 'num']],
+          (fc.por_sprint || []).map(s => [s.sprint + (s.status === 'ativa' ? ' (em andamento)' : ''), fmt(s.dias_uteis),
+            fcHoras(s.liquida_h), fcHoras(s.demanda_h), fcPct(s.fc_pct)]), '520px');
+
+        const dc = fc.decomposicao || {};
+        corpo.appendChild(el('h4', null, 'Valor x sustentação'));
+        const dl = el('ul');
+        [
+          'Somente valor: ' + fmt(dc.sp_valor) + ' SP · ' + fcHoras(dc.demanda_valor_h) + ' · fator ' + fcPct(dc.fc_somente_valor_pct),
+          'Com sustentação: +' + fmt(dc.sp_sustentacao) + ' SP · +' + fcHoras(dc.demanda_sustentacao_h) + ' · fator ' + fcPct(dc.fc_com_sustentacao_pct),
+        ].forEach(t => dl.appendChild(el('li', null, t)));
+        corpo.appendChild(dl);
+
+        const sd = cob.times_sem_dados || [];
+        if (sd.length) {
+          corpo.appendChild(el('h4', null, 'Times sem dados'));
+          const sl = el('ul');
+          sd.forEach(t => sl.appendChild(el('li', null, (t.time || t.projeto_key) + ': '
+            + (t.motivo === 'sem_baseline' ? 'sem baseline h/SP' : 'sem capacidade no Painel')
+            + ' · SPE fora do cálculo: ' + fmt(t.sp_valor) + ' SP de valor, ' + fmt(t.sp_sustentacao) + ' SP de sustentação.')));
+          corpo.appendChild(sl);
+        }
+
+        const dg = fc.diagnosticos || {};
+        corpo.appendChild(el('h4', null, 'Diagnósticos'));
+        const gl = el('ul');
+        [
+          'Itens sem SPE: ' + int(dg.itens_sem_spe) + ' (não geram demanda).',
+          'Sprints sem dias úteis (fora do cálculo): ' + lista(dg.sprints_sem_dias_uteis) + '.',
+          'Sprints de sustentação ignoradas: ' + lista(dg.sprints_sustentacao_ignoradas) + '.',
+        ].forEach(t => gl.appendChild(el('li', null, t)));
+        corpo.appendChild(gl);
+        if (fc.regra) corpo.appendChild(el('div', 'pr-sub', fc.regra));
       },
     });
   }
@@ -545,6 +667,7 @@
       'valor ' + fmt(g.aceitos_valor_sp) + ' · sustentação ' + fmt(g.aceitos_sustentacao_sp), '#10b981',
       'Fonte: ' + (g.aceitos_sp_origem === 'velocidade' ? 'Velocidade (= Entregues do Planejado x Realizado)' : 'cálculo local')));
     grid.appendChild(kpiEfficiency(d));
+    grid.appendChild(kpiFatorCarga(d));
     const cf = g.cancelados_foco;
     grid.appendChild(kpi('Cancelados na PI', fmt(g.cancelados_pi.sp) + ' SP',
       int(g.cancelados_pi.itens) + ' itens' + (cf ? ' · no foco: ' + fmt(cf.sp) + ' SP em ' + int(cf.itens) + ' itens' : ''), '#f97316'));
@@ -554,6 +677,7 @@
     const abLeg = sec.children[1];
     abLeg.appendChild(legendaBotao('aceitos', d, 'ⓘ Como é calculado: Aceitos'));
     abLeg.appendChild(legendaBotao('efficiency', d, 'ⓘ Como é calculado: Efficiency'));
+    abLeg.appendChild(legendaBotao('fator_carga', d, 'ⓘ Como é calculado: Fator de Carga'));
     sec.appendChild(el('div', 'pr-sub', 'Total do escopo: ' + fmt(g.total_sp) + ' SP (backlog + em andamento + bloqueado + aceitos; cancelados ficam fora).'));
 
     // Modo PI: itens fora da janela.
@@ -989,7 +1113,7 @@
       'Visão por jornada, consolidando os projetos dos times da seleção. Os filtros do cabeçalho (jornada, time, versão, sprint) controlam a tela; ADSE e SGSE são o mesmo time.',
       'Seletor "Sprint ativa | PI inteira": mostra a sprint em foco ou a PI inteira (sprints de valor já iniciadas). Um filtro de sprint no cabeçalho vence o seletor.',
       'Unidade: Story Points, universo de valor + sustentação (como no Planejado x Realizado). Aceitos = Entregues do Planejado x Realizado = Concluído da Velocidade.',
-      'Cycle time bate com a tela Lead Time (bloco "sprints fechadas"). Efficiency mostra as horas por SP dos itens de valor em Done contra o baseline h/SP de cada time, com o estado de hoje; o histórico por sprint fica na tela Produtividade.',
+      'Cycle time bate com a tela Lead Time (bloco "sprints fechadas"). Efficiency mostra as horas por SP dos itens de valor em Done contra o baseline h/SP de cada time, com o estado de hoje; o histórico por sprint fica na tela Produtividade. Fator de Carga mostra a demanda (SPE × baseline h/SP) contra a capacidade líquida do Painel.',
       'O botão "ⓘ Como é calculado" de cada bloco abre fonte, unidade, fórmula, o que entra e não entra e a regra de Done.',
       'Burndown, Fluxo acumulado (CFD), Tempo por status e Chamados são aproximados por datas de fluxo (não há burndown nativo de sprint); a badge "aproximado" sinaliza isso.',
       'Os gadgets de Sustentação aguardam o módulo independente; o divisor ÷5 do Jira equivale à Produtividade (horas por ponto).',

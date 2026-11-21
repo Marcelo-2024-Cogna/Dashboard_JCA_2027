@@ -51,6 +51,8 @@ class GraficosController
         'app/Repositories/ProdutividadeRepository.php',
         'app/Repositories/PrevisibilidadeRepository.php',
         'app/Repositories/PlanejadoRealizadoRepository.php',
+        'app/Repositories/ConfigRepository.php',
+        'config/capacity.php',
         'app/Services/VisaoGeralCalculator.php',
         'app/Services/SprintRef.php',
         'app/Services/DiasUteis.php',
@@ -546,8 +548,18 @@ class GraficosController
             'CHECKSUM TABLE jornada, times, times_composicao, sprints, configuracao_pi, produtividade_historico, sustentacao_historico'
         )->fetchAll();
 
+        // Capacidade editada no Painel (data/config/capacity.json): entra no corpo do Fator de Carga.
+        $capPainel = $this->caminhoCapacidadePainel();
+        $m['capacidade_painel'] = is_file($capPainel) ? md5_file($capPainel) : null;
+
         $token = json_encode([1, $hoje, self::versaoCodigo(), $resolvido, $m]);
         return $token === false ? null : sha1($token);
+    }
+
+    /** Caminho do JSON de capacidade gravado pelo Painel (sobrescrevível em teste). */
+    protected function caminhoCapacidadePainel(): string
+    {
+        return dirname(__DIR__, 2) . '/data/config/capacity.json';
     }
 
     /** Hash do conteúdo dos arquivos que definem a resposta (um deploy invalida tudo). */

@@ -709,6 +709,292 @@ class VisaoGeralCalculator
         ];
     }
 
+    /**
+     * Fator de Carga de uma unidade (time x sprint): demanda planejada ÷ capacidade líquida.
+     * @return array{bruta_h:float,liquida_h:float,demanda_h:float,fc_pct:?float}
+     */
+    public static function fatorCargaUnidade(
+        float $devs, float $horasDia, float $dias, float $dispPct, float $sp, float $hPorSp
+    ): array {
+        $bruta   = $devs * $horasDia * $dias;
+        $liquida = $bruta * $dispPct / 100;
+        $demanda = $sp * $hPorSp;
+        return [
+            'bruta_h'   => round($bruta, 2),
+            'liquida_h' => round($liquida, 2),
+            'demanda_h' => round($demanda, 2),
+            'fc_pct'    => $liquida > 0 ? round($demanda / $liquida * 100, 1) : null,
+        ];
+    }
+
+    /**
+     * Faixa do Fator de Carga, classificada sobre o valor já arredondado a 1 casa.
+     * 'subutilizacao' < subutilizacao_ate; 'recomendada' até recomendada_ate (inclusive);
+     * 'atencao' até limite (inclusive); 'acima' acima do limite.
+     * @param array{subutilizacao_ate?:float|int,recomendada_ate?:float|int,limite?:float|int} $faixas
+     */
+    public static function faixaFatorCarga(?float $fcPct, array $faixas): ?string
+    {
+        if ($fcPct === null) {
+            return null;
+        }
+        $v = round($fcPct, 1);
+        if ($v < (float) ($faixas['subutilizacao_ate'] ?? 85)) {
+            return 'subutilizacao';
+        }
+        if ($v <= (float) ($faixas['recomendada_ate'] ?? 95)) {
+            return 'recomendada';
+        }
+        if ($v <= (float) ($faixas['limite'] ?? 100)) {
+            return 'atencao';
+        }
+        return 'acima';
+    }
+
+    /**
+     * Fator de Carga: Σ demanda (SPE x h/SP do time) ÷ Σ capacidade líquida
+     * (devs x h/dia x dias úteis x disponibilidade), somando horas por time e sprint
+     * (nunca média de percentuais). Função pura, sem banco.
+     *
+     * @param list<array>                $rows         Q1 (valor + sustentação), com 'spe'.
+     * @param list<string>               $refs         sprint_ref do escopo.
+     * @param list<array>                $sprintsPi    {nome,tipo,status,...}
+     * @param array<string,?float>       $diasPorSprint nome => dias úteis
+     * @param array<string,array>        $capacidade   projeto_key => {dev_count,productive_hours}
+     * @param array<string,float>        $baselines    projeto_key => h/SP
+     * @param array<string,string>       $nomesTimes   projeto_key => nome do time
+     * @param list<string>               $keys         times do universo
+     * @param array                      $cfg          disponibilidade_pct, incluir_sustentacao, faixas, cancelado
+     */
+    public static function fatorCarga(
+        array $rows, array $refs, array $sprintsPi, array $diasPorSprint, array $capacidade, array $baselines,
+        array $nomesTimes, array $keys, array $cfg, string $escopo, ?string $rotulo
+    ): array {
+        $disp      = (float) ($cfg['disponibilidade_pct'] ?? 80);
+        $inclSust  = !empty($cfg['incluir_sustentacao']);
+        $faixas    = $cfg['faixas'] ?? [];
+        $cancelado = $cfg['cancelado'] ?? ['Cancelado'];
+
+        $meta = [];
+        foreach ($sprintsPi as $s) {
+            $meta[$s['nome']] = $s;
+        }
+
+        // Sprints do escopo que entram no cálculo.
+        $incluidas = [];
+        $semDias = [];
+        $sustIgnoradas = [];
+        $parcial = false;
+        foreach (array_values($refs) as $n) {
+            $m = $meta[$n] ?? null;
+            if ($m !== null && ($m['tipo'] ?? null) === 'sustentacao') {
+                $sustIgnoradas[] = $n;
+                continue;
+            }
+            $d = $diasPorSprint[$n] ?? null;
+            if ($d === null || (float) $d <= 0) {
+                $semDias[] = $n;
+                continue;
+            }
+            $incluidas[$n] = (float) $d;
+            if (($m['status'] ?? null) === 'ativa') {
+                $parcial = true;
+            }
+        }
+
+        // SPE por (time, sprint), valor e sustentação.
+        $spe = [];
+        $semSpe = 0;
+        foreach ($rows as $r) {
+            $cat = $r['categoria'] ?? null;
+            if ($cat !== 'valor' && $cat !== 'sustentacao') {
+                continue;
+            }
+            $ref = $r['sprint_ref'] ?? null;
+            if ($ref === null || !isset($incluidas[$ref])) {
+                continue;
+            }
+            if (in_array((string) ($r['status'] ?? ''), $cancelado, true)) {
+                continue;
+            }
+            $key = (string) ($r['projeto_key'] ?? '');
+            if (!isset($spe[$key][$ref])) {
+                $spe[$key][$ref] = ['valor' => 0.0, 'sustentacao' => 0.0];
+            }
+            if (($r['spe'] ?? null) === null) {
+                $semSpe++;
+                continue;
+            }
+            $spe[$key][$ref][$cat] += (float) $r['spe'];
+        }
+
+        $base = [
+            'classe'              => 'exato',
+            'escopo'              => $escopo,
+            'rotulo_escopo'       => $rotulo,
+            'sprints'             => array_keys($incluidas),
+            'parcial'             => $parcial,
+            'disponibilidade_pct' => $disp,
+            'regra_planejado'     => $inclSust ? 'valor_e_sustentacao' : 'somente_valor',
+        ];
+        $diagnosticos = [
+            'sprints_sem_dias_uteis'      => $semDias,
+            'sprints_sustentacao_ignoradas' => $sustIgnoradas,
+            'itens_sem_spe'               => $semSpe,
+        ];
+
+        // Times com e sem dados.
+        $semDados = [];
+        $porTime = [];
+        $porSprint = [];
+        foreach (array_keys($incluidas) as $n) {
+            $porSprint[$n] = ['bruta' => 0.0, 'liquida' => 0.0, 'demanda' => 0.0];
+        }
+        $tot = ['bruta' => 0.0, 'liquida' => 0.0, 'dv' => 0.0, 'ds' => 0.0, 'spv' => 0.0, 'sps' => 0.0];
+        $timesTotal = 0;
+
+        foreach (array_values(array_unique($keys)) as $key) {
+            $timesTotal++;
+            $nome = $nomesTimes[$key] ?? $key;
+            $cap  = $capacidade[$key] ?? ($capacidade[strtoupper((string) $key)] ?? null);
+            $devs = is_array($cap) ? ($cap['dev_count'] ?? null) : null;
+            $hDia = is_array($cap) ? ($cap['productive_hours'] ?? null) : null;
+            $b    = $baselines[$key] ?? null;
+
+            $spV = 0.0; $spS = 0.0;
+            foreach ($spe[$key] ?? [] as $v) {
+                $spV += $v['valor']; $spS += $v['sustentacao'];
+            }
+
+            $motivo = null;
+            if ($devs === null || $hDia === null || (float) $devs <= 0 || (float) $hDia <= 0) {
+                $motivo = 'sem_painel';
+            } elseif ($b === null || (float) $b <= 0) {
+                $motivo = 'sem_baseline';
+            }
+            if ($motivo !== null) {
+                $semDados[] = [
+                    'projeto_key'    => $key,
+                    'time'           => $nome,
+                    'motivo'         => $motivo,
+                    'sp_valor'       => round($spV, 2),
+                    'sp_sustentacao' => round($spS, 2),
+                ];
+                continue;
+            }
+
+            $t = ['bruta' => 0.0, 'liquida' => 0.0, 'dv' => 0.0, 'ds' => 0.0];
+            foreach ($incluidas as $n => $dias) {
+                $bruta   = (float) $devs * (float) $hDia * $dias;
+                $liquida = $bruta * $disp / 100;
+                $dv = ($spe[$key][$n]['valor'] ?? 0.0) * (float) $b;
+                $ds = ($spe[$key][$n]['sustentacao'] ?? 0.0) * (float) $b;
+                $t['bruta'] += $bruta; $t['liquida'] += $liquida; $t['dv'] += $dv; $t['ds'] += $ds;
+                $porSprint[$n]['bruta']   += $bruta;
+                $porSprint[$n]['liquida'] += $liquida;
+                $porSprint[$n]['demanda'] += $dv + ($inclSust ? $ds : 0.0);
+            }
+            $tot['bruta'] += $t['bruta']; $tot['liquida'] += $t['liquida'];
+            $tot['dv'] += $t['dv']; $tot['ds'] += $t['ds'];
+            $tot['spv'] += $spV; $tot['sps'] += $spS;
+
+            $dem = $t['dv'] + ($inclSust ? $t['ds'] : 0.0);
+            $fc  = $t['liquida'] > 0 ? round($dem / $t['liquida'] * 100, 1) : null;
+            $porTime[] = [
+                'projeto_key'    => $key,
+                'time'           => $nome,
+                'devs'           => (float) $devs,
+                'horas_dia'      => (float) $hDia,
+                'baseline_h_sp'  => round((float) $b, 2),
+                'bruta_h'        => round($t['bruta'], 2),
+                'liquida_h'      => round($t['liquida'], 2),
+                'sp_valor'       => round($spV, 2),
+                'sp_sustentacao' => round($spS, 2),
+                'demanda_h'      => round($dem, 2),
+                'fc_pct'         => $fc,
+                'faixa'          => self::faixaFatorCarga($fc, $faixas),
+            ];
+        }
+
+        usort($semDados, static function (array $x, array $y): int {
+            return strcmp((string) $x['projeto_key'], (string) $y['projeto_key']);
+        });
+        $cobertura = [
+            'times_com_dados' => count($porTime),
+            'times_total'     => $timesTotal,
+            'times_sem_dados' => $semDados,
+        ];
+
+        if ($incluidas === []) {
+            $motivoVazio = ($sustIgnoradas !== [] && $semDias === [])
+                ? 'Sprint de sustentação: o Fator de Carga cobre só sprints de valor.'
+                : 'Nenhuma sprint do escopo tem dias úteis cadastrados.';
+            return $base + [
+                'estado'       => 'vazio',
+                'motivo'       => $motivoVazio,
+                'fc_pct'       => null,
+                'faixa'        => null,
+                'cobertura'    => $cobertura,
+                'diagnosticos' => $diagnosticos,
+            ];
+        }
+        if ($porTime === [] || $tot['liquida'] <= 0) {
+            return $base + [
+                'estado'       => 'vazio',
+                'motivo'       => 'Nenhum time do escopo tem capacidade no Painel e baseline h/SP.',
+                'fc_pct'       => null,
+                'faixa'        => null,
+                'cobertura'    => $cobertura,
+                'diagnosticos' => $diagnosticos,
+            ];
+        }
+
+        usort($porTime, static function (array $x, array $y): int {
+            return [-(float) $x['fc_pct'], $x['projeto_key']] <=> [-(float) $y['fc_pct'], $y['projeto_key']];
+        });
+
+        $demanda = $tot['dv'] + ($inclSust ? $tot['ds'] : 0.0);
+        $fc = round($demanda / $tot['liquida'] * 100, 1);
+
+        $listaSprints = [];
+        foreach ($incluidas as $n => $dias) {
+            $p = $porSprint[$n];
+            $f = $p['liquida'] > 0 ? round($p['demanda'] / $p['liquida'] * 100, 1) : null;
+            $listaSprints[] = [
+                'sprint'    => $n,
+                'status'    => $meta[$n]['status'] ?? null,
+                'dias_uteis' => $dias,
+                'bruta_h'   => round($p['bruta'], 2),
+                'liquida_h' => round($p['liquida'], 2),
+                'demanda_h' => round($p['demanda'], 2),
+                'fc_pct'    => $f,
+                'faixa'     => self::faixaFatorCarga($f, $faixas),
+            ];
+        }
+
+        return $base + [
+            'estado'     => 'ok',
+            'bruta_h'    => round($tot['bruta'], 2),
+            'liquida_h'  => round($tot['liquida'], 2),
+            'demanda_h'  => round($demanda, 2),
+            'fc_pct'     => $fc,
+            'faixa'      => self::faixaFatorCarga($fc, $faixas),
+            'decomposicao' => [
+                'sp_valor'               => round($tot['spv'], 2),
+                'sp_sustentacao'         => round($tot['sps'], 2),
+                'demanda_valor_h'        => round($tot['dv'], 2),
+                'demanda_sustentacao_h'  => round($tot['ds'], 2),
+                'fc_somente_valor_pct'   => round($tot['dv'] / $tot['liquida'] * 100, 1),
+                'fc_com_sustentacao_pct' => round(($tot['dv'] + $tot['ds']) / $tot['liquida'] * 100, 1),
+            ],
+            'cobertura'    => $cobertura,
+            'diagnosticos' => $diagnosticos,
+            'por_time'     => $porTime,
+            'por_sprint'   => $listaSprints,
+            'regra'        => 'Σ (SPE planejado x h/SP do time) ÷ Σ (devs x horas/dia x dias úteis x disponibilidade), somando horas por time e sprint.',
+        ];
+    }
+
     // ════════════════════════════════════════════════════════════════════
     // D.5 G7 — Burndown (só entrega de valor)
     // ════════════════════════════════════════════════════════════════════

@@ -54,6 +54,17 @@ return [
     // acima do qual a tela exibe aviso. Não é regra de cálculo.
     'efficiency' => ['aviso_multissprint_pct' => 10],
 
+    // Fator de Carga (demanda planejada ÷ capacidade líquida). Decisão 2 do usuário:
+    // 80% de disponibilidade para todos. Decisão (a) do plano da Fase 2: o planejado
+    // conta só entrega de valor (sustentação/suporte fora); 'incluir_sustentacao'
+    // troca o fc_pct principal, e a decomposição é sempre exibida.
+    // Faixas (%): < subutilizacao_ate; até recomendada_ate; até limite; acima do limite.
+    'fator_carga' => [
+        'disponibilidade_pct' => 80,
+        'incluir_sustentacao' => false,
+        'faixas' => ['subutilizacao_ate' => 85, 'recomendada_ate' => 95, 'limite' => 100],
+    ],
+
     // ── Cache de resposta em arquivo (GET /graficos/visao-geral) ────────────
     // Desligar: 'ativo' => false aqui, ou VG_CACHE=0 no ambiente (SetEnv no vhost).
     // 'dir' relativo é resolvido contra a raiz do projeto.
