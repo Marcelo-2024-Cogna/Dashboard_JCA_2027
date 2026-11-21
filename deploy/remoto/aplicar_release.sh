@@ -99,7 +99,8 @@ validar_base() {
   if ! [[ $v =~ ^(/|[A-Za-z]:/)[A-Za-z0-9._/:-]+$ ]]; then
     erro "$rotulo invalido (use caminho absoluto com letras, numeros, . _ - /): $v"; return 1
   fi
-  case "/$v/" in */../*|*//*) erro "$rotulo nao pode conter '..' nem '//': $v"; return 1 ;; esac
+  # "$v/" (sem barra inicial extra): v ja comeca com '/', entao "/$v/" criaria '//' e reprovaria todo caminho valido
+  case "$v/" in */../*|*//*) erro "$rotulo nao pode conter '..' nem '//': $v"; return 1 ;; esac
   case "$v" in */) erro "$rotulo nao pode terminar em '/': $v"; return 1 ;; esac
   case "$v" in
     /var|/var/*|/tmp|/tmp/*) erro "$rotulo nao pode ficar em /var nem /tmp: $v"; return 1 ;;
