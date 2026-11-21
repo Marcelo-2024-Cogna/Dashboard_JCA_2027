@@ -238,7 +238,20 @@ class VisaoGeralRepository
             'fator_carga'         => $this->configFatorCarga()['cfg'] + [
                 'fonte_capacidade' => $this->fonteCapacidade(),
             ],
+            'debt_load'           => [
+                'tipos'                            => $this->tiposDebtLoad(),
+                'disponibilidade_pct'              => $this->configFatorCarga()['cfg']['disponibilidade_pct'],
+                'fonte_capacidade'                 => $this->fonteCapacidade(),
+                'efficiency_exclui_debito_tecnico' => !empty($this->config['efficiency']['excluir_debito_tecnico']),
+            ],
         ];
+    }
+
+    /** Tipos de item que contam como dívida no Debt Load (config/visao_geral.php). */
+    private function tiposDebtLoad(): array
+    {
+        $t = $this->config['debt_load']['tipos'] ?? ['Débito Técnico', 'Suporte'];
+        return array_values(array_map('strval', is_array($t) ? $t : []));
     }
 
     /** Origem da capacidade: Painel (capacity.json salvo) ou seed de config/capacity.php. */
@@ -392,9 +405,10 @@ class VisaoGeralRepository
             $nomesTimes[$t['projeto_key']] = $t['time'];
         }
         $refBaseline = $this->produtividade->referenciaPlanejamento($keys);
+        $excluirDebito = !empty($this->config['efficiency']['excluir_debito_tecnico']);
         $efficiency = VisaoGeralCalculator::efficiencyBaseline(
             $rows, $refsFoco, $foco['sprints_pi'], $refBaseline,
-            $nomesTimes, $escopoLabel, $rotuloEscopo
+            $nomesTimes, $escopoLabel, $rotuloEscopo, $excluirDebito
         );
         $efficiency['classe'] = 'exato';
         $efficiency['aviso_multissprint_pct'] = (float) ($this->config['efficiency']['aviso_multissprint_pct'] ?? 10);
@@ -415,6 +429,59 @@ class VisaoGeralRepository
         );
         $fatorCarga['classe'] = 'exato';
         $fatorCarga['fonte_capacidade'] = $this->fonteCapacidade();
+
+        // ── Debt Load Ratio (mesma capacidade e baseline do Fator de Carga) ──
+        $capTeams = $this->capacidade->getCapacity()['teams'] ?? [];
+        $debtLoad = VisaoGeralCalculator::debtLoad(
+            $rows, $refsFoco, $foco['sprints_pi'], $diasPorSprint, $capTeams, $refBaseline,
+            $nomesTimes, $keys,
+            [
+                'disponibilidade_pct' => $cfgFc['cfg']['disponibilidade_pct'],
+                'tipos'               => $this->tiposDebtLoad(),
+                'cancelado'           => $cancelado,
+            ],
+            $escopoLabel, $rotuloEscopo
+        );
+        $debtLoad['classe'] = 'exato';
+        $debtLoad['fonte_capacidade'] = $this->fonteCapacidade();
+
+        // Impacto do Débito Técnico no Fator de Carga (sem alterar o indicador).
+        $semDt = array_values(array_filter($rows, static function (array $r): bool {
+            return ($r['tipo_item'] ?? null) !== 'Débito Técnico';
+        }));
+        $fcSemDt = VisaoGeralCalculator::fatorCarga(
+            $semDt, $refsFoco, $foco['sprints_pi'], $diasPorSprint, $capTeams, $refBaseline,
+            $nomesTimes, $keys, $cfgFc['cfg'] + ['cancelado' => $cancelado], $escopoLabel, $rotuloEscopo
+        );
+        $fcAtual = $fatorCarga['fc_pct'] ?? null;
+        $fcSem   = $fcSemDt['fc_pct'] ?? null;
+        $debtLoad['impacto_fator_carga'] = [
+            'fc_pct_atual'              => $fcAtual,
+            'fc_pct_sem_debito_tecnico' => $fcSem,
+            'delta_pp'                  => ($fcAtual !== null && $fcSem !== null) ? round($fcAtual - $fcSem, 1) : null,
+        ];
+
+        // Efficiency com e sem Débito Técnico (o modo ativo vem do config).
+        $effComp = static function (array $e): array {
+            return [
+                'horas'             => $e['horas'] ?? null,
+                'pontos'            => $e['pontos'] ?? null,
+                'h_por_sp'          => $e['h_por_sp'] ?? null,
+                'razao_pct'         => $e['razao_pct'] ?? null,
+                'baseline_h_por_sp' => $e['baseline_h_por_sp'] ?? null,
+            ];
+        };
+        $effCom = VisaoGeralCalculator::efficiencyBaseline(
+            $rows, $refsFoco, $foco['sprints_pi'], $refBaseline, $nomesTimes, $escopoLabel, $rotuloEscopo, false
+        );
+        $effSem = VisaoGeralCalculator::efficiencyBaseline(
+            $rows, $refsFoco, $foco['sprints_pi'], $refBaseline, $nomesTimes, $escopoLabel, $rotuloEscopo, true
+        );
+        $debtLoad['efficiency_comparativo'] = [
+            'modo_ativo'         => $excluirDebito ? 'sem_debito_tecnico' : 'com_debito_tecnico',
+            'com_debito_tecnico' => $effComp($effCom),
+            'sem_debito_tecnico' => $effComp($effSem),
+        ];
 
         // ── Avisos derivados ──────────────────────────────────────────────
         $naoMapeados = $andamento['diagnosticos']['status_nao_mapeados'] ?? [];
@@ -445,6 +512,7 @@ class VisaoGeralRepository
             'lista_sprint_anterior' => $listaSprintAnterior,
             'efficiency_baseline'   => $efficiency,
             'fator_carga'           => $fatorCarga,
+            'debt_load'             => $debtLoad,
             'sustentacao'           => [
                 'estado' => 'aguardando_modulo',
                 'classe' => 'aguardando_modulo',
@@ -880,6 +948,7 @@ class VisaoGeralRepository
             'lista_sprint_anterior' => $vazioExato,
             'efficiency_baseline'   => $vazioExato,
             'fator_carga'           => $vazioExato,
+            'debt_load'             => $vazioExato,
             'sustentacao'           => [
                 'estado' => 'aguardando_modulo',
                 'classe' => 'aguardando_modulo',

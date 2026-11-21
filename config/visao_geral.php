@@ -52,7 +52,16 @@ return [
 
     // Efficiency Baseline Ratio: limite de apresentação (% de horas em itens multissprint)
     // acima do qual a tela exibe aviso. Não é regra de cálculo.
-    'efficiency' => ['aviso_multissprint_pct' => 10],
+    // 'excluir_debito_tecnico': false = comportamento atual (Débito Técnico dentro do h/SP);
+    // true = tira os itens tipo_item 'Débito Técnico' do Efficiency. Decisão do usuário pendente.
+    'efficiency' => ['aviso_multissprint_pct' => 10, 'excluir_debito_tecnico' => false],
+
+    // Debt Load Ratio (SP de dívida ÷ capacidade em SP). Decisões do usuário: só entram os
+    // tipos abaixo (Débito Técnico e Suporte), em SP, todos os status exceto Cancelado,
+    // capacidade do Painel com 80% de disponibilidade (fator_carga.disponibilidade_pct) e
+    // baseline h/SP do time. Suporte N1 não é identificável no Jira: entra todo Suporte.
+    // Não há faixa definida.
+    'debt_load' => ['tipos' => ['Débito Técnico', 'Suporte']],
 
     // Fator de Carga (demanda planejada ÷ capacidade líquida). Decisão 2 do usuário:
     // 80% de disponibilidade para todos. Decisão (a) do plano da Fase 2: o planejado

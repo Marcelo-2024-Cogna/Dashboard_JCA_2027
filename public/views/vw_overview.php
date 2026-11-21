@@ -311,7 +311,9 @@
       fonte: 'Horas apontadas no Jira (tempo gasto) e baseline h/SP de cada time (média de produtividade do PI).',
       unidade: 'Horas por Story Point (h/SP).',
       formula: 'h/SP = horas ÷ SP dos itens de valor em Done na janela. Baseline = média dos h/SP dos times, ponderada pelo SP entregue. Variação = horas ÷ (Σ SP × baseline do time) − 1.',
-      entra: 'Itens de valor em Done (' + lista(m.tipos_valor) + '). Débito Técnico está incluso e é destacado no detalhe.',
+      entra: 'Itens de valor em Done (' + lista(m.tipos_valor) + '). ' + (((m.debt_load || {}).efficiency_exclui_debito_tecnico)
+        ? 'Débito Técnico está excluído do h/SP (regra configurada) e continua contado no diagnóstico.'
+        : 'Débito Técnico está incluso e é destacado no detalhe.'),
       naoEntra: 'Sustentação e Suporte. Time sem baseline fica fora da razão.',
       done: lista(m.done_statuses),
       observacoes: [
@@ -343,6 +345,28 @@
           'Sprint em andamento usa os dias úteis totais e fica marcada como parcial.',
           'Time sem dados fica fora do numerador e do denominador e é listado no detalhe.',
           'Pode divergir de times_composicao, que traz outra composição de devs e horas.',
+        ],
+      };
+    },
+    debt_load: (d, m) => {
+      const dm = m.debt_load || {};
+      const fonteCap = dm.fonte_capacidade === 'painel'
+        ? 'Painel de Controle (desenvolvedores e horas/dia por time)'
+        : 'valores padrão de config/capacity.php (o Painel ainda não foi salvo)';
+      return {
+        titulo: 'Debt Load',
+        fonte: 'Itens: Jira (vw_item), SP atual. Capacidade: ' + fonteCap + ', a mesma do Fator de Carga. Baseline h/SP: times_composicao.media_produtividade_pi. Dias úteis: sprints.dias_uteis.',
+        unidade: 'Story Points (SP) e percentual (%).',
+        formula: 'Capacidade em SP = (devs × h/dia × dias úteis × ' + fmt(dm.disponibilidade_pct) + '%) ÷ baseline h/SP do time. Debt Load = Σ SP de dívida ÷ Σ capacidade em SP × 100. Exemplo: 8 SP ÷ 38,4 SP = 20,8%. No consolidado e na PI somam-se SP, nunca os percentuais.',
+        entra: 'Itens não cancelados dos tipos ' + lista(dm.tipos) + ', em qualquer status (comprometido), pela sprint atual do item. O SP entregue aparece à parte.',
+        naoEntra: 'Incidente, SS, Bug e Sustentação. Suporte N1 não é identificável no Jira: entra todo item do tipo Suporte. Sprints de sustentação, sprints sem dias úteis e times sem Painel ou sem baseline ficam fora.',
+        done: 'Só para o SP entregue: ' + lista(m.done_statuses) + '.',
+        observacoes: [
+          'Estado de hoje, não do fim da sprint.',
+          'Item sem SP conta 0 e é reportado no detalhe, o que subestima o valor.',
+          'Débito Técnico também está no Fator de Carga e no Efficiency: os indicadores não se somam.',
+          'Sem faixa definida: a cor é neutra até o usuário definir limites.',
+          'Time sem dados fica fora do numerador e do denominador e é listado no detalhe.',
         ],
       };
     },
@@ -548,6 +572,118 @@
     });
   }
 
+  // ── Debt Load: KPI e modal de detalhe ──────────────────────────────────
+  const dlPct = v => (v == null ? 'sem dados' : pctF(v));
+  const dlSp = v => (v == null ? '—' : fmt(v) + ' SP');
+  function kpiDebtLoad(d) {
+    const dl = d.gadgets.debt_load || {};
+    const rotulo = 'Debt Load';
+    if (dl.estado !== 'ok' || dl.dl_pct == null) {
+      return kpi(rotulo, '—', 'sem dados: ' + (dl.motivo || 'sem capacidade ou dívida calculável na seleção.'), '#94a3b8');
+    }
+    const k = kpi(rotulo, pctF(dl.dl_pct), 'sem faixa definida', '#94a3b8',
+      'SP de Débito Técnico e Suporte ÷ capacidade líquida em SP (horas líquidas ÷ baseline h/SP). Estado de hoje.');
+    k.appendChild(el('div', 'kpi-sub', fmt(dl.sp_divida) + ' SP de dívida ÷ ' + fmt(dl.capacidade_sp) + ' SP de capacidade líquida'));
+    if (dl.parcial) k.firstChild.appendChild(el('span', 'badge', 'parcial'));
+    const sd = (dl.cobertura || {}).times_sem_dados || [];
+    if (sd.length) {
+      const av = el('div', 'kpi-sub', '⚠ ' + int(sd.length) + ' time(s) sem dados ficam fora do cálculo.');
+      av.style.color = '#f59e0b';
+      k.appendChild(av);
+    }
+    const ss = (dl.diagnosticos || {}).itens_sem_sp || {};
+    if (ss.itens > 0) {
+      const av = el('div', 'kpi-sub', '⚠ ' + int(ss.itens) + ' item(ns) de dívida sem SP contam 0.');
+      av.style.color = '#f59e0b';
+      k.appendChild(av);
+    }
+    return kpiAcao(k, 'Detalhes', origem => abrirDebtLoad(d, origem));
+  }
+  function abrirDebtLoad(d, origem) {
+    const dl = d.gadgets.debt_load || {};
+    const met = (d.metodologia || {}).debt_load || {};
+    window.App.Modal.abrir({
+      titulo: 'Debt Load',
+      subtitulo: (dl.rotulo_escopo || '') + (dl.parcial ? ' · parcial (sprint em andamento)' : ''),
+      origem,
+      construir: corpo => {
+        const ul = el('ul');
+        if (dl.estado !== 'ok') {
+          ul.appendChild(el('li', null, 'Sem dados: ' + (dl.motivo || 'sem capacidade ou dívida calculável na seleção.')));
+          corpo.appendChild(ul);
+          return;
+        }
+        const cob = dl.cobertura || {};
+        [
+          fmt(dl.sp_divida) + ' SP de dívida ÷ ' + fmt(dl.capacidade_sp) + ' SP de capacidade líquida (' + fcHoras(dl.liquida_h) + ', disponibilidade ' + fmt(dl.disponibilidade_pct) + '%) = ' + dlPct(dl.dl_pct) + ' · sem faixa definida',
+          'Só entregues: ' + dlSp(dl.sp_entregue) + ' · ' + dlPct(dl.dl_entregue_pct) + '. Em horas (diagnóstico): ' + dlPct(dl.dl_horas_pct) + '. Com SPE (diagnóstico): ' + dlSp(dl.sp_spe) + '.',
+          'Times com dados: ' + int(cob.times_com_dados) + ' de ' + int(cob.times_total) + '.',
+          'Tipos que entram: ' + lista(met.tipos || dl.tipos) + '. Suporte N1 não é identificável: entra todo item de Suporte.',
+          'Fonte da capacidade: ' + (met.fonte_capacidade === 'painel' ? 'Painel de Controle' : 'config/capacity.php (Painel não salvo)') + '.',
+        ].forEach(t => ul.appendChild(el('li', null, t)));
+        corpo.appendChild(ul);
+
+        tabelaModal(corpo, 'Debt Load por time: capacidade, dívida e percentual',
+          [['Time', ''], ['Devs', 'num'], ['h/dia', 'num'], ['Baseline h/SP', 'num'], ['Capacidade líquida', 'num'],
+            ['Capacidade (SP)', 'num'], ['Débito Técnico', 'num'], ['Suporte', 'num'], ['Dívida (SP)', 'num'], ['Entregue (SP)', 'num'], ['Debt Load', 'num']],
+          (dl.por_time || []).map(t => [t.time || t.projeto_key, fmt(t.devs), fmt(t.horas_dia), fmt(t.baseline_h_sp), fcHoras(t.liquida_h),
+            dlSp(t.capacidade_sp), dlSp(t.sp_debito_tecnico), dlSp(t.sp_suporte), dlSp(t.sp_divida), dlSp(t.sp_entregue), dlPct(t.dl_pct)]), '900px');
+
+        tabelaModal(corpo, 'Debt Load por sprint: dias úteis, capacidade, dívida e percentual',
+          [['Sprint', ''], ['Dias úteis', 'num'], ['Capacidade líquida', 'num'], ['Capacidade (SP)', 'num'], ['Dívida (SP)', 'num'], ['Debt Load', 'num']],
+          (dl.por_sprint || []).map(s => [s.sprint + (s.status === 'ativa' ? ' (em andamento)' : ''), fmt(s.dias_uteis),
+            fcHoras(s.liquida_h), dlSp(s.capacidade_sp), dlSp(s.sp_divida), dlPct(s.dl_pct)]), '620px');
+
+        tabelaModal(corpo, 'Decomposição por tipo: itens, SP e SP entregue',
+          [['Tipo', ''], ['Itens', 'num'], ['SP', 'num'], ['SP entregue', 'num']],
+          ((dl.decomposicao || {}).por_tipo || []).map(t => [t.tipo, int(t.itens), fmt(t.sp), fmt(t.sp_entregue)]), '460px');
+
+        const fora = dl.fora_do_indicador || [];
+        if (fora.length) {
+          tabelaModal(corpo, 'Fora do indicador: tipos de sustentação que não entram',
+            [['Tipo', ''], ['Itens', 'num'], ['SP', 'num']],
+            fora.map(t => [t.tipo, int(t.itens), fmt(t.sp)]), '460px');
+        }
+
+        const ec = dl.efficiency_comparativo || {};
+        const efLinha = (nome, x) => [nome, fmt((x || {}).horas), fmt((x || {}).pontos), fmt((x || {}).h_por_sp),
+          (x || {}).baseline_h_por_sp == null ? 'sem baseline' : fmt(x.baseline_h_por_sp), pctF((x || {}).razao_pct)];
+        tabelaModal(corpo, 'Efficiency com e sem Débito Técnico (modo ativo: ' + (ec.modo_ativo === 'sem_debito_tecnico' ? 'sem Débito Técnico' : 'com Débito Técnico') + ')',
+          [['Cálculo', ''], ['Horas', 'num'], ['SP', 'num'], ['h/SP', 'num'], ['Baseline', 'num'], ['Razão', 'num']],
+          [efLinha('Com Débito Técnico', ec.com_debito_tecnico), efLinha('Sem Débito Técnico', ec.sem_debito_tecnico)], '600px');
+
+        const im = dl.impacto_fator_carga || {};
+        corpo.appendChild(el('h4', null, 'Impacto no Fator de Carga'));
+        const il = el('ul');
+        il.appendChild(el('li', null, 'Fator de Carga atual: ' + fcPct(im.fc_pct_atual) + ' · sem Débito Técnico: ' + fcPct(im.fc_pct_sem_debito_tecnico)
+          + ' · diferença: ' + (im.delta_pp == null ? '—' : fmt(im.delta_pp) + ' p.p.') + '. Nada muda no Fator de Carga sem decisão do usuário.'));
+        corpo.appendChild(il);
+
+        const sd = cob.times_sem_dados || [];
+        if (sd.length) {
+          corpo.appendChild(el('h4', null, 'Times sem dados'));
+          const sl = el('ul');
+          sd.forEach(t => sl.appendChild(el('li', null, (t.time || t.projeto_key) + ': '
+            + (t.motivo === 'sem_baseline' ? 'sem baseline h/SP' : 'sem capacidade no Painel')
+            + ' · SP de dívida fora do cálculo: ' + fmt(t.sp_divida) + '.')));
+          corpo.appendChild(sl);
+        }
+
+        const dg = dl.diagnosticos || {};
+        const ss = dg.itens_sem_sp || {};
+        corpo.appendChild(el('h4', null, 'Diagnósticos'));
+        const gl = el('ul');
+        [
+          'Itens de dívida sem SP: ' + int(ss.itens) + ' (contam 0; ' + fmt(ss.horas) + ' h apontadas).',
+          'Sprints sem dias úteis (fora do cálculo): ' + lista(dg.sprints_sem_dias_uteis) + '.',
+          'Sprints de sustentação ignoradas: ' + lista(dg.sprints_sustentacao_ignoradas) + '.',
+        ].forEach(t => gl.appendChild(el('li', null, t)));
+        corpo.appendChild(gl);
+        if (dl.regra) corpo.appendChild(el('div', 'pr-sub', dl.regra));
+      },
+    });
+  }
+
   // ── 1. Faixa de contexto ────────────────────────────────────────────────
   function faixaContexto(d) {
     const j = d.janela || {}, fa = d.filtros || {}, ex = d.extracao || {};
@@ -668,6 +804,7 @@
       'Fonte: ' + (g.aceitos_sp_origem === 'velocidade' ? 'Velocidade (= Entregues do Planejado x Realizado)' : 'cálculo local')));
     grid.appendChild(kpiEfficiency(d));
     grid.appendChild(kpiFatorCarga(d));
+    grid.appendChild(kpiDebtLoad(d));
     const cf = g.cancelados_foco;
     grid.appendChild(kpi('Cancelados na PI', fmt(g.cancelados_pi.sp) + ' SP',
       int(g.cancelados_pi.itens) + ' itens' + (cf ? ' · no foco: ' + fmt(cf.sp) + ' SP em ' + int(cf.itens) + ' itens' : ''), '#f97316'));
@@ -678,6 +815,7 @@
     abLeg.appendChild(legendaBotao('aceitos', d, 'ⓘ Como é calculado: Aceitos'));
     abLeg.appendChild(legendaBotao('efficiency', d, 'ⓘ Como é calculado: Efficiency'));
     abLeg.appendChild(legendaBotao('fator_carga', d, 'ⓘ Como é calculado: Fator de Carga'));
+    abLeg.appendChild(legendaBotao('debt_load', d, 'ⓘ Como é calculado: Debt Load'));
     sec.appendChild(el('div', 'pr-sub', 'Total do escopo: ' + fmt(g.total_sp) + ' SP (backlog + em andamento + bloqueado + aceitos; cancelados ficam fora).'));
 
     // Modo PI: itens fora da janela.

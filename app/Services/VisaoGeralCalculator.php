@@ -565,7 +565,8 @@ class VisaoGeralCalculator
      * @param array<string,string> $nomesTimes projeto_key => nome do time
      */
     public static function efficiencyBaseline(
-        array $rows, array $refs, array $sprintsPi, array $baselines, array $nomesTimes, string $escopo, ?string $rotulo
+        array $rows, array $refs, array $sprintsPi, array $baselines, array $nomesTimes, string $escopo, ?string $rotulo,
+        bool $excluirDebito = false
     ): array {
         $refSet = array_flip($refs);
         $fimDe = [];
@@ -601,6 +602,12 @@ class VisaoGeralCalculator
             $p = (float) ($r['story_points'] ?? 0);
             $key = (string) ($r['projeto_key'] ?? '');
 
+            if (($r['tipo_item'] ?? null) === 'Débito Técnico') {
+                $debito['n']++; $debito['p'] += $p; $debito['h'] += $h;
+                if ($excluirDebito) {
+                    continue;
+                }
+            }
             $tot['h'] += $h; $tot['p'] += $p; $tot['n']++;
             if (!isset($porKey[$key])) {
                 $porKey[$key] = ['h' => 0.0, 'p' => 0.0, 'n' => 0];
@@ -609,9 +616,6 @@ class VisaoGeralCalculator
 
             if (($r['story_points'] ?? null) === null) {
                 $semSp['n']++; $semSp['h'] += $h;
-            }
-            if (($r['tipo_item'] ?? null) === 'Débito Técnico') {
-                $debito['n']++; $debito['p'] += $p; $debito['h'] += $h;
             }
             if (count(SprintRef::todas($r['sprint'] ?? null)) > 1) {
                 $multi['n']++; $multi['p'] += $p; $multi['h'] += $h;
@@ -752,6 +756,40 @@ class VisaoGeralCalculator
     }
 
     /**
+     * Seleção de sprints que entram nos indicadores de capacidade (Fator de Carga e Debt Load):
+     * sprint de sustentação e sprint sem dias úteis ficam fora; sprint ativa marca parcial.
+     *
+     * @param list<string>          $refs
+     * @param array<string,array>   $meta          nome => {tipo,status,...}
+     * @param array<string,?float>  $diasPorSprint nome => dias úteis
+     * @return array{0:array<string,float>,1:list<string>,2:list<string>,3:bool} [incluídas nome=>dias, sem dias, sustentação ignoradas, parcial]
+     */
+    private static function sprintsDaCapacidade(array $refs, array $meta, array $diasPorSprint): array
+    {
+        $incluidas = [];
+        $semDias = [];
+        $sustIgnoradas = [];
+        $parcial = false;
+        foreach (array_values($refs) as $n) {
+            $m = $meta[$n] ?? null;
+            if ($m !== null && ($m['tipo'] ?? null) === 'sustentacao') {
+                $sustIgnoradas[] = $n;
+                continue;
+            }
+            $d = $diasPorSprint[$n] ?? null;
+            if ($d === null || (float) $d <= 0) {
+                $semDias[] = $n;
+                continue;
+            }
+            $incluidas[$n] = (float) $d;
+            if (($m['status'] ?? null) === 'ativa') {
+                $parcial = true;
+            }
+        }
+        return [$incluidas, $semDias, $sustIgnoradas, $parcial];
+    }
+
+    /**
      * Fator de Carga: Σ demanda (SPE x h/SP do time) ÷ Σ capacidade líquida
      * (devs x h/dia x dias úteis x disponibilidade), somando horas por time e sprint
      * (nunca média de percentuais). Função pura, sem banco.
@@ -781,26 +819,7 @@ class VisaoGeralCalculator
         }
 
         // Sprints do escopo que entram no cálculo.
-        $incluidas = [];
-        $semDias = [];
-        $sustIgnoradas = [];
-        $parcial = false;
-        foreach (array_values($refs) as $n) {
-            $m = $meta[$n] ?? null;
-            if ($m !== null && ($m['tipo'] ?? null) === 'sustentacao') {
-                $sustIgnoradas[] = $n;
-                continue;
-            }
-            $d = $diasPorSprint[$n] ?? null;
-            if ($d === null || (float) $d <= 0) {
-                $semDias[] = $n;
-                continue;
-            }
-            $incluidas[$n] = (float) $d;
-            if (($m['status'] ?? null) === 'ativa') {
-                $parcial = true;
-            }
-        }
+        [$incluidas, $semDias, $sustIgnoradas, $parcial] = self::sprintsDaCapacidade($refs, $meta, $diasPorSprint);
 
         // SPE por (time, sprint), valor e sustentação.
         $spe = [];
@@ -992,6 +1011,288 @@ class VisaoGeralCalculator
             'por_time'     => $porTime,
             'por_sprint'   => $listaSprints,
             'regra'        => 'Σ (SPE planejado x h/SP do time) ÷ Σ (devs x horas/dia x dias úteis x disponibilidade), somando horas por time e sprint.',
+        ];
+    }
+
+    /**
+     * Debt Load de uma unidade (time x sprint): SP de dívida ÷ capacidade em SP
+     * (capacidade líquida em horas ÷ baseline h/SP do time).
+     * @return array{bruta_h:float,liquida_h:float,capacidade_sp:float,sp_divida:float,dl_pct:?float}
+     */
+    public static function debtLoadUnidade(
+        float $devs, float $horasDia, float $dias, float $dispPct, float $spDivida, float $hPorSp
+    ): array {
+        $bruta   = $devs * $horasDia * $dias;
+        $liquida = $bruta * $dispPct / 100;
+        $cap     = ($liquida > 0 && $hPorSp > 0) ? $liquida / $hPorSp : 0.0;
+        return [
+            'bruta_h'       => round($bruta, 2),
+            'liquida_h'     => round($liquida, 2),
+            'capacidade_sp' => round($cap, 2),
+            'sp_divida'     => round($spDivida, 2),
+            'dl_pct'        => $cap > 0 ? round($spDivida / $cap * 100, 1) : null,
+        ];
+    }
+
+    /**
+     * Debt Load Ratio: Σ SP (atual) de Débito Técnico + Suporte ÷ Σ capacidade em SP
+     * (líquida_h ÷ baseline do time), somando por time e sprint (nunca média de percentuais).
+     * Todos os status exceto cancelado. Sem faixa definida (faixa sempre null). Função pura.
+     *
+     * @param list<array>                $rows         Q1 (valor + sustentação).
+     * @param list<string>               $refs         sprint_ref do escopo.
+     * @param list<array>                $sprintsPi    {nome,tipo,status,...}
+     * @param array<string,?float>       $diasPorSprint nome => dias úteis
+     * @param array<string,array>        $capacidade   projeto_key => {dev_count,productive_hours}
+     * @param array<string,float>        $baselines    projeto_key => h/SP
+     * @param array<string,string>       $nomesTimes   projeto_key => nome do time
+     * @param list<string>               $keys         times do universo
+     * @param array                      $cfg          disponibilidade_pct, tipos, cancelado
+     */
+    public static function debtLoad(
+        array $rows, array $refs, array $sprintsPi, array $diasPorSprint, array $capacidade, array $baselines,
+        array $nomesTimes, array $keys, array $cfg, string $escopo, ?string $rotulo
+    ): array {
+        $disp      = (float) ($cfg['disponibilidade_pct'] ?? 80);
+        $tipos     = array_values($cfg['tipos'] ?? ['Débito Técnico', 'Suporte']);
+        $cancelado = $cfg['cancelado'] ?? ['Cancelado'];
+
+        $meta = [];
+        foreach ($sprintsPi as $s) {
+            $meta[$s['nome']] = $s;
+        }
+        [$incluidas, $semDias, $sustIgnoradas, $parcial] = self::sprintsDaCapacidade($refs, $meta, $diasPorSprint);
+
+        // Dívida por (time, sprint) e por tipo; sustentação fora do indicador por (time, tipo).
+        $div = [];
+        $porTipoTime = [];
+        $foraTime = [];
+        foreach ($rows as $r) {
+            $ref = $r['sprint_ref'] ?? null;
+            if ($ref === null || !isset($incluidas[$ref])) {
+                continue;
+            }
+            if (in_array((string) ($r['status'] ?? ''), $cancelado, true)) {
+                continue;
+            }
+            $key  = (string) ($r['projeto_key'] ?? '');
+            $tipo = (string) ($r['tipo_item'] ?? '');
+            $sp   = $r['story_points'] ?? null;
+            $spF  = $sp === null ? 0.0 : (float) $sp;
+            if (in_array($tipo, $tipos, true)) {
+                if (!isset($div[$key][$ref])) {
+                    $div[$key][$ref] = ['sp' => 0.0, 'ent' => 0.0, 'spe' => 0.0];
+                }
+                if (!isset($porTipoTime[$key][$tipo])) {
+                    $porTipoTime[$key][$tipo] = ['itens' => 0, 'sp' => 0.0, 'ent' => 0.0, 'sem_sp' => 0, 'sem_sp_h' => 0.0];
+                }
+                $isEnt = (int) ($r['entregue'] ?? 0) === 1;
+                $div[$key][$ref]['sp']  += $spF;
+                $div[$key][$ref]['ent'] += $isEnt ? $spF : 0.0;
+                $div[$key][$ref]['spe'] += (float) ($r['spe'] ?? 0);
+                $pt = &$porTipoTime[$key][$tipo];
+                $pt['itens']++; $pt['sp'] += $spF; $pt['ent'] += $isEnt ? $spF : 0.0;
+                if ($sp === null) {
+                    $pt['sem_sp']++; $pt['sem_sp_h'] += (float) ($r['tempo_gasto_horas'] ?? 0);
+                }
+                unset($pt);
+            } elseif (($r['categoria'] ?? null) === 'sustentacao') {
+                if (!isset($foraTime[$key][$tipo])) {
+                    $foraTime[$key][$tipo] = ['itens' => 0, 'sp' => 0.0];
+                }
+                $foraTime[$key][$tipo]['itens']++;
+                $foraTime[$key][$tipo]['sp'] += $spF;
+            }
+        }
+
+        $base = [
+            'classe'              => 'exato',
+            'escopo'              => $escopo,
+            'rotulo_escopo'       => $rotulo,
+            'sprints'             => array_keys($incluidas),
+            'parcial'             => $parcial,
+            'disponibilidade_pct' => $disp,
+            'tipos'               => $tipos,
+        ];
+
+        $semDados = [];
+        $porTime = [];
+        $porSprint = [];
+        foreach (array_keys($incluidas) as $n) {
+            $porSprint[$n] = ['liquida' => 0.0, 'cap' => 0.0, 'sp' => 0.0];
+        }
+        $tot = ['liq' => 0.0, 'cap' => 0.0, 'sp' => 0.0, 'ent' => 0.0, 'spe' => 0.0, 'hsp' => 0.0, 'sem_sp' => 0, 'sem_sp_h' => 0.0];
+        $tipoTot = [];
+        foreach ($tipos as $tp) {
+            $tipoTot[$tp] = ['itens' => 0, 'sp' => 0.0, 'ent' => 0.0];
+        }
+        $foraTot = [];
+        $timesTotal = 0;
+
+        foreach (array_values(array_unique($keys)) as $key) {
+            $timesTotal++;
+            $nome = $nomesTimes[$key] ?? $key;
+            $cap  = $capacidade[$key] ?? ($capacidade[strtoupper((string) $key)] ?? null);
+            $devs = is_array($cap) ? ($cap['dev_count'] ?? null) : null;
+            $hDia = is_array($cap) ? ($cap['productive_hours'] ?? null) : null;
+            $b    = $baselines[$key] ?? null;
+
+            $spTime = 0.0;
+            foreach ($div[$key] ?? [] as $v) {
+                $spTime += $v['sp'];
+            }
+
+            $motivo = null;
+            if ($devs === null || $hDia === null || (float) $devs <= 0 || (float) $hDia <= 0) {
+                $motivo = 'sem_painel';
+            } elseif ($b === null || (float) $b <= 0) {
+                $motivo = 'sem_baseline';
+            }
+            if ($motivo !== null) {
+                $semDados[] = [
+                    'projeto_key' => $key,
+                    'time'        => $nome,
+                    'motivo'      => $motivo,
+                    'sp_divida'   => round($spTime, 2),
+                ];
+                continue;
+            }
+
+            $t = ['liq' => 0.0, 'cap' => 0.0, 'sp' => 0.0, 'ent' => 0.0];
+            foreach ($incluidas as $n => $dias) {
+                $liq = (float) $devs * (float) $hDia * $dias * $disp / 100;
+                $cp  = $liq / (float) $b;
+                $d   = $div[$key][$n] ?? ['sp' => 0.0, 'ent' => 0.0, 'spe' => 0.0];
+                $t['liq'] += $liq; $t['cap'] += $cp; $t['sp'] += $d['sp']; $t['ent'] += $d['ent'];
+                $tot['spe'] += $d['spe'];
+                $porSprint[$n]['liquida'] += $liq;
+                $porSprint[$n]['cap']     += $cp;
+                $porSprint[$n]['sp']      += $d['sp'];
+            }
+            $tot['liq'] += $t['liq']; $tot['cap'] += $t['cap']; $tot['sp'] += $t['sp']; $tot['ent'] += $t['ent'];
+            $tot['hsp'] += $t['sp'] * (float) $b;
+
+            $spDt = 0.0; $spSup = 0.0;
+            foreach ($porTipoTime[$key] ?? [] as $tp => $a) {
+                $tipoTot[$tp]['itens'] += $a['itens']; $tipoTot[$tp]['sp'] += $a['sp']; $tipoTot[$tp]['ent'] += $a['ent'];
+                $tot['sem_sp'] += $a['sem_sp']; $tot['sem_sp_h'] += $a['sem_sp_h'];
+                if ($tp === 'Débito Técnico') $spDt += $a['sp'];
+                if ($tp === 'Suporte') $spSup += $a['sp'];
+            }
+            foreach ($foraTime[$key] ?? [] as $tp => $a) {
+                if (!isset($foraTot[$tp])) {
+                    $foraTot[$tp] = ['itens' => 0, 'sp' => 0.0];
+                }
+                $foraTot[$tp]['itens'] += $a['itens']; $foraTot[$tp]['sp'] += $a['sp'];
+            }
+
+            $porTime[] = [
+                'projeto_key'       => $key,
+                'time'              => $nome,
+                'devs'              => (float) $devs,
+                'horas_dia'         => (float) $hDia,
+                'baseline_h_sp'     => round((float) $b, 2),
+                'liquida_h'         => round($t['liq'], 2),
+                'capacidade_sp'     => round($t['cap'], 2),
+                'sp_divida'         => round($t['sp'], 2),
+                'sp_debito_tecnico' => round($spDt, 2),
+                'sp_suporte'        => round($spSup, 2),
+                'sp_entregue'       => round($t['ent'], 2),
+                'dl_pct'            => $t['cap'] > 0 ? round($t['sp'] / $t['cap'] * 100, 1) : null,
+            ];
+        }
+
+        usort($semDados, static function (array $x, array $y): int {
+            return strcmp((string) $x['projeto_key'], (string) $y['projeto_key']);
+        });
+        $cobertura = [
+            'times_com_dados' => count($porTime),
+            'times_total'     => $timesTotal,
+            'times_sem_dados' => $semDados,
+        ];
+        $diagnosticos = [
+            'sprints_sem_dias_uteis'        => $semDias,
+            'sprints_sustentacao_ignoradas' => $sustIgnoradas,
+            'itens_sem_sp'                  => ['itens' => $tot['sem_sp'], 'horas' => round($tot['sem_sp_h'], 2)],
+        ];
+
+        if ($incluidas === []) {
+            $motivoVazio = ($sustIgnoradas !== [] && $semDias === [])
+                ? 'Sprint de sustentação: o Debt Load cobre só sprints de valor.'
+                : 'Nenhuma sprint do escopo tem dias úteis cadastrados.';
+            return $base + [
+                'estado'       => 'vazio',
+                'motivo'       => $motivoVazio,
+                'dl_pct'       => null,
+                'faixa'        => null,
+                'cobertura'    => $cobertura,
+                'diagnosticos' => $diagnosticos,
+            ];
+        }
+        if ($porTime === [] || $tot['cap'] <= 0) {
+            return $base + [
+                'estado'       => 'vazio',
+                'motivo'       => 'Nenhum time do escopo tem capacidade no Painel e baseline h/SP.',
+                'dl_pct'       => null,
+                'faixa'        => null,
+                'cobertura'    => $cobertura,
+                'diagnosticos' => $diagnosticos,
+            ];
+        }
+
+        usort($porTime, static function (array $x, array $y): int {
+            return [-(float) $x['dl_pct'], $x['projeto_key']] <=> [-(float) $y['dl_pct'], $y['projeto_key']];
+        });
+
+        $listaSprints = [];
+        foreach ($incluidas as $n => $dias) {
+            $p = $porSprint[$n];
+            $listaSprints[] = [
+                'sprint'        => $n,
+                'status'        => $meta[$n]['status'] ?? null,
+                'dias_uteis'    => $dias,
+                'liquida_h'     => round($p['liquida'], 2),
+                'capacidade_sp' => round($p['cap'], 2),
+                'sp_divida'     => round($p['sp'], 2),
+                'dl_pct'        => $p['cap'] > 0 ? round($p['sp'] / $p['cap'] * 100, 1) : null,
+            ];
+        }
+
+        $porTipo = [];
+        foreach ($tipoTot as $tp => $a) {
+            $porTipo[] = [
+                'tipo'        => $tp,
+                'itens'       => $a['itens'],
+                'sp'          => round($a['sp'], 2),
+                'sp_entregue' => round($a['ent'], 2),
+            ];
+        }
+        $fora = [];
+        foreach ($foraTot as $tp => $a) {
+            $fora[] = ['tipo' => $tp, 'itens' => $a['itens'], 'sp' => round($a['sp'], 2)];
+        }
+        usort($fora, static function (array $x, array $y): int {
+            return [-$x['sp'], $x['tipo']] <=> [-$y['sp'], $y['tipo']];
+        });
+
+        return $base + [
+            'estado'          => 'ok',
+            'dl_pct'          => round($tot['sp'] / $tot['cap'] * 100, 1),
+            'faixa'           => null,
+            'sp_divida'       => round($tot['sp'], 2),
+            'capacidade_sp'   => round($tot['cap'], 2),
+            'liquida_h'       => round($tot['liq'], 2),
+            'sp_entregue'     => round($tot['ent'], 2),
+            'dl_entregue_pct' => round($tot['ent'] / $tot['cap'] * 100, 1),
+            'dl_horas_pct'    => round($tot['hsp'] / $tot['liq'] * 100, 1),
+            'sp_spe'          => round($tot['spe'], 2),
+            'decomposicao'    => ['por_tipo' => $porTipo],
+            'fora_do_indicador' => $fora,
+            'cobertura'       => $cobertura,
+            'diagnosticos'    => $diagnosticos,
+            'por_time'        => $porTime,
+            'por_sprint'      => $listaSprints,
+            'regra'           => 'Σ SP (atual) de Débito Técnico e Suporte ÷ Σ (capacidade líquida em horas ÷ h/SP do time), somando por time e sprint.',
         ];
     }
 
