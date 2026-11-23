@@ -21,6 +21,7 @@
 (function () {
   const root = document.getElementById('lt-root');
   const BASE = window.APP_BASE || '';
+  let MET = null; // d.metodologia da última resposta (legendas Como é calculado)
 
   // ── helpers de DOM (sempre textContent) ───────────────────────────────
   function el(tag, cls, text) {
@@ -106,19 +107,20 @@
     let top = null;
     ETAPAS.forEach(e => { const c = t[e.k].contribuicao; if (c != null && (top === null || c > top.c)) top = { nome: e.nome, c }; });
     const cards = [
-      { label: 'Lead time médio', val: t.lead_time_medio == null ? '—' : f1(t.lead_time_medio) + ' d',
+      { ajuda: () => window.App.Legenda.botao('lt_medio', MET, { rotulo: 'Lead time médio', mini: true }), label: 'Lead time médio', val: t.lead_time_medio == null ? '—' : f1(t.lead_time_medio) + ' d',
         sub: 'dias úteis · Dev + Hom + Impl por item', ac: '#9333ea' },
-      { label: 'Itens considerados', val: nf0.format(t.itens),
+      { ajuda: () => window.App.Legenda.botao('lt_itens', MET, { rotulo: 'Itens considerados', mini: true }), label: 'Itens considerados', val: nf0.format(t.itens),
         sub: 'valor entregue na janela' + (t.itens_sem_etapa ? ' · ' + t.itens_sem_etapa + ' sem etapa (fora da média)' : ''), ac: '#8f9bff' },
-      { label: 'Etapa que mais pesa', val: top ? top.nome : '—',
+      { ajuda: () => window.App.Legenda.botao('lt_etapa', MET, { rotulo: 'Etapa que mais pesa', mini: true }), label: 'Etapa que mais pesa', val: top ? top.nome : '—',
         sub: top && t.lead_time_medio ? f1(top.c) + ' d de ' + f1(t.lead_time_medio) + ' d (' + nf0.format(top.c / t.lead_time_medio * 100) + '%)' : 'sem dados', ac: '#a9b8e8' },
-      { label: 'Mediana (P50)', val: t.p50 == null ? '—' : f1(t.p50) + ' d',
+      { ajuda: () => window.App.Legenda.botao('lt_p50', MET, { rotulo: 'Mediana (P50)', mini: true }), label: 'Mediana (P50)', val: t.p50 == null ? '—' : f1(t.p50) + ' d',
         sub: t.max == null ? 'sem dados' : 'máximo ' + nf0.format(t.max) + ' d', ac: '#10b981' },
     ];
     // Entregues sem implantação concluída (sinalização; não altera o lead time)
     const rs = resumoDe(t);
     const semImpl = rs.entregues - rs.concluidas;
     cards.push({
+      ajuda: () => window.App.Legenda.botao('lt_sem_implantacao', MET, { rotulo: 'Entregues sem implantação concluída', mini: true }),
       label: '⚠ Entregues sem implantação concluída',
       val: nf0.format(semImpl) + ' de ' + nf0.format(rs.entregues) + (rs.pct_concluidas == null ? '' : ' (' + nf0.format(100 - rs.pct_concluidas) + '%)'),
       sub: rs.pendentes_producao + ' pendentes de produção · ' + rs.sem_fim_outros + ' em outros status · contados como entregues',
@@ -130,7 +132,10 @@
       const v = el('div', 'kpi-val', c.val);
       if (c.val.length > 8) v.style.fontSize = '1.1rem';   // valor textual (nome da etapa) não pode estourar o card
       if (c.title) k.title = c.title;
-      k.append(el('div', 'kpi-label', c.label), v, el('div', 'kpi-sub', c.sub));
+      const lb = el('div', 'kpi-label', c.label);
+      lb.appendChild(document.createTextNode(' '));
+      lb.appendChild(c.ajuda());
+      k.append(lb, v, el('div', 'kpi-sub', c.sub));
       grid.appendChild(k);
     });
     return grid;
@@ -162,6 +167,8 @@
     const card = el('div', 'ccard');
     const h = el('h3', null, 'Cycle time médio por etapas ');
     h.appendChild(el('span', 'badge', 'dias úteis · contribuição de cada etapa ao lead time médio'));
+    h.appendChild(document.createTextNode(' '));
+    h.appendChild(window.App.Legenda.botao('lt_grafico', MET, { rotulo: 'Cycle time médio por etapas' }));
     card.appendChild(h);
 
     const scroll = el('div', 'twrap');
@@ -272,10 +279,15 @@
   }
 
   // ── Tabelas ───────────────────────────────────────────────────────────
-  function tabelaBase(titulo, legenda, minW) {
+  function tabelaBase(titulo, legenda, minW, ajuda) {
     const card = el('div', 'ccard');
     card.style.marginTop = '18px';
-    card.appendChild(el('h3', null, titulo));
+    const h3 = el('h3', null, titulo);
+    if (ajuda) {
+      h3.appendChild(document.createTextNode(' '));
+      h3.appendChild(ajuda());
+    }
+    card.appendChild(h3);
     const w = el('div', 'twrap');
     const tb = el('table', 'prev-tbl');
     tb.style.minWidth = minW + 'px';
@@ -308,7 +320,8 @@
 
   function tabelaPrincipal(d) {
     const { card, tb } = tabelaBase('Cycle time médio por etapas (dias úteis)',
-      'Contribuição de cada etapa ao lead time médio por time, com lead time médio e número de itens', 640);
+      'Contribuição de cada etapa ao lead time médio por time, com lead time médio e número de itens', 640,
+      () => window.App.Legenda.botao('lt_tabela', MET, { rotulo: 'Cycle time médio por etapas (tabela)' }));
     cabecalho(tb, [['Time', ''], ['Desenvolvimento', 'num'], ['Homologação', 'num'], ['Implantação', 'num'], ['Lead time médio', 'num'], ['Itens', 'num'], ['Implantação concluída', 'num']]);
     tb.style.minWidth = '860px';
     const tbody = el('tbody');
@@ -368,7 +381,12 @@
     });
     tb.appendChild(tbody);
     det.appendChild(card);
-    return det;
+    const box = el('div');
+    box.style.marginTop = '18px';
+    box.appendChild(window.App.Legenda.botao('lt_tabela_secundaria', MET, { rotulo: 'Detalhes: média nos itens que têm a etapa, P50 e máximo' }));
+    det.style.marginTop = '8px';
+    box.appendChild(det);
+    return box;
   }
 
   function diagnosticos(d) {
@@ -387,10 +405,16 @@
     ul.appendChild(el('li', null, 'Itens entregues sem nenhuma etapa (fora da média): '
       + (se.length ? se.map(x => x.time + ' (' + x.itens + ')').join('; ') : 'nenhum') + '.'));
     det.appendChild(ul);
-    return det;
+    const box = el('div');
+    box.style.marginTop = '18px';
+    det.style.marginTop = '8px';
+    box.appendChild(window.App.Legenda.botao('lt_diagnosticos', MET, { rotulo: 'Diagnósticos dos dados' }));
+    box.appendChild(det);
+    return box;
   }
 
   function render(d) {
+    MET = d.metodologia || null;
     root.textContent = '';
     root.appendChild(faixaJanela(d));
 

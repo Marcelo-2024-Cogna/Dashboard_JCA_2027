@@ -22,6 +22,7 @@
 (function () {
   const root = document.getElementById('pd-root');
   const BASE = window.APP_BASE || '';
+  let MET = null; // d.metodologia da última resposta (legendas Como é calculado)
 
   // ── helpers de DOM (sempre textContent) ───────────────────────────────
   function el(tag, cls, text) {
@@ -116,12 +117,12 @@
     const melhor = times[0], pior = times.length > 1 ? times[times.length - 1] : null;
 
     const cards = [];
-    cards.push({ label: 'Produtividade da jornada', ac: COR_JORNADA,
+    cards.push({ ajuda: () => window.App.Legenda.botao('pd_jornada', MET, { rotulo: 'Produtividade da jornada', mini: true }), label: 'Produtividade da jornada', ac: COR_JORNADA,
       val: jr && jr.produtividade_ponderada != null ? f2(jr.produtividade_ponderada) + ' h/pt' : '—',
       sub: ref && jr ? ref.desc_pi + ' · ponderada: ' + nf0.format(jr.horas) + ' h ÷ ' + nf0.format(jr.pontos) + ' pts'
         + (jr.produtividade_media_simples != null ? ' · média simples ' + f2(jr.produtividade_media_simples) : '') : 'sem dados' });
-    cards.push({ label: 'Melhor time (menos h/pt)', ac: '#10b981', val: melhor ? f2(melhor.v) + ' h/pt' : '—', sub: melhor ? melhor.nome : 'sem dados' });
-    cards.push({ label: 'Pior time (mais h/pt)', ac: '#f43f5e', val: pior ? f2(pior.v) + ' h/pt' : '—', sub: pior ? pior.nome : 'sem dados' });
+    cards.push({ ajuda: () => window.App.Legenda.botao('pd_melhor', MET, { rotulo: 'Melhor time', mini: true }), label: 'Melhor time (menos h/pt)', ac: '#10b981', val: melhor ? f2(melhor.v) + ' h/pt' : '—', sub: melhor ? melhor.nome : 'sem dados' });
+    cards.push({ ajuda: () => window.App.Legenda.botao('pd_pior', MET, { rotulo: 'Pior time', mini: true }), label: 'Pior time (mais h/pt)', ac: '#f43f5e', val: pior ? f2(pior.v) + ' h/pt' : '—', sub: pior ? pior.nome : 'sem dados' });
 
     let varVal = '—', varSub = 'sem PI anterior com dados', varAc = '#8f9bff';
     if (jr && ja && jr.produtividade_ponderada != null && ja.produtividade_ponderada != null) {
@@ -133,10 +134,10 @@
         + (pct != null ? ' · ' + (pct > 0 ? '+' : pct < 0 ? '−' : '') + nf1.format(Math.abs(pct)) + '%' : '');
       varAc = dlt < 0 ? '#10b981' : dlt > 0 ? '#fbbf24' : '#8f9bff';
     }
-    cards.push({ label: 'Variação vs PI anterior', ac: varAc, val: varVal, sub: varSub });
+    cards.push({ ajuda: () => window.App.Legenda.botao('pd_variacao', MET, { rotulo: 'Variação vs PI anterior', mini: true }), label: 'Variação vs PI anterior', ac: varAc, val: varVal, sub: varSub });
 
     const sg = j.sugestao_proxima_pi;
-    cards.push({ label: 'Sugestão p/ próxima PI', ac: '#22d3ee', val: sg ? f2(sg.valor) + ' h/pt' : '—',
+    cards.push({ ajuda: () => window.App.Legenda.botao('pd_sugestao', MET, { rotulo: 'Sugestão para a próxima PI', mini: true }), label: 'Sugestão p/ próxima PI', ac: '#22d3ee', val: sg ? f2(sg.valor) + ' h/pt' : '—',
       sub: sg ? 'ponderada da ' + sg.pi_origem + ' (fechada) · somente leitura' : 'nenhuma PI fechada com dados' });
 
     const grid = el('div', 'kpi-grid');
@@ -144,7 +145,10 @@
       const k = el('div', 'kpi'); k.style.setProperty('--ac', c.ac);
       const v = el('div', 'kpi-val', c.val);
       if (c.val.length > 11) v.style.fontSize = '1.25rem';
-      k.append(el('div', 'kpi-label', c.label), v, el('div', 'kpi-sub', c.sub));
+      const lb = el('div', 'kpi-label', c.label);
+      lb.appendChild(document.createTextNode(' '));
+      lb.appendChild(c.ajuda());
+      k.append(lb, v, el('div', 'kpi-sub', c.sub));
       grid.appendChild(k);
     });
     return grid;
@@ -170,6 +174,8 @@
     const card = el('div', 'ccard');
     const h = el('h3', null, 'TOTAL EM HORAS PARA ENTREGAR 1 PONTO ');
     h.appendChild(el('span', 'badge', (ref ? ref.desc_pi + (ref.origem === 'ao_vivo' ? ' · ao vivo' : ' · histórico') : '—') + ' · média ponderada'));
+    h.appendChild(document.createTextNode(' '));
+    h.appendChild(window.App.Legenda.botao('pd_grafico_jornada', MET, { rotulo: 'Total em horas para entregar 1 ponto (jornada)' }));
     card.appendChild(h);
 
     const wrap = el('div', 'cwrap'); wrap.style.height = '130px';
@@ -219,6 +225,8 @@
     card.style.marginTop = '18px';
     const h = el('h3', null, 'TOTAL EM HORAS PARA ENTREGAR 1 PONTO ');
     h.appendChild(el('span', 'badge', 'por time · uma série por PI · menos horas por ponto = melhor'));
+    h.appendChild(document.createTextNode(' '));
+    h.appendChild(window.App.Legenda.botao('pd_grafico_times', MET, { rotulo: 'Total em horas para entregar 1 ponto (por time e PI)' }));
     card.appendChild(h);
 
     const scroll = el('div', 'twrap');
@@ -293,7 +301,10 @@
     const pis = d.pis, ref = piRef(d);
     const card = el('div', 'ccard');
     card.style.marginTop = '18px';
-    card.appendChild(el('h3', null, 'Produtividade (h/ponto) por time e PI'));
+    const ht = el('h3', null, 'Produtividade (h/ponto) por time e PI');
+    ht.appendChild(document.createTextNode(' '));
+    ht.appendChild(window.App.Legenda.botao('pd_tabela', MET, { rotulo: 'Produtividade (h/ponto) por time e PI' }));
+    card.appendChild(ht);
     const w = el('div', 'twrap');
     const tb = el('table', 'prev-tbl');
     tb.style.minWidth = (300 + pis.length * 100 + 300) + 'px';
@@ -410,10 +421,16 @@
     const pc = Object.keys(sc);
     if (pc.length) ul.appendChild(el('li', null, 'PIs fechadas sem consolidado no histórico: ' + pc.map(k => k + ' (' + sc[k].join(', ') + ')').join('; ') + '.'));
     det.appendChild(ul);
-    return det;
+    const box = el('div');
+    box.style.marginTop = '18px';
+    det.style.marginTop = '8px';
+    box.appendChild(window.App.Legenda.botao('pd_diagnosticos', MET, { rotulo: 'Diagnósticos dos dados' }));
+    box.appendChild(det);
+    return box;
   }
 
   function render(d) {
+    MET = d.metodologia || null;
     root.textContent = '';
     root.appendChild(faixaJanela(d));
 

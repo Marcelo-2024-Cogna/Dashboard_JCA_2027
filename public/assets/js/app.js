@@ -319,6 +319,77 @@
     return { abrir, fechar };
   })();
 
+  // ── Legenda "Como é calculado" (usa Modal; textos de metodologia.blocos[chave]) ──
+  // botao(chave, metodologia, { rotulo, mini }) → <button> real; abrir(chave, metodologia, origem, extras).
+  // Sem metodologia ou sem bloco: legenda padrão, sem exceção. Tudo por textContent.
+  const Legenda = (function () {
+    const PADRAO = 'Legenda não disponível nesta resposta.';
+    const mk = (tag, cls, txt) => {
+      const n = document.createElement(tag);
+      if (cls) n.className = cls;
+      if (txt != null) n.textContent = txt;
+      return n;
+    };
+    const bloco = (chave, met) => {
+      const b = met && met.blocos && typeof met.blocos === 'object' ? met.blocos[chave] : null;
+      return b && typeof b === 'object' && b.titulo ? b : null;
+    };
+
+    function abrir(chave, metodologia, origem, extras) {
+      const b = bloco(chave, metodologia);
+      Modal.abrir({
+        titulo: 'Como é calculado' + (b ? ': ' + b.titulo : ''),
+        subtitulo: b ? 'Fonte, unidade, fórmula e regra de Done' : '',
+        origem,
+        construir: corpo => {
+          if (!b) { corpo.appendChild(mk('p', null, PADRAO)); return; }
+          const dl = mk('dl');
+          [['Fonte', b.fonte], ['Unidade', b.unidade], ['Fórmula', b.formula], ['O que entra', b.entra],
+            ['O que não entra', b.nao_entra], ['Regra de Done', b.done], ['Janela/período', b.janela]].forEach(([t, v]) => {
+            if (v == null || v === '') return;
+            dl.appendChild(mk('dt', null, t));
+            dl.appendChild(mk('dd', null, v));
+          });
+          if (extras && extras.carga) {
+            dl.appendChild(mk('dt', null, 'Carga dos dados'));
+            dl.appendChild(mk('dd', null, extras.carga));
+          }
+          corpo.appendChild(dl);
+          const lista = (tit, itens) => {
+            if (!Array.isArray(itens) || !itens.length) return;
+            corpo.appendChild(mk('h4', null, tit));
+            const ul = mk('ul');
+            itens.forEach(o => ul.appendChild(mk('li', null, o)));
+            corpo.appendChild(ul);
+          };
+          lista('Limitações', b.limitacoes);
+          lista('Diferenças em relação ao Jira', b.diferencas_jira);
+          if (b.onde_no_codigo) {
+            corpo.appendChild(mk('h4', null, 'Fonte no código'));
+            corpo.appendChild(mk('p', null, b.onde_no_codigo));
+          }
+        },
+      });
+    }
+
+    function botao(chave, metodologia, opts) {
+      opts = opts || {};
+      const b = bloco(chave, metodologia);
+      const nome = b ? b.titulo : (opts.rotulo || chave);
+      // Texto visível padronizado ("ⓘ Como é calculado"; a Visão Geral usa "ⓘ Como é calculado: <nome>").
+      // Outro rotulo só nomeia o botão (aria-label) quando falta o bloco.
+      const btn = mk('button', 'btn vg-ajuda' + (opts.mini ? ' vg-ajuda-mini' : ''),
+        opts.mini ? 'ⓘ' : (/^ⓘ Como é calculado/.test(opts.rotulo || '') ? opts.rotulo : 'ⓘ Como é calculado'));
+      btn.type = 'button';
+      btn.setAttribute('aria-haspopup', 'dialog');
+      btn.setAttribute('aria-label', 'Como é calculado: ' + nome);
+      btn.addEventListener('click', () => abrir(chave, metodologia, btn, opts.extras));
+      return btn;
+    }
+
+    return { botao, abrir };
+  })();
+
   // Exporta para as views usarem
-  window.App = { Api, Filters, Util, BASE, Modal };
+  window.App = { Api, Filters, Util, BASE, Modal, Legenda };
 })();

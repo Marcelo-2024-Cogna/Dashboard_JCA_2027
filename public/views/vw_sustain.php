@@ -44,6 +44,33 @@
 
   // Tipos de sustentação (mesma definição do backend)
   const SUST = ['Incidente','Solicitação de Serviço','Suporte','Sustentação'];
+  const MET = <?= json_encode(\App\Services\MetodologiaService::paraTela('sustentacao'), JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE) ?>;
+
+  // Data da extração e idade do cache de /extract, para "Carga dos dados" da legenda.
+  function cargaTxt(ext) {
+    if (!ext || ext._no_cache) return 'Sem dados extraídos do Jira ainda.';
+    const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(ext.extracted_at || '');
+    const quando = m ? m[3] + '/' + m[2] + '/' + m[1] + ' ' + m[4] + ':' + m[5] : 'data da extração não informada';
+    const idade = typeof ext._cache_age_seconds === 'number' ? ' · cache com ' + Math.round(ext._cache_age_seconds / 60) + ' min' : '';
+    return 'Extraído do Jira em ' + quando + idade + (ext._cache_stale ? ' · cache vencido' : '') + '.';
+  }
+
+  // Botões "Como é calculado" por DOM, depois do render (sem novo innerHTML).
+  function anexarLegendas(ext) {
+    const x = { extras: { carga: cargaTxt(ext) } };
+    const op = (rotulo, mini) => Object.assign({ rotulo, mini }, x);
+    const lbl = document.querySelectorAll('#su-kpis .kpi-label');
+    const noKpi = (n, btn) => { if (lbl[n]) { lbl[n].appendChild(document.createTextNode(' ')); lbl[n].appendChild(btn); } };
+    noKpi(0, window.App.Legenda.botao('su_itens', MET, op('Itens de Sustentação', true)));
+    noKpi(1, window.App.Legenda.botao('su_horas_sust', MET, op('Horas em Sustentação', true)));
+    noKpi(2, window.App.Legenda.botao('su_pct', MET, op('% do Esforço Total', true)));
+    noKpi(3, window.App.Legenda.botao('su_horas_valor', MET, op('Horas em Valor', true)));
+    const tit = id => { const c = document.getElementById(id); return c && c.closest('.ccard') ? c.closest('.ccard').querySelector('h3') : null; };
+    const hHoras = tit('su-horas'), hTipos = tit('su-tipos'), hPct = tit('su-pct');
+    if (hHoras) { hHoras.appendChild(document.createTextNode(' ')); hHoras.appendChild(window.App.Legenda.botao('su_grafico_horas', MET, op('Horas: Valor vs Sustentação', false))); }
+    if (hTipos) { hTipos.appendChild(document.createTextNode(' ')); hTipos.appendChild(window.App.Legenda.botao('su_grafico_tipos', MET, op('Tipos de item de Sustentação', false))); }
+    if (hPct) { hPct.appendChild(document.createTextNode(' ')); hPct.appendChild(window.App.Legenda.botao('su_grafico_pct', MET, op('% de horas em sustentação', false))); }
+  }
 
   function filterItems(items) {
     const f = App.Filters.read();
@@ -62,17 +89,18 @@
     try {
       const ext = await Api.get('/extract');
       const items = filterItems(ext.items || []);
-      render(items);
+      render(items, ext);
     } catch (e) { Util.error(root, e.message); }
   }
 
-  function render(items) {
+  function render(items, ext) {
     root.innerHTML = '';
     root.appendChild(document.getElementById('su-tpl').content.cloneNode(true));
     renderKpis(items);
     renderHoras(items);
     renderTipos(items);
     renderPct(items);
+    anexarLegendas(ext);
   }
 
   function renderKpis(items) {

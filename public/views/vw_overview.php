@@ -255,8 +255,8 @@
       fonte: 'Extração do Jira e baseline do PI Planning.',
       unidade: 'Story Points (SP).',
       formula: 'Concluído = SP atuais dos itens em Done, atribuídos à sprint_ref (a maior sprint do item). Escopo inicial = baseline do PI Planning.',
-      entra: 'Itens de valor com sprint na PI.',
-      naoEntra: 'Sustentação. O status "Concluído" não é Done.',
+      entra: 'Itens de valor (' + lista(m.tipos_valor) + ') e de sustentação (' + lista(m.tipos_sustentacao) + ') com sprint na PI, como na tela Velocidade.',
+      naoEntra: 'Itens de outros tipos, sem categoria (por exemplo Incidente e Bug). O status "Concluído" não é Done.',
       done: lista(m.done_statuses),
       observacoes: [
         'O escopo inicial é o baseline do PI Planning, não o início da sprint. Pode divergir do gadget do Jira.',
@@ -816,6 +816,7 @@
     abLeg.appendChild(legendaBotao('efficiency', d, 'ⓘ Como é calculado: Efficiency'));
     abLeg.appendChild(legendaBotao('fator_carga', d, 'ⓘ Como é calculado: Fator de Carga'));
     abLeg.appendChild(legendaBotao('debt_load', d, 'ⓘ Como é calculado: Debt Load'));
+    abLeg.appendChild(window.App.Legenda.botao('cancelados', d.metodologia, { rotulo: 'ⓘ Como é calculado: Cancelados na PI' }));
     sec.appendChild(el('div', 'pr-sub', 'Total do escopo: ' + fmt(g.total_sp) + ' SP (backlog + em andamento + bloqueado + aceitos; cancelados ficam fora).'));
 
     // Modo PI: itens fora da janela.
@@ -1218,6 +1219,7 @@
 
     const ab = el('div', 'pr-sub');
     ab.appendChild(botaoModal('Ver itens', o => abrirItensSprint(d, 'todos', o)));
+    ab.appendChild(window.App.Legenda.botao('lista_sprint_anterior', d.metodologia, { rotulo: 'ⓘ Como é calculado: Itens da sprint anterior' }));
     card.appendChild(ab);
 
     const notas = ['Σ ' + fmt(g.total_sp) + ' SP em ' + int(g.total_itens) + ' itens.'];
@@ -1233,6 +1235,9 @@
     const card = el('div', 'ccard vg-wide vg-placeholder');
     card.appendChild(el('h3', null, 'Sustentação — aguardando módulo independente'));
     card.appendChild(el('div', 'pr-sub', 'Os gadgets abaixo dependem do módulo de Sustentação (regras ainda não definidas). A divisão por 5 do Jira corresponde à Produtividade (horas por ponto) da jornada/time.'));
+    const abLeg = el('div', 'pr-sub');
+    abLeg.appendChild(window.App.Legenda.botao('sustentacao_placeholder', d.metodologia, { rotulo: 'ⓘ Como é calculado: Sustentação' }));
+    card.appendChild(abLeg);
     const ul = el('ul');
     ul.style.cssText = 'margin:8px 0 0;padding-left:18px;font-size:.78rem;color:var(--muted)';
     (g.gadgets || []).forEach(t => ul.appendChild(el('li', null, t)));

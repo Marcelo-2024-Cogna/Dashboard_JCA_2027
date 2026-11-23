@@ -46,6 +46,40 @@
   if (!Api) { root.innerHTML = '<div class="alert alert-error">Erro: núcleo JS não carregou.</div>'; return; }
 
   const DONE = ['Aceito','Em produção','Pendente de Produção'];
+  const MET = <?= json_encode(\App\Services\MetodologiaService::paraTela('epicos'), JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE) ?>;
+
+  // Data da extração e idade do cache de /extract, para "Carga dos dados" da legenda.
+  function cargaTxt(ext) {
+    if (!ext || ext._no_cache) return 'Sem dados extraídos do Jira ainda.';
+    const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(ext.extracted_at || '');
+    const quando = m ? m[3] + '/' + m[2] + '/' + m[1] + ' ' + m[4] + ':' + m[5] : 'data da extração não informada';
+    const idade = typeof ext._cache_age_seconds === 'number' ? ' · cache com ' + Math.round(ext._cache_age_seconds / 60) + ' min' : '';
+    return 'Extraído do Jira em ' + quando + idade + (ext._cache_stale ? ' · cache vencido' : '') + '.';
+  }
+
+  // Botões "Como é calculado" por DOM, depois do render (sem novo innerHTML).
+  function anexarLegendas(ext) {
+    const x = { extras: { carga: cargaTxt(ext) } };
+    const op = (rotulo, mini) => Object.assign({ rotulo, mini }, x);
+    const lbl = document.querySelectorAll('#ep-kpis .kpi-label');
+    const cheia = (n, chave) => { if (lbl[n]) { lbl[n].appendChild(document.createTextNode(' ')); lbl[n].appendChild(chave); } };
+    cheia(0, window.App.Legenda.botao('ep_total', MET, op('Épicos (com itens)', true)));
+    cheia(1, window.App.Legenda.botao('ep_concluidos', MET, op('Épicos concluídos', true)));
+    cheia(2, window.App.Legenda.botao('ep_risco', MET, op('Épicos em risco', true)));
+    cheia(3, window.App.Legenda.botao('ep_nao_iniciados', MET, op('Épicos não iniciados', true)));
+    const tit = id => { const c = document.getElementById(id); return c && c.closest('.ccard') ? c.closest('.ccard').querySelector('h3') : null; };
+    const hSp = tit('ep-sp'), hProg = tit('ep-prog');
+    if (hSp) { hSp.appendChild(document.createTextNode(' ')); hSp.appendChild(window.App.Legenda.botao('ep_grafico_sp', MET, op('Top Épicos por Story Points', false))); }
+    if (hProg) { hProg.appendChild(document.createTextNode(' ')); hProg.appendChild(window.App.Legenda.botao('ep_grafico_progresso', MET, op('Progresso dos Épicos', false))); }
+    const tb = document.getElementById('ep-table');
+    const card = tb ? tb.closest('.ccard') : null;
+    if (card) {
+      const ab = document.createElement('div');
+      ab.className = 'pr-sub';
+      ab.appendChild(window.App.Legenda.botao('ep_tabela', MET, op('Detalhamento por Épico', false)));
+      card.insertBefore(ab, card.firstChild);
+    }
+  }
 
   function filterItems(items) {
     const f = App.Filters.read();
@@ -61,11 +95,11 @@
     try {
       const ext = await Api.get('/extract');
       const items = filterItems(ext.items || []).filter(i=>i.pai); // só itens vinculados a épico
-      render(items);
+      render(items, ext);
     } catch (e) { Util.error(root, e.message); }
   }
 
-  function render(items) {
+  function render(items, ext) {
     root.innerHTML = '';
     root.appendChild(document.getElementById('ep-tpl').content.cloneNode(true));
 
@@ -87,6 +121,7 @@
     renderSp(list);
     renderProg(list);
     renderTable(list);
+    anexarLegendas(ext);
   }
 
   function renderKpis(list) {

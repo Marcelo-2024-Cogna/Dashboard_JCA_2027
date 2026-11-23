@@ -19,6 +19,7 @@
 (function () {
   const root = document.getElementById('vel-root');
   const BASE = window.APP_BASE || '';
+  let MET = null; // d.metodologia da última resposta (legendas Como é calculado)
 
   function el(tag, cls, text) {
     const e = document.createElement(tag);
@@ -115,6 +116,8 @@
     const h = el('h3', null, 'Team Velocity ');
     h.style.margin = '0';
     h.appendChild(el('span', 'badge', 'Story Points por sprint'));
+    h.appendChild(document.createTextNode(' '));
+    h.appendChild(window.App.Legenda.botao('velocidade_grafico', MET, { rotulo: 'Velocidade' }));
     head.appendChild(h);
 
     const r = d.resumo || {};
@@ -127,6 +130,8 @@
     const sub = el('div', 'kpi-sub', n > 0
       ? 'Velocidade nos últimos ' + n + ' sprint' + (n > 1 ? 's' : '')
       : 'Sem sprint fechada para calcular a velocidade');
+    sub.appendChild(document.createTextNode(' '));
+    sub.appendChild(window.App.Legenda.botao('velocidade_media', MET, { rotulo: 'Velocidade Média', mini: true }));
     dest.append(big, sub);
     if (n > 0) dest.appendChild(el('div', 'pr-sub', 'Σ concluído ' + fmt(r.soma_concluido_na_media) + ' em ' + n + ' sprint' + (n > 1 ? 's' : '') + ' fechada' + (n > 1 ? 's' : '')));
     head.appendChild(dest);
@@ -225,6 +230,8 @@
   function tabelaSprints(d) {
     const { card, tb } = tabelaBase('Pontos por sprint',
       'Pontos por sprint: escopo inicial, adicionado, removido, mudança de escopo, escopo final, concluído, percentual concluído e velocidade média');
+    card.firstChild.appendChild(document.createTextNode(' '));
+    card.firstChild.appendChild(window.App.Legenda.botao('velocidade_tabela_sprints', MET, { rotulo: 'Pontos por sprint' }));
     tb.style.minWidth = '860px';
     cabecalho(tb, [['Sprint', ''], ['Status', ''], ['Escopo Inicial', 'num'], ['Adicionado', 'num'], ['Removido', 'num'],
                    ['Mudança', 'num'], ['Escopo Final', 'num'], ['Concluído', 'num'], ['% concluído do Escopo Final', 'num'], ['Velocidade Média', 'num']]);
@@ -269,6 +276,8 @@
     card.style.marginTop = '18px';
     const h = el('h3', null, 'Por time ');
     h.appendChild(el('span', 'badge', 'Story Points Estimate x Story Points entregues'));
+    h.appendChild(document.createTextNode(' '));
+    h.appendChild(window.App.Legenda.botao('velocidade_por_time', MET, { rotulo: 'Velocidade por time' }));
     card.appendChild(h);
     const somadas = ((d.diagnosticos || {}).sprints_somadas_por_time) || [];
     card.appendChild(el('div', 'pr-sub', 'Soma das sprints ' + (d.janela.ate_sprint ? 'da sprint escolhida' : 'fechadas') + ': ' + (somadas.join(', ') || 'nenhuma')));
@@ -308,6 +317,8 @@
 
   function tabelaTimes(d) {
     const { card, tb } = tabelaBase('Pontos por time', 'Story Points Estimate, escopo final e Story Points entregues por time, com a diferença');
+    card.firstChild.appendChild(document.createTextNode(' '));
+    card.firstChild.appendChild(window.App.Legenda.botao('velocidade_tabela_times', MET, { rotulo: 'Pontos por time' }));
     tb.style.minWidth = '720px';
     cabecalho(tb, [['Time', ''], ['Jornada', ''], ['Story Points Estimate', 'num'], ['Escopo Final', 'num'], ['Story Points entregues', 'num'], ['Δ entregues − Estimate', 'num']]);
     const linha = (tr, x) => {
@@ -353,6 +364,7 @@
   }
 
   function render(d) {
+    MET = d.metodologia || null;
     root.textContent = '';
     root.appendChild(faixaJanela(d));
     if (d.avisos && d.avisos.length) {

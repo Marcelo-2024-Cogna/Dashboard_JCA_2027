@@ -19,6 +19,7 @@
   const root = document.getElementById('prev-root');
   const BASE = window.APP_BASE || '';
   const META_PADRAO = 80;
+  let MET = null; // d.metodologia da última resposta (legendas Como é calculado)
 
   // ── helpers de DOM (sempre textContent) ───────────────────────────────
   function el(tag, cls, text) {
@@ -112,18 +113,21 @@
     const fx = faixa(t.previsibilidade_pct, meta);
     const tr = t.transbordo || {}, ca = bal(t, 'cancelado'), ea = t.escopo_adicionado || {};
     const cards = [
-      { label: 'Previsibilidade', val: fmtPct(t.previsibilidade_pct), sub: 'meta ' + meta + '% · entregue do planejado / committed', ac: fx.cor },
-      { label: 'Committed (SPE da baseline)', val: fmtSp(t.committed), sub: 'SPE planejado para a janela (' + ((t.itens || {}).committed || 0) + ' itens)', ac: '#6366f1' },
-      { label: 'Entregue do planejado (SP atuais)', val: fmtSp(t.delivered_planned), sub: 'SP atuais dos itens planejados hoje entregues (' + ((t.itens || {}).delivered_planned || 0) + ' itens)', ac: '#10b981' },
-      { label: 'Transbordo', val: fmtSp(tr.sp_baseline) + (tr.pct == null ? '' : ' · ' + fmtPct(tr.pct)), sub: 'SPE replanejado para sprint futura: entregue após a janela + aberto (' + (tr.itens || 0) + ' itens)', ac: '#f59e0b' },
-      { label: 'Variação de estimativa', val: fmtVar(t.variacao_estimativa), sub: 'SP atuais − SPE da baseline nos itens entregues do planejado', ac: '#a78bfa' },
-      { label: 'Cancelado', val: fmtSp(ca.sp_baseline), sub: 'SPE da baseline cancelado (' + (ca.itens || 0) + ' itens)', ac: '#94a3b8' },
-      { label: 'Escopo adicionado', val: fmtSp(ea.sp), sub: 'SP atuais na janela fora da baseline janelada (' + (ea.itens || 0) + ' itens)', ac: '#22d3ee' },
+      { ajuda: () => window.App.Legenda.botao('prev_previsibilidade', MET, { rotulo: 'Previsibilidade', mini: true }), label: 'Previsibilidade', val: fmtPct(t.previsibilidade_pct), sub: 'meta ' + meta + '% · entregue do planejado / committed', ac: fx.cor },
+      { ajuda: () => window.App.Legenda.botao('prev_committed', MET, { rotulo: 'Committed', mini: true }), label: 'Committed (SPE da baseline)', val: fmtSp(t.committed), sub: 'SPE planejado para a janela (' + ((t.itens || {}).committed || 0) + ' itens)', ac: '#6366f1' },
+      { ajuda: () => window.App.Legenda.botao('prev_entregue', MET, { rotulo: 'Entregue do planejado', mini: true }), label: 'Entregue do planejado (SP atuais)', val: fmtSp(t.delivered_planned), sub: 'SP atuais dos itens planejados hoje entregues (' + ((t.itens || {}).delivered_planned || 0) + ' itens)', ac: '#10b981' },
+      { ajuda: () => window.App.Legenda.botao('prev_transbordo', MET, { rotulo: 'Transbordo', mini: true }), label: 'Transbordo', val: fmtSp(tr.sp_baseline) + (tr.pct == null ? '' : ' · ' + fmtPct(tr.pct)), sub: 'SPE replanejado para sprint futura: entregue após a janela + aberto (' + (tr.itens || 0) + ' itens)', ac: '#f59e0b' },
+      { ajuda: () => window.App.Legenda.botao('prev_variacao', MET, { rotulo: 'Variação de estimativa', mini: true }), label: 'Variação de estimativa', val: fmtVar(t.variacao_estimativa), sub: 'SP atuais − SPE da baseline nos itens entregues do planejado', ac: '#a78bfa' },
+      { ajuda: () => window.App.Legenda.botao('prev_cancelado', MET, { rotulo: 'Cancelado', mini: true }), label: 'Cancelado', val: fmtSp(ca.sp_baseline), sub: 'SPE da baseline cancelado (' + (ca.itens || 0) + ' itens)', ac: '#94a3b8' },
+      { ajuda: () => window.App.Legenda.botao('prev_escopo_adicionado', MET, { rotulo: 'Escopo adicionado', mini: true }), label: 'Escopo adicionado', val: fmtSp(ea.sp), sub: 'SP atuais na janela fora da baseline janelada (' + (ea.itens || 0) + ' itens)', ac: '#22d3ee' },
     ];
     const grid = el('div', 'kpi-grid');
     cards.forEach(c => {
       const k = el('div', 'kpi'); k.style.setProperty('--ac', c.ac);
-      k.append(el('div', 'kpi-label', c.label), el('div', 'kpi-val', c.val), el('div', 'kpi-sub', c.sub));
+      const lb = el('div', 'kpi-label', c.label);
+      lb.appendChild(document.createTextNode(' '));
+      lb.appendChild(c.ajuda());
+      k.append(lb, el('div', 'kpi-val', c.val), el('div', 'kpi-sub', c.sub));
       grid.appendChild(k);
     });
     return grid;
@@ -175,6 +179,8 @@
     const card = el('div', 'ccard');
     const h = el('h3', null, 'Previsibilidade por time ');
     h.appendChild(el('span', 'badge', '% entregue do planejado'));
+    h.appendChild(document.createTextNode(' '));
+    h.appendChild(window.App.Legenda.botao('prev_grafico_time', MET, { rotulo: 'Previsibilidade por time' }));
     card.appendChild(h);
     const wrap = el('div', 'cwrap');
     wrap.style.height = Math.max(260, 42 * times.length + 90) + 'px';
@@ -235,6 +241,8 @@
     card.style.marginTop = '18px';
     const h = el('h3', null, 'Destino do committed (transbordo) ');
     h.appendChild(el('span', 'badge', 'SPE da baseline por situação atual'));
+    h.appendChild(document.createTextNode(' '));
+    h.appendChild(window.App.Legenda.botao('prev_grafico_transbordo', MET, { rotulo: 'Destino do committed' }));
     card.appendChild(h);
     const wrap = el('div', 'cwrap');
     wrap.style.height = Math.max(260, 46 * times.length + 110) + 'px';
@@ -300,7 +308,10 @@
     const meta = d.meta || META_PADRAO;
     const card = el('div', 'ccard');
     card.style.marginTop = '18px';
-    card.appendChild(el('h3', null, 'Números por time'));
+    const ht = el('h3', null, 'Números por time');
+    ht.appendChild(document.createTextNode(' '));
+    ht.appendChild(window.App.Legenda.botao('prev_tabela', MET, { rotulo: 'Números por time' }));
+    card.appendChild(ht);
     const w = el('div', 'twrap');
     const tb = el('table', 'prev-tbl');
     const cap = el('caption', null, 'Committed em SPE da baseline, entregue do planejado em SP atuais, previsibilidade, variação de estimativa, transbordo, cancelado, escopo adicionado e entregue total por time');
@@ -349,6 +360,7 @@
   }
 
   function render(d) {
+    MET = d.metodologia || null;
     root.textContent = '';
     root.appendChild(faixaJanela(d));
 

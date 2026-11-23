@@ -21,6 +21,7 @@
 (function () {
   const root = document.getElementById('pr-root');
   const BASE = window.APP_BASE || '';
+  let MET = null; // d.metodologia da última resposta (legendas Como é calculado)
 
   // ── helpers de DOM (sempre textContent) ───────────────────────────────
   function el(tag, cls, text) {
@@ -106,19 +107,22 @@
     const b = d.barras, dl = d.deltas;
     const pct = (a, t) => (t > 0 ? nf1.format(a / t * 100) + '%' : '—');
     const cards = [
-      { label: 'Velocidade', val: fmt(b.velocidade.total),
+      { ajuda: () => window.App.Legenda.botao('pr_velocidade', MET, { rotulo: 'Velocidade', mini: true }), label: 'Velocidade', val: fmt(b.velocidade.total),
         sub: 'sustentação ' + fmt(b.velocidade.sustentacao) + ' · capacidade ' + fmt(b.velocidade.capacidade), ac: '#0072c6' },
-      { label: 'Comprometido no PI Planning', val: fmt(b.pi_planning.total),
+      { ajuda: () => window.App.Legenda.botao('pr_pi_planning', MET, { rotulo: 'PI Planning', mini: true }), label: 'Comprometido no PI Planning', val: fmt(b.pi_planning.total),
         sub: pct(b.pi_planning.total, b.velocidade.total) + ' da velocidade (SPE da baseline)', ac: '#8f9bff' },
-      { label: 'Sprint Planning', val: fmt(b.sprint_planning.total),
+      { ajuda: () => window.App.Legenda.botao('pr_sprint_planning', MET, { rotulo: 'Sprint Planning', mini: true }), label: 'Sprint Planning', val: fmt(b.sprint_planning.total),
         sub: 'Δ ' + fmtD(dl.pi_planning_para_sprint_planning.total) + ' vs PI Planning (novas histórias, cancelamentos, remanejamentos)', ac: '#9333ea' },
-      { label: 'Entregue', val: fmt(b.entregues.total),
+      { ajuda: () => window.App.Legenda.botao('pr_entregue', MET, { rotulo: 'Entregue', mini: true }), label: 'Entregue', val: fmt(b.entregues.total),
         sub: 'Δ ' + fmtD(dl.sprint_planning_para_entregues.total) + ' vs Sprint Planning · ' + pct(b.entregues.total, b.sprint_planning.total) + ' do Sprint Planning', ac: '#10b981' },
     ];
     const grid = el('div', 'kpi-grid');
     cards.forEach(c => {
       const k = el('div', 'kpi'); k.style.setProperty('--ac', c.ac);
-      k.append(el('div', 'kpi-label', c.label), el('div', 'kpi-val', c.val), el('div', 'kpi-sub', c.sub));
+      const lb = el('div', 'kpi-label', c.label);
+      lb.appendChild(document.createTextNode(' '));
+      lb.appendChild(c.ajuda());
+      k.append(lb, el('div', 'kpi-val', c.val), el('div', 'kpi-sub', c.sub));
       grid.appendChild(k);
     });
     return grid;
@@ -196,6 +200,8 @@
     const card = el('div', 'ccard');
     const h = el('h3', null, 'Planejado x Realizado ');
     h.appendChild(el('span', 'badge', 'pontos por categoria'));
+    h.appendChild(document.createTextNode(' '));
+    h.appendChild(window.App.Legenda.botao('pr_grafico', MET, { rotulo: 'Planejado x Realizado' }));
     card.appendChild(h);
     const wrap = el('div', 'cwrap');
     wrap.style.height = '380px';
@@ -277,6 +283,8 @@
 
   function tabelaPontos(d) {
     const { card, tb } = tabelaBase('Pontos por barra', 'Pontos de cada barra por categoria, com os deltas entre barras');
+    card.firstChild.appendChild(document.createTextNode(' '));
+    card.firstChild.appendChild(window.App.Legenda.botao('pr_tabela_pontos', MET, { rotulo: 'Pontos por barra' }));
     tb.style.minWidth = '720px';
     cabecalho(tb, [['Barra', ''], ['Sustentação', 'num'], ['Valor sem épico', 'num'], ['Valor com épico', 'num'], ['Capacidade', 'num'], ['Total', 'num']]);
     const tbody = el('tbody');
@@ -314,6 +322,8 @@
 
   function tabelaTimes(d) {
     const { card, tb } = tabelaBase('Pontos por time', 'Total de cada barra e deltas por time; abaixo do total, o detalhe sustentação, valor sem épico e valor com épico');
+    card.firstChild.appendChild(document.createTextNode(' '));
+    card.firstChild.appendChild(window.App.Legenda.botao('pr_tabela_times', MET, { rotulo: 'Pontos por time' }));
     cabecalho(tb, [['Time', ''], ['Jornada', ''], ['Velocidade', 'num'], ['PI Planning', 'num'], ['Sprint Planning', 'num'],
                    ['Entregues', 'num'], ['Δ PI → Sprint Planning', 'num'], ['Δ Sprint Planning → Entregues', 'num']]);
     const celBarra = (x, vel) => {
@@ -356,8 +366,11 @@
 
   function diagnosticos(d) {
     const g = d.diagnosticos || {};
+    const box = el('div');
+    box.style.marginTop = '18px';
+    box.appendChild(window.App.Legenda.botao('pr_diagnosticos', MET, { rotulo: 'Diagnósticos dos dados' }));
     const det = el('details', 'pr-diag');
-    det.style.marginTop = '18px';
+    det.style.marginTop = '8px';
     det.appendChild(el('summary', null, 'Diagnósticos dos dados'));
     const ul = el('ul');
     const fora = g.tipos_fora_das_barras || [];
@@ -379,10 +392,12 @@
     const vn = g.valor_sp_nulo_entregues || {};
     ul.appendChild(el('li', null, 'Valor entregue com SP nulo e SPE > 0: ' + (vn.itens || 0) + ' itens (' + fmt(vn.spe || 0) + ' SPE).'));
     det.appendChild(ul);
-    return det;
+    box.appendChild(det);
+    return box;
   }
 
   function render(d) {
+    MET = d.metodologia || null;
     root.textContent = '';
     root.appendChild(faixaJanela(d));
 

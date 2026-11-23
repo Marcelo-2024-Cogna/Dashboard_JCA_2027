@@ -10,6 +10,7 @@ use App\Repositories\ProdutividadeRepository;
 use App\Repositories\VelocidadeRepository;
 use App\Repositories\VisaoGeralRepository;
 use App\Services\Logger;
+use App\Services\MetodologiaService;
 use App\Srv\srvRespostaCache;
 use InvalidArgumentException;
 use Throwable;
@@ -55,6 +56,7 @@ class GraficosController
         'config/capacity.php',
         'app/Services/VisaoGeralCalculator.php',
         'app/Services/SprintRef.php',
+        'app/Services/MetodologiaService.php',
         'app/Services/DiasUteis.php',
         'app/Controllers/GraficosController.php',
         'app/Srv/srvRespostaCache.php',
@@ -94,7 +96,7 @@ class GraficosController
         }
         try {
             $filtros = $this->lerFiltros();
-            $this->respond(200, ['success' => true] + $this->planejadoRealizado->consultar($filtros));
+            $this->respond(200, ['success' => true] + $this->planejadoRealizado->consultar($filtros) + ['metodologia' => MetodologiaService::paraTela('plan-real')]);
         } catch (InvalidArgumentException $e) {
             Logger::warning(Logger::CANAL_DASHBOARD, 'GET /graficos/plan-real → 400: ' . $e->getMessage(), [
                 'query' => $_GET,
@@ -116,7 +118,7 @@ class GraficosController
         }
         try {
             $filtros = $this->lerFiltros();
-            $this->respond(200, ['success' => true] + $this->leadTime->consultar($filtros));
+            $this->respond(200, ['success' => true] + $this->leadTime->consultar($filtros) + ['metodologia' => MetodologiaService::paraTela('lead-time')]);
         } catch (InvalidArgumentException $e) {
             Logger::warning(Logger::CANAL_DASHBOARD, 'GET /graficos/lead-time → 400: ' . $e->getMessage(), [
                 'query' => $_GET,
@@ -138,7 +140,7 @@ class GraficosController
         }
         try {
             $filtros = $this->lerFiltros();
-            $this->respond(200, ['success' => true] + $this->velocidade->consultar($filtros));
+            $this->respond(200, ['success' => true] + $this->velocidade->consultar($filtros) + ['metodologia' => MetodologiaService::paraTela('velocidade')]);
         } catch (InvalidArgumentException $e) {
             Logger::warning(Logger::CANAL_DASHBOARD, 'GET /graficos/velocidade → 400: ' . $e->getMessage(), [
                 'query' => $_GET,
@@ -160,7 +162,7 @@ class GraficosController
         }
         try {
             $filtros = $this->lerFiltros();
-            $this->respond(200, ['success' => true] + $this->produtividade->consultar($filtros));
+            $this->respond(200, ['success' => true] + $this->produtividade->consultar($filtros) + ['metodologia' => MetodologiaService::paraTela('produtividade')]);
         } catch (InvalidArgumentException $e) {
             Logger::warning(Logger::CANAL_DASHBOARD, 'GET /graficos/produtividade → 400: ' . $e->getMessage(), [
                 'query' => $_GET,
@@ -588,7 +590,7 @@ class GraficosController
         }
         try {
             $filtros = $this->lerFiltros();
-            $this->respond(200, ['success' => true] + $this->previsibilidade->consultar($filtros));
+            $this->respond(200, ['success' => true] + $this->previsibilidade->consultar($filtros) + ['metodologia' => MetodologiaService::paraTela('previsibilidade')]);
         } catch (InvalidArgumentException $e) {
             Logger::warning(Logger::CANAL_DASHBOARD, 'GET /graficos/previsibilidade → 400: ' . $e->getMessage(), [
                 'query' => $_GET,

@@ -235,6 +235,7 @@ class VisaoGeralRepository
                 'limite_dias' => (int) ($this->config['limite_chamado_dias'] ?? 2),
             ],
             'limite_linhas_lista' => (int) ($this->config['max_linhas_lista'] ?? 500),
+            'blocos'              => \App\Services\MetodologiaService::paraTela('overview')['blocos'],
             'fator_carga'         => $this->configFatorCarga()['cfg'] + [
                 'fonte_capacidade' => $this->fonteCapacidade(),
             ],
