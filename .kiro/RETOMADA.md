@@ -390,7 +390,7 @@
    Adicionado/Removido/Mudança de Escopo pela diferença de conjuntos baseline×extração.
 
 3a. **PRÓXIMO — Velocidade refeita** (`/metricas/velocidade`, hoje legada da v1.0: lê o
-   cache antigo `data/items.json`/`/metrics`, 31 times). Pedido do usuário (29/10): os gráficos
+   cache antigo `data/items.json`; a rota `/metrics` foi removida em 24/11/2026, 31 times). Pedido do usuário (29/10): os gráficos
    passam a usar os rótulos **"Story Points Estimate"** e **"Story Points entregues"**, e os
    números **precisam bater com o Planejado x Realizado**. Interpretação adotada (confirmar
    se o usuário preferir outra): Estimate = barra **PI Planning** (SPE da baseline dos itens
@@ -597,13 +597,17 @@ Sugestão de permissões do Kiro (`~/.kiro/settings/permissions.yaml`) apresenta
   testes sem dependência de data, 5S lotes 1-3 (`39ea7f7`, `3c5fe33`, lote 3 local). Deploy real das Fases 1-3 feito em 23/11.
 - **Mantém como está**: Épicos e Sustentação (leem `/extract`, ficam para a fusão PEP x JCA); sem data/hora da carga nas legendas;
   Concluído da Velocidade (SP, estado de hoje, com Sustentação e Suporte) até novo feedback dos testes.
-- **API v1.0 (`/baseline/*`, `/metrics`, `/capacity/*`, `data/baselines`)**: remoção autorizada; `/extract`, `JqlBuilder`,
+- **API v1.0 (`/baseline/*`, `/metrics`, `/capacity/*`, `data/baselines`)**: REMOVIDA em 24/11/2026 (relatório `.agents/tasks/remocao-api-v1.md`; restaurar com `git restore --source=<sha> -- <caminho>`); `/extract`, `JqlBuilder`,
   `config/baseline.php`, `ConfigRepository` (capacidade do Painel) ficam.
 - **Servidor MCP (`bin/server.php`, `McpController`) FICA**: o usuário pretende usá-lo no futuro, inclusive para o Score Performance.
 - **Planilhas da raiz** ficam até decidir a baseline da PI 5/26; depois mover para `docs/insumos/`.
 - **Dumps** de 05/11 e 09/11 apagados (resta `data/deploy/dados_20261112.sql`). `.agents/` compactado em
   `%USERPROFILE%\Backups\jca_agents_*.zip` (originais mantidos). `chk.txt` e `test-run.txt` do PEP removidos.
-- **ADGP = SGGU** (informado pelo usuário): investigação em `.agents/tasks/adgp-sggu.md` (JQLs 16 e 17 do `jql-jira.bash`).
+- **ADGP = SGGU** (confirmado pelo usuário em 24/11; o relatório `.agents/tasks/adgp-sggu.md` ficou sem uso). **Os JQLs de
+  `jql-jira.bash` são EXEMPLOS de uso, não regras da plataforma**: foram compartilhados só como histórico de pesquisa, teste e
+  comparações futuras. **As siglas dos times mudam a cada jornada**, então a plataforma não deve fixar sigla nem tentar
+  atender esses JQLs. NÃO gastar processamento em análise comparativa contra eles; só voltar ao arquivo se surgir uma
+  necessidade comparativa concreta. Os filtros 16 e 17 não exigem mudança no JCA.
 - **Padronização autorizada**: `.editorconfig`, `* text=auto eol=lf` no `.gitattributes` (renormalizar em commit separado) e hook de
   pré-commit (`.githooks/`, ativado com `git config core.hooksPath .githooks`). Renomear as 9 classes de `app/Srv/` para
   PascalCase só no INÍCIO da v2.0, em commit isolado.
