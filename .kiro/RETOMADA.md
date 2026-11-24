@@ -318,7 +318,7 @@
    média da jornada = média de todos os itens da jornada (não das médias dos times).
    Também no endpoint: média nos itens que têm a etapa (n), P50 e máx. por time
    (outliers: dado apenas, sem tratamento). A `vw_cycle_time` antiga segue
-   existindo (usada por `MetricsRepository::cycleTime()`). Detalhes em
+   existindo (sem consumidor no PHP desde a remoção de `MetricsRepository`). Detalhes em
    `data/import/README.md`.
    **Implantação pendente (29/10)**: o endpoint traz `implantacao_resumo` e a página
    mostra "Implantação concluída x de n ⚠ N pend." + card; números do lead time

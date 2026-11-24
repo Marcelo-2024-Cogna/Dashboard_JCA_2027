@@ -252,7 +252,7 @@ GROUP BY
 --    vw_velocidade_sprint (3a) e vw_velocidade e agora a agregacao dela para
 --    a PI CORRENTE (a que contem hoje; senao a de maior data_fim), sem PI fixa.
 --    Colunas inalteradas (jornada, time, projeto_key, dias_uteis_pi, velocity,
---    sustentacao, capacity) para nao quebrar MetricsRepository.
+--    sustentacao, capacity) para nao quebrar os consumidores da view.
 -- ---------------------------------------------------------------------
 -- 3a. vw_velocidade_sprint  (grao: time x sprint, TODAS as PIs/sprints)
 --      velocity    = ROUND(qtde_dev * horas_dev * dias_uteis / media_produtividade_pi)

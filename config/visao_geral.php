@@ -39,15 +39,11 @@ return [
         ],
     ],
 
-    // Fonte do cálculo de produtividade por sprint ('sql' = via SQL direto).
-    'produtividade_por_sprint' => 'sql',
-
     // ── Janelas e limites ───────────────────────────────────────────────────
     'janela_chamados_dias'   => 30,  // janela (dias) para a contagem de chamados
     'limite_chamado_dias'    => 2,   // limite (dias) de resolução de chamado
     'max_linhas_lista'       => 500, // teto de linhas na lista de itens
     'max_linhas_tempo_status' => 300, // teto de linhas no tempo por status
-    'aviso_defasagem_dias'   => 1,   // (legado) defasagem em dias; o aviso agora usa horas
     'aviso_defasagem_horas'  => 25,  // defasagem (h) da carga mais antiga que dispara aviso
 
     // Efficiency Baseline Ratio: limite de apresentação (% de horas em itens multissprint)

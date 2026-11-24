@@ -206,7 +206,7 @@ novo não duplica), no mesmo padrão de `bin/seed_catalogo.php`.
 ## O dashboard LÊ SOMENTE DO BANCO
 
 O dashboard **nunca** lê dos arquivos JSON desta pasta. Ele consulta
-**apenas as views do banco** (via `App\Repositories\MetricsRepository` e
+**apenas as views do banco** (via os repositórios de `App\Repositories`, como
 `App\Repositories\CatalogRepository`, que são **somente leitura**). O JSON é
 só um estágio do pipeline de ingestão, não uma fonte de consumo do dashboard.
 

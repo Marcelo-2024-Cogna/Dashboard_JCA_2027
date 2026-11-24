@@ -171,7 +171,6 @@ body {
 .cgrid { display: grid; gap: 18px; }
 .cgrid.c1 { grid-template-columns: 1fr; }
 .cgrid.c2 { grid-template-columns: repeat(auto-fill, minmax(440px,1fr)); }
-.cgrid.c3 { grid-template-columns: repeat(auto-fill, minmax(320px,1fr)); }
 .ccard {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--r); padding: 20px 22px; box-shadow: var(--shadow);
@@ -387,5 +386,5 @@ canvas.vg-clicavel { cursor: pointer; }
   .layout { grid-template-columns: minmax(0,1fr); grid-template-areas: "header" "main"; }
   .main { padding: 18px 14px; }
   .sidebar { display: none; }
-  .cgrid.c2, .cgrid.c3 { grid-template-columns: 1fr; }
+  .cgrid.c2 { grid-template-columns: 1fr; }
 }
