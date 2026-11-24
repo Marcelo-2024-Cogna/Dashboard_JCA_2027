@@ -591,6 +591,27 @@ Sugestão de permissões do Kiro (`~/.kiro/settings/permissions.yaml`) apresenta
   regressão (código já passa em 7.4 e 8.2); (5) Debt Load Ratio (SP; Débito Técnico + Suporte); (6) reconciliar Painel x
   `times_composicao`; (7) decidir `deploy/excluir.txt` para os testes de `bin/` e corrigir `deploy/LEIAME.md:62`.
 
+## DECISÕES DE 24/11/2026 (5S + base da v2.0; relatório `.agents/tasks/higienizacao-5s-v2.md`)
+
+- **Publicado**: legendas "Como é calculado" em todas as telas (`MetodologiaService` é a fonte única; `e252189`, `cda4539`),
+  testes sem dependência de data, 5S lotes 1-3 (`39ea7f7`, `3c5fe33`, lote 3 local). Deploy real das Fases 1-3 feito em 23/11.
+- **Mantém como está**: Épicos e Sustentação (leem `/extract`, ficam para a fusão PEP x JCA); sem data/hora da carga nas legendas;
+  Concluído da Velocidade (SP, estado de hoje, com Sustentação e Suporte) até novo feedback dos testes.
+- **API v1.0 (`/baseline/*`, `/metrics`, `/capacity/*`, `data/baselines`)**: remoção autorizada; `/extract`, `JqlBuilder`,
+  `config/baseline.php`, `ConfigRepository` (capacidade do Painel) ficam.
+- **Servidor MCP (`bin/server.php`, `McpController`) FICA**: o usuário pretende usá-lo no futuro, inclusive para o Score Performance.
+- **Planilhas da raiz** ficam até decidir a baseline da PI 5/26; depois mover para `docs/insumos/`.
+- **Dumps** de 05/11 e 09/11 apagados (resta `data/deploy/dados_20261112.sql`). `.agents/` compactado em
+  `%USERPROFILE%\Backups\jca_agents_*.zip` (originais mantidos). `chk.txt` e `test-run.txt` do PEP removidos.
+- **ADGP = SGGU** (informado pelo usuário): investigação em `.agents/tasks/adgp-sggu.md` (JQLs 16 e 17 do `jql-jira.bash`).
+- **Padronização autorizada**: `.editorconfig`, `* text=auto eol=lf` no `.gitattributes` (renormalizar em commit separado) e hook de
+  pré-commit (`.githooks/`, ativado com `git config core.hooksPath .githooks`). Renomear as 9 classes de `app/Srv/` para
+  PascalCase só no INÍCIO da v2.0, em commit isolado.
+- **v2.0**: o primeiro módulo é `Definicoes` único (Done/entregue, tipos de valor e de sustentação, dias úteis), sem mudar números.
+  **Regra permanente: sempre DIAS ÚTEIS, nunca dias corridos** (o PEP conta corridos; recalibrar os limiares do Score).
+- **Regras da v2.0 ainda em aberto**: definição de "entregue" no Score, produtividade (h/ponto x pontos/pessoa), denominador do
+  Planejado x Realizado (Escopo Inicial ou Final).
+
 ## BACKLOG PARA A v2.0 (decidido em 18/11/2026: amadurecer quando as interfaces do PEP forem portadas para o JCA)
 
 Material de base (todos em `.agents/tasks/`, fora do git): `auditoria-visao-geral-capacity-velocity.md` e
