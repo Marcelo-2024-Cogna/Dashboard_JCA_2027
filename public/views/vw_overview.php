@@ -186,223 +186,22 @@
     tb.appendChild(tbody);
     corpo.appendChild(wrap);
   }
-  // Status que contam como pronto. O endpoint ainda não envia a lista
-  // (metodologia entra em outro passo); usa-a quando existir.
+  // Status que contam como pronto: lista enviada em d.metodologia.done_statuses.
   function statusDone(d) {
     const m = d.metodologia && d.metodologia.done_statuses;
     return Array.isArray(m) ? m : ['Aceito', 'Em produção', 'Pendente de Produção'];
   }
 
   // ── Legendas "Como é calculado" ───────────────────────────────────────
-  // Cada entrada descreve o que o código faz hoje. Listas de Done, tipos e
-  // status vêm de d.metodologia (nunca digitadas aqui).
+  // O texto vem só de d.metodologia.blocos (MetodologiaService, fonte única); aqui só
+  // ficam os botões (App.Legenda) e os formatadores usados pelos modais de detalhe.
   const lista = a => (Array.isArray(a) && a.length ? a.join(', ') : '—');
   const sinal = v => (v == null ? '—' : (v > 0 ? '+' : (v < 0 ? '−' : '')) + nf1.format(Math.abs(v)) + '%');
   const seta  = v => (v == null || v === 0 ? '=' : (v > 0 ? '▲' : '▼'));
-  const LEGENDAS = {
-    andamento: (d, m) => ({
-      titulo: 'Andamento',
-      fonte: 'Extração do Jira (view vw_item), estado dos itens hoje.',
-      unidade: 'Story Points (SP) e quantidade de itens.',
-      formula: 'Cada balde é a soma dos SP dos itens do escopo naquele status. Total = backlog + em andamento + bloqueados + aceitos.',
-      entra: 'Tipos de valor: ' + lista(m.tipos_valor) + '. Tipos de sustentação: ' + lista(m.tipos_sustentacao) + '.',
-      naoEntra: 'Itens cancelados ficam fora do total (aparecem em Cancelados).',
-      done: lista(m.done_statuses),
-      observacoes: [
-        'Backlog: ' + lista((m.status || {}).backlog) + '. Bloqueados: ' + lista((m.status || {}).bloqueado) + '.',
-        'Em andamento: ' + lista((m.status || {}).em_andamento) + '. Inclui itens já prontos e ainda sem aceite; pode diferir do filtro do Jira.',
-      ],
-    }),
-    aceitos: (d, m) => {
-      const r = (d.gadgets.andamento || {}).reconciliacao || {};
-      const obs = ['Estado de hoje, não do fim da sprint.'];
-      if (r.aceitos_local_sp != null) {
-        obs.push('Conferência: cálculo local ' + fmt(r.aceitos_local_sp) + ' SP · Velocidade ' + fmt(r.aceitos_velocidade_sp) + ' SP · resíduo ' + fmt(r.residuo_aceitos) + ' SP.');
-      }
-      return {
-        titulo: 'Aceitos',
-        fonte: 'Extração do Jira (view vw_item).',
-        unidade: 'Story Points (SP).',
-        formula: 'Soma dos SP atuais dos itens cujo status está na regra de Done.',
-        entra: 'Valor e sustentação (inclui Sustentação e Suporte).',
-        naoEntra: 'Itens fora de Done. O status "Concluído" não é Done.',
-        done: lista(m.done_statuses),
-        observacoes: obs,
-      };
-    },
-    sprint_anterior: (d, m) => ({
-      titulo: 'Dados da sprint anterior',
-      fonte: 'Extração do Jira (view vw_item), estado dos itens hoje.',
-      unidade: 'Story Points (SP) e itens.',
-      formula: 'Alocados = itens que passaram pela sprint. Aceitos = alocados em Done. Não aceitos sem continuidade = fora de Done e sem transbordo. Transbordo = itens que seguiram para a sprint seguinte.',
-      entra: 'Valor e sustentação.',
-      naoEntra: 'Itens cancelados.',
-      done: lista(m.done_statuses),
-      observacoes: ['Não entregue no transbordo = SP do transbordo que ainda não está em Done.'],
-    }),
-    cycle_time: (d, m) => ({
-      titulo: 'Cycle time por status',
-      fonte: 'Datas de fluxo do Jira (início e fim de fluxo, homologação e implantação).',
-      unidade: 'Dias úteis.',
-      formula: 'Média, por fase, do tempo entre as datas de início e fim da fase nos itens entregues. Lead time = do início do fluxo ao fim.',
-      entra: 'Itens de valor entregues na janela (' + lista(m.tipos_valor) + ').',
-      naoEntra: 'Ideação não é contada. Sustentação fica fora.',
-      done: lista(m.done_statuses),
-      observacoes: ['Bate com a tela Lead Time (bloco de sprints fechadas).'],
-    }),
-    team_velocity: (d, m) => ({
-      titulo: 'Team Velocity',
-      fonte: 'Extração do Jira e baseline do PI Planning.',
-      unidade: 'Story Points (SP).',
-      formula: 'Concluído = SP atuais dos itens em Done, atribuídos à sprint_ref (a maior sprint do item). Escopo inicial = baseline do PI Planning.',
-      entra: 'Itens de valor (' + lista(m.tipos_valor) + ') e de sustentação (' + lista(m.tipos_sustentacao) + ') com sprint na PI, como na tela Velocidade.',
-      naoEntra: 'Itens de outros tipos, sem categoria (por exemplo Incidente e Bug). O status "Concluído" não é Done.',
-      done: lista(m.done_statuses),
-      observacoes: [
-        'O escopo inicial é o baseline do PI Planning, não o início da sprint. Pode divergir do gadget do Jira.',
-        'Estado de hoje, não do fim da sprint.',
-      ],
-    }),
-    burndown: (d, m) => ({
-      titulo: 'Burndown',
-      fonte: 'Datas de fluxo do Jira (não há burndown nativo de sprint).',
-      unidade: 'Story Points (SP) por dia.',
-      formula: 'Real = escopo da sprint menos os SP concluídos até cada dia, pela data de conclusão. Ideal = queda linear até o fim da sprint.',
-      entra: 'Itens de valor da sprint.',
-      naoEntra: 'Sustentação (mostrada à parte no diagnóstico).',
-      done: lista(m.done_statuses),
-      observacoes: ['Aproximado: a data de conclusão vem das datas de fluxo, sem histórico de status.'],
-    }),
-    cfd: (d, m) => ({
-      titulo: 'Fluxo acumulado (CFD)',
-      fonte: 'Datas de fluxo do Jira.',
-      unidade: 'Story Points (SP) por dia.',
-      formula: 'Pendente, em andamento e concluído acumulados a cada dia, a partir das datas de início e fim de fluxo.',
-      entra: 'Itens de valor da sprint.',
-      naoEntra: 'Sustentação.',
-      done: lista(m.done_statuses),
-      observacoes: ['Aproximado por datas de fluxo.'],
-    }),
-    chamados: (d, m) => {
-      const c = m.chamados || {};
-      return {
-        titulo: 'Chamados',
-        fonte: 'Extração do Jira, itens de sustentação resolvidos.',
-        unidade: 'Dias úteis e quantidade.',
-        formula: 'Média e mediana de dias por tipo; % no limite = chamados resolvidos em até ' + int(c.limite_dias) + ' dia(s) útil(eis).',
-        entra: 'Tipos de sustentação: ' + lista(m.tipos_sustentacao) + '. Janela: últimos ' + int(c.janela_dias) + ' dias.',
-        naoEntra: 'Chamados sem data de fim de fluxo ficam fora das médias.',
-        done: 'Resolvido com data de fim de fluxo.',
-        observacoes: ['A cobertura de data aparece abaixo da tabela. Independe do seletor de sprint/PI.'],
-      };
-    },
-    tempo_status: (d, m) => ({
-      titulo: 'Tempo do item em cada status',
-      fonte: 'Datas de fluxo do Jira.',
-      unidade: 'Dias úteis por fase.',
-      formula: 'Média de dias úteis que os itens ficaram em cada fase.',
-      entra: 'Itens de valor da janela.',
-      naoEntra: 'Sustentação (mostrada à parte no diagnóstico).',
-      done: lista(m.done_statuses),
-      observacoes: ['Aproximado por datas de fluxo. No modo PI a lista mostra só itens em andamento; as médias usam todos os itens da janela.'],
-    }),
-    efficiency: (d, m) => ({
-      titulo: 'Efficiency: custo real por SP',
-      fonte: 'Horas apontadas no Jira (tempo gasto) e baseline h/SP de cada time (média de produtividade do PI).',
-      unidade: 'Horas por Story Point (h/SP).',
-      formula: 'h/SP = horas ÷ SP dos itens de valor em Done na janela. Baseline = média dos h/SP dos times, ponderada pelo SP entregue. Variação = horas ÷ (Σ SP × baseline do time) − 1.',
-      entra: 'Itens de valor em Done (' + lista(m.tipos_valor) + '). ' + (((m.debt_load || {}).efficiency_exclui_debito_tecnico)
-        ? 'Débito Técnico está excluído do h/SP (regra configurada) e continua contado no diagnóstico.'
-        : 'Débito Técnico está incluso e é destacado no detalhe.'),
-      naoEntra: 'Sustentação e Suporte. Time sem baseline fica fora da razão.',
-      done: lista(m.done_statuses),
-      observacoes: [
-        'Estado de hoje, não do fim da sprint.',
-        'Horas são acumuladas na vida do item e atribuídas à última sprint.',
-        'Itens sem SP entram com as horas e sem pontos.',
-      ],
-    }),
-    fator_carga: (d, m) => {
-      const fc = m.fator_carga || {};
-      const fx = fc.faixas || {};
-      const fonteCap = fc.fonte_capacidade === 'painel'
-        ? 'Painel de Controle (desenvolvedores e horas/dia por time)'
-        : 'valores padrão de config/capacity.php (o Painel ainda não foi salvo)';
-      return {
-        titulo: 'Fator de Carga',
-        fonte: 'Capacidade: ' + fonteCap + ', não a tabela times_composicao. Baseline h/SP: times_composicao.media_produtividade_pi. Demanda: SPE da Sprint Planning. Dias úteis: sprints.dias_uteis.',
-        unidade: 'Horas e percentual (%).',
-        formula: 'Bruta = devs × h/dia × dias úteis. Líquida = bruta × ' + fmt(fc.disponibilidade_pct) + '% de disponibilidade. Demanda = SPE × baseline h/SP do time. Fator = demanda ÷ líquida × 100. No consolidado e na PI somam-se as horas, nunca os percentuais.',
-        entra: 'Itens de valor (' + lista(m.tipos_valor) + ') não cancelados, pela sprint atual do item. ' + (fc.incluir_sustentacao
-          ? 'A sustentação entra na demanda (regra configurada).'
-          : 'Sustentação (' + lista(m.tipos_sustentacao) + ') fica fora do fator e aparece só na decomposição.')
-          + ' Faixas: abaixo de ' + fmt(fx.subutilizacao_ate) + '% possível subutilização; até ' + fmt(fx.recomendada_ate) + '% recomendada; até ' + fmt(fx.limite) + '% atenção a sobrecarga; acima, demanda acima da capacidade líquida.',
-        naoEntra: 'Incidente, Bug e SS nunca entram. Sprints de sustentação, sprints sem dias úteis e times sem Painel ou sem baseline ficam fora.',
-        done: 'Não se aplica: o fator mede o planejado. Para Done: ' + lista(m.done_statuses) + '.',
-        observacoes: [
-          'A pertença à sprint é a atual: itens que transbordam saem da sprint de origem e reduzem o valor dela.',
-          'A versão fiel ao fim da sprint exige snapshot (v2.0).',
-          'Sprint em andamento usa os dias úteis totais e fica marcada como parcial.',
-          'Time sem dados fica fora do numerador e do denominador e é listado no detalhe.',
-          'Pode divergir de times_composicao, que traz outra composição de devs e horas.',
-        ],
-      };
-    },
-    debt_load: (d, m) => {
-      const dm = m.debt_load || {};
-      const fonteCap = dm.fonte_capacidade === 'painel'
-        ? 'Painel de Controle (desenvolvedores e horas/dia por time)'
-        : 'valores padrão de config/capacity.php (o Painel ainda não foi salvo)';
-      return {
-        titulo: 'Debt Load',
-        fonte: 'Itens: Jira (vw_item), SP atual. Capacidade: ' + fonteCap + ', a mesma do Fator de Carga. Baseline h/SP: times_composicao.media_produtividade_pi. Dias úteis: sprints.dias_uteis.',
-        unidade: 'Story Points (SP) e percentual (%).',
-        formula: 'Capacidade em SP = (devs × h/dia × dias úteis × ' + fmt(dm.disponibilidade_pct) + '%) ÷ baseline h/SP do time. Debt Load = Σ SP de dívida ÷ Σ capacidade em SP × 100. Exemplo: 8 SP ÷ 38,4 SP = 20,8%. No consolidado e na PI somam-se SP, nunca os percentuais.',
-        entra: 'Itens não cancelados dos tipos ' + lista(dm.tipos) + ', em qualquer status (comprometido), pela sprint atual do item. O SP entregue aparece à parte.',
-        naoEntra: 'Incidente, SS, Bug e Sustentação. Suporte N1 não é identificável no Jira: entra todo item do tipo Suporte. Sprints de sustentação, sprints sem dias úteis e times sem Painel ou sem baseline ficam fora.',
-        done: 'Só para o SP entregue: ' + lista(m.done_statuses) + '.',
-        observacoes: [
-          'Estado de hoje, não do fim da sprint.',
-          'Item sem SP conta 0 e é reportado no detalhe, o que subestima o valor.',
-          'Débito Técnico também está no Fator de Carga e no Efficiency: os indicadores não se somam.',
-          'Sem faixa definida: a cor é neutra até o usuário definir limites.',
-          'Time sem dados fica fora do numerador e do denominador e é listado no detalhe.',
-        ],
-      };
-    },
-  };
-  function abrirLegenda(chave, d, origem) {
-    const fn = LEGENDAS[chave];
-    if (!fn) return;
-    const L = fn(d, d.metodologia || {});
-    window.App.Modal.abrir({
-      titulo: 'Como é calculado: ' + L.titulo,
-      subtitulo: 'Fonte, unidade, fórmula e regra de Done',
-      origem,
-      construir: corpo => {
-        const dl = el('dl');
-        [['Fonte', L.fonte], ['Unidade', L.unidade], ['Fórmula', L.formula], ['O que entra', L.entra],
-          ['O que não entra', L.naoEntra], ['Regra de Done', L.done]].forEach(([t, v]) => {
-          dl.appendChild(el('dt', null, t));
-          dl.appendChild(el('dd', null, v));
-        });
-        corpo.appendChild(dl);
-        if ((L.observacoes || []).length) {
-          corpo.appendChild(el('h4', null, 'Observações'));
-          const ul = el('ul');
-          L.observacoes.forEach(o => ul.appendChild(el('li', null, o)));
-          corpo.appendChild(ul);
-        }
-      },
-    });
-  }
-  function legendaBotao(chave, d, rotulo) {
-    return botaoModal(rotulo || 'ⓘ Como é calculado', origem => abrirLegenda(chave, d, origem));
-  }
-  // Insere o botão logo após o título (primeiro filho) do cartão/seção.
-  function anexarLegenda(container, chave, d) {
+  // Insere o botão de legenda logo após o título (primeiro filho) do cartão/seção.
+  function anexarLegenda(container, botao) {
     const ab = el('div', 'pr-sub');
-    ab.appendChild(legendaBotao(chave, d));
+    ab.appendChild(botao);
     container.insertBefore(ab, container.firstChild ? container.firstChild.nextSibling : null);
     return container;
   }
@@ -810,12 +609,12 @@
       int(g.cancelados_pi.itens) + ' itens' + (cf ? ' · no foco: ' + fmt(cf.sp) + ' SP em ' + int(cf.itens) + ' itens' : ''), '#f97316'));
     sec.appendChild(grid);
 
-    anexarLegenda(sec, 'andamento', d);
+    anexarLegenda(sec, window.App.Legenda.botao('andamento', d.metodologia));
     const abLeg = sec.children[1];
-    abLeg.appendChild(legendaBotao('aceitos', d, 'ⓘ Como é calculado: Aceitos'));
-    abLeg.appendChild(legendaBotao('efficiency', d, 'ⓘ Como é calculado: Efficiency'));
-    abLeg.appendChild(legendaBotao('fator_carga', d, 'ⓘ Como é calculado: Fator de Carga'));
-    abLeg.appendChild(legendaBotao('debt_load', d, 'ⓘ Como é calculado: Debt Load'));
+    abLeg.appendChild(window.App.Legenda.botao('aceitos', d.metodologia, { rotulo: 'ⓘ Como é calculado: Aceitos' }));
+    abLeg.appendChild(window.App.Legenda.botao('efficiency', d.metodologia, { rotulo: 'ⓘ Como é calculado: Efficiency' }));
+    abLeg.appendChild(window.App.Legenda.botao('fator_carga', d.metodologia, { rotulo: 'ⓘ Como é calculado: Fator de Carga' }));
+    abLeg.appendChild(window.App.Legenda.botao('debt_load', d.metodologia, { rotulo: 'ⓘ Como é calculado: Debt Load' }));
     abLeg.appendChild(window.App.Legenda.botao('cancelados', d.metodologia, { rotulo: 'ⓘ Como é calculado: Cancelados na PI' }));
     sec.appendChild(el('div', 'pr-sub', 'Total do escopo: ' + fmt(g.total_sp) + ' SP (backlog + em andamento + bloqueado + aceitos; cancelados ficam fora).'));
 
@@ -898,7 +697,7 @@
       grid.appendChild(k);
     }
     sec.appendChild(grid);
-    anexarLegenda(sec, 'sprint_anterior', d);
+    anexarLegenda(sec, window.App.Legenda.botao('sprint_anterior', d.metodologia));
     sec.appendChild(el('div', 'pr-sub', 'Incidentes/Solicitações: aguardando o módulo de Sustentação.'));
     return sec;
   }
@@ -907,7 +706,7 @@
   function cardBurndown(d) {
     const g = d.gadgets.burndown;
     if (!g || g.estado !== 'ok') return cardVazio('Burndown', g);
-    const card = anexarLegenda(cardAprox('Burndown', g.regra), 'burndown', d);
+    const card = anexarLegenda(cardAprox('Burndown', g.regra), window.App.Legenda.botao('burndown', d.metodologia));
     const wrap = el('div', 'cwrap');
     const cv = document.createElement('canvas');
     cv.id = 'vg-burndown';
@@ -957,7 +756,7 @@
   function cardCfd(d) {
     const g = d.gadgets.cfd;
     if (!g || g.estado !== 'ok') return cardVazio('Fluxo acumulado (CFD)', g);
-    const card = anexarLegenda(cardAprox('Fluxo acumulado (CFD)', g.regra), 'cfd', d);
+    const card = anexarLegenda(cardAprox('Fluxo acumulado (CFD)', g.regra), window.App.Legenda.botao('cfd', d.metodologia));
     const wrap = el('div', 'cwrap');
     const cv = document.createElement('canvas');
     cv.id = 'vg-cfd';
@@ -1005,7 +804,7 @@
     const g = d.gadgets.cycle_time_status;
     if (!g || g.estado !== 'ok') return cardVazio('Cycle time por status', g);
     const isPi = (d.filtros || {}).modo_efetivo === 'pi';
-    const card = anexarLegenda(cardBase('Cycle time por status', 'dias úteis'), 'cycle_time', d);
+    const card = anexarLegenda(cardBase('Cycle time por status', 'dias úteis'), window.App.Legenda.botao('cycle_time', d.metodologia));
     card.appendChild(el('div', 'pr-sub', 'Janela: ' + (g.sprints || []).join(', ') + ' · ' + int(g.itens) + ' itens de valor entregues.'));
 
     const grid = el('div', 'kpi-grid vg-kpi-grid');
@@ -1031,7 +830,7 @@
   function cardTeamVelocity(d) {
     const g = d.gadgets.team_velocity;
     if (!g || g.estado !== 'ok' || !(g.serie || []).length) return cardVazio('Team Velocity', g);
-    const card = anexarLegenda(cardBase('Team Velocity', 'SP concluídos por sprint'), 'team_velocity', d);
+    const card = anexarLegenda(cardBase('Team Velocity', 'SP concluídos por sprint'), window.App.Legenda.botao('team_velocity', d.metodologia));
     const r = g.resumo || {};
     const dest = el('div');
     dest.style.cssText = 'display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:6px';
@@ -1103,7 +902,7 @@
   function cardChamados(d) {
     const g = d.gadgets.chamados;
     if (!g || g.estado !== 'ok') return cardVazio('Chamados', g);
-    const card = anexarLegenda(cardAprox('Chamados', g.regra), 'chamados', d);
+    const card = anexarLegenda(cardAprox('Chamados', g.regra), window.App.Legenda.botao('chamados', d.metodologia));
     card.appendChild(el('div', 'pr-sub', 'Últimos ' + int(g.janela_dias) + ' dias · independe do seletor · limite de ' + int(g.limite_dias) + ' dia(s) úteis.'));
 
     const { wrap: tw, tb } = tabelaBase(null, 'Chamados por tipo: quantidade, média e mediana de dias, percentual dentro do limite', '540px');
@@ -1133,7 +932,7 @@
     const g = d.gadgets.tempo_status;
     if (!g || g.estado !== 'ok') return cardVazio('Tempo do item em cada status', g, true);
     const isPi = (d.filtros || {}).modo_efetivo === 'pi';
-    const card = anexarLegenda(cardAprox('Tempo do item em cada status', g.regra, true), 'tempo_status', d);
+    const card = anexarLegenda(cardAprox('Tempo do item em cada status', g.regra, true), window.App.Legenda.botao('tempo_status', d.metodologia));
     const fases = g.fases || [];
 
     const wrap = el('div', 'cwrap');

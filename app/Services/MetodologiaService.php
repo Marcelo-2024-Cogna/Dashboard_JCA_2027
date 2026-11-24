@@ -11,6 +11,8 @@ namespace App\Services;
  *   titulo, fonte, unidade, formula, entra, nao_entra, done, janela, limitacoes[],
  *   onde_no_codigo e, opcionalmente, diferencas_jira[].
  * Listas vindas de config (Done, tipos) nunca são digitadas nos textos.
+ * A Visão Geral passa $ctx (valores efetivos lidos pelo VisaoGeralRepository: status, chamados,
+ * Fator de Carga, Debt Load, conferência dos Aceitos) para os marcadores dependentes de config.
  * Compatível com PHP 7.4.
  */
 final class MetodologiaService
@@ -19,11 +21,15 @@ final class MetodologiaService
     public const CAMPOS_TEXTO = ['titulo', 'fonte', 'unidade', 'formula', 'entra', 'nao_entra', 'done', 'janela', 'onde_no_codigo'];
 
     /**
-     * Tela => chaves de bloco. Visão Geral: só as chaves novas (as 12 atuais
-     * continuam em LEGENDAS no JS da view).
+     * Tela => chaves de bloco. É o único lugar com texto de legenda do projeto:
+     * as views só abrem blocos por chave (App.Legenda.botao).
      */
     public const INVENTARIO = [
-        'overview' => ['cancelados', 'lista_sprint_anterior', 'sustentacao_placeholder'],
+        'overview' => [
+            'andamento', 'aceitos', 'efficiency', 'fator_carga', 'debt_load', 'cancelados',
+            'sprint_anterior', 'burndown', 'cfd', 'cycle_time', 'team_velocity', 'chamados',
+            'tempo_status', 'lista_sprint_anterior', 'sustentacao_placeholder',
+        ],
         'velocidade' => [
             'velocidade_grafico', 'velocidade_media', 'velocidade_tabela_sprints',
             'velocidade_por_time', 'velocidade_tabela_times',
@@ -766,7 +772,205 @@ final class MetodologiaService
 
     private const ONDE_VG = 'app/Repositories/VisaoGeralRepository.php (itens, montarGadgets); app/Services/VisaoGeralCalculator.php; config/visao_geral.php (status, max_linhas_lista); config/baseline.php (done_statuses, plan_real_sustentacao_types).';
 
+    private const JANELA_FOCO_VG = 'Modo Sprint ativa: a sprint em foco, que é a escolhida no filtro ou, sem filtro, a sprint de valor ativa hoje (ou, sem ela, a última iniciada). Modo PI inteira: todas as sprints de valor da PI que já começaram (data inicial até hoje). A PI é a do filtro ou a PI corrente. O item entra pela sprint de referência, a maior sprint do campo Sprint.';
+    private const JANELA_ANTERIOR_VG = 'Sprint anterior: sem sprint no filtro, a sprint de valor com a maior data final anterior a hoje (a última fechada); com sprint no filtro, a sprint de valor imediatamente anterior à do filtro. Sprint seguinte: a sprint da PI, de qualquer tipo, com a menor data inicial depois da data inicial da anterior.';
+    private const JANELA_FLUXO_VG = 'O período da sprint em foco (modo Sprint ativa) ou, no modo PI inteira, da menor data inicial à maior data final das sprints de valor já iniciadas, sempre só em dias úteis (segunda a sexta, sem feriados). No modo Sprint ativa o item entra se qualquer sprint do campo Sprint for a sprint em foco; no modo PI inteira, pela sprint de referência. Sprint ainda não iniciada: o gráfico fica vazio.';
+    private const JANELA_CAPACIDADE_VG = 'A mesma janela do escopo (sprint em foco ou sprints de valor já iniciadas da PI), só com as sprints de valor que têm dias úteis cadastrados. Sprint de sustentação e sprint sem dias úteis ficam fora; sprint em andamento usa os dias úteis totais e deixa o resultado parcial.';
+    private const FONTE_CAP_VG = '{fonte_cap}, não a tabela times_composicao';
+
     private const TEXTOS_OVERVIEW = [
+        'andamento' => [
+            'titulo' => 'Andamento',
+            'fonte' => 'Extração do Jira (view vw_item), estado dos itens hoje.',
+            'unidade' => 'Story Points (SP) e quantidade de itens.',
+            'formula' => 'Cada balde é a soma dos SP dos itens do escopo naquele status. Total = backlog + em andamento + bloqueados + aceitos. O item é classificado nesta ordem: cancelado (fica fora do total), aceito (status em Done) e, nos demais casos, pela lista de status de cada balde. Aceitos usa o Concluído da série da Velocidade quando todas as sprints do escopo estão nela; senão, a soma local dos itens em Done.',
+            'entra' => 'Tipos de valor: {valor}. Tipos de sustentação: {sust}.',
+            'nao_entra' => 'Itens cancelados ficam fora do total (aparecem em Cancelados).',
+            'done' => '{done}',
+            'janela' => self::JANELA_FOCO_VG,
+            'onde_no_codigo' => self::ONDE_VG . ' Métodos gadgetAndamento e VisaoGeralCalculator::baldes. Tela: public/views/vw_overview.php (cardAndamento).',
+            'limitacoes' => [
+                'Backlog: {st_backlog}. Bloqueados: {st_bloqueado}.',
+                'Em andamento: {st_em_andamento}. Inclui itens já prontos e ainda sem aceite; pode diferir do filtro do Jira.',
+                'Status que não estão em nenhuma dessas listas caem em Em andamento e aparecem num aviso da tela.',
+            ],
+        ],
+        'aceitos' => [
+            'titulo' => 'Aceitos',
+            'fonte' => 'Extração do Jira (view vw_item).',
+            'unidade' => 'Story Points (SP).',
+            'formula' => 'Soma dos SP atuais dos itens cujo status está na regra de Done. Quando todas as sprints do escopo estão na série da Velocidade, o valor é o Concluído dela; senão, é a soma local dos itens em Done.',
+            'entra' => 'Valor e sustentação (inclui os tipos de sustentação: {sust}).',
+            'nao_entra' => 'Itens fora de Done. O status "Concluído" não é Done.',
+            'done' => '{done}',
+            'janela' => self::JANELA_FOCO_VG,
+            'onde_no_codigo' => self::ONDE_VG . ' Métodos gadgetAndamento (aceitos_sp, reconciliacao) e VisaoGeralCalculator::baldes. Tela: public/views/vw_overview.php (cardAndamento).',
+            'limitacoes' => [
+                'Estado de hoje, não do fim da sprint.',
+                '{conferencia}',
+            ],
+        ],
+        'efficiency' => [
+            'titulo' => 'Efficiency: custo real por SP',
+            'fonte' => 'Horas apontadas no Jira (tempo gasto) e baseline h/SP de cada time (média de produtividade do PI).',
+            'unidade' => 'Horas por Story Point (h/SP).',
+            'formula' => 'h/SP = horas ÷ SP dos itens de valor em Done na janela. Baseline = média dos h/SP dos times, ponderada pelo SP entregue. Variação = horas ÷ (Σ SP × baseline do time) − 1.',
+            'entra' => 'Itens de valor em Done ({valor}). {efficiency_debito}',
+            'nao_entra' => 'Itens de sustentação ({sust}) e de outros tipos (por exemplo Incidente e Bug). Time sem baseline fica fora da razão.',
+            'done' => '{done}',
+            'janela' => 'A mesma janela do escopo (sprint em foco ou sprints de valor já iniciadas da PI). O item entra pela sprint de referência. Se alguma sprint da janela ainda não fechou, o resultado fica marcado como parcial.',
+            'onde_no_codigo' => self::ONDE_VG . ' VisaoGeralCalculator::efficiencyBaseline; ProdutividadeRepository::referenciaPlanejamento (baseline h/SP); config/visao_geral.php (efficiency). Tela: public/views/vw_overview.php (kpiEfficiency, abrirEfficiency).',
+            'limitacoes' => [
+                'Estado de hoje, não do fim da sprint.',
+                'Horas são acumuladas na vida do item e atribuídas à última sprint.',
+                'Itens sem SP entram com as horas e sem pontos.',
+            ],
+        ],
+        'fator_carga' => [
+            'titulo' => 'Fator de Carga',
+            'fonte' => 'Capacidade: ' . self::FONTE_CAP_VG . '. Baseline h/SP: times_composicao.media_produtividade_pi. Demanda: SPE da Sprint Planning. Dias úteis: sprints.dias_uteis.',
+            'unidade' => 'Horas e percentual (%).',
+            'formula' => 'Bruta = devs × h/dia × dias úteis. Líquida = bruta × {fc_disp}% de disponibilidade. Demanda = SPE × baseline h/SP do time. Fator = demanda ÷ líquida × 100. No consolidado e na PI somam-se as horas, nunca os percentuais.',
+            'entra' => 'Itens de valor ({valor}) não cancelados, pela sprint atual do item. {fc_sust} Faixas: {fc_faixas}',
+            'nao_entra' => 'Incidente, Bug e SS nunca entram. Sprints de sustentação, sprints sem dias úteis e times sem Painel ou sem baseline ficam fora.',
+            'done' => 'Não se aplica: o fator mede o planejado. Para Done: {done}.',
+            'janela' => self::JANELA_CAPACIDADE_VG,
+            'onde_no_codigo' => self::ONDE_VG . ' VisaoGeralCalculator::fatorCarga, sprintsDaCapacidade, faixaFatorCarga; VisaoGeralRepository::configFatorCarga, fonteCapacidade; ProdutividadeRepository::referenciaPlanejamento; config/visao_geral.php (fator_carga). Tela: public/views/vw_overview.php (kpiFatorCarga, abrirFatorCarga).',
+            'limitacoes' => [
+                'A pertença à sprint é a atual: itens que transbordam saem da sprint de origem e reduzem o valor dela.',
+                'A versão fiel ao fim da sprint exige snapshot (v2.0).',
+                'Sprint em andamento usa os dias úteis totais e fica marcada como parcial.',
+                'Time sem dados fica fora do numerador e do denominador e é listado no detalhe.',
+                'Pode divergir de times_composicao, que traz outra composição de devs e horas.',
+            ],
+        ],
+        'debt_load' => [
+            'titulo' => 'Debt Load',
+            'fonte' => 'Itens: Jira (vw_item), SP atual. Capacidade: ' . self::FONTE_CAP_VG . ', a mesma do Fator de Carga. Baseline h/SP: times_composicao.media_produtividade_pi. Dias úteis: sprints.dias_uteis.',
+            'unidade' => 'Story Points (SP) e percentual (%).',
+            'formula' => 'Capacidade em SP = (devs × h/dia × dias úteis × {dl_disp}%) ÷ baseline h/SP do time. Debt Load = Σ SP de dívida ÷ Σ capacidade em SP × 100. Exemplo (7 devs, 6 h/dia, 8 dias úteis, 80% de disponibilidade e baseline de 7 h/SP): 8 SP ÷ 38,4 SP = 20,8%. No consolidado e na PI somam-se SP, nunca os percentuais.',
+            'entra' => 'Itens não cancelados dos tipos {dl_tipos}, em qualquer status (comprometido), pela sprint atual do item. O SP entregue aparece à parte.',
+            'nao_entra' => 'Incidente, SS, Bug e Sustentação. Suporte N1 não é identificável no Jira: entra todo item do tipo Suporte. Sprints de sustentação, sprints sem dias úteis e times sem Painel ou sem baseline ficam fora.',
+            'done' => 'Só para o SP entregue: {done}.',
+            'janela' => self::JANELA_CAPACIDADE_VG,
+            'onde_no_codigo' => self::ONDE_VG . ' VisaoGeralCalculator::debtLoad, debtLoadUnidade, sprintsDaCapacidade; VisaoGeralRepository::tiposDebtLoad, fonteCapacidade; config/visao_geral.php (debt_load, fator_carga). Tela: public/views/vw_overview.php (kpiDebtLoad, abrirDebtLoad).',
+            'limitacoes' => [
+                'Estado de hoje, não do fim da sprint.',
+                'Item sem SP conta 0 e é reportado no detalhe, o que subestima o valor.',
+                'Débito Técnico também está no Fator de Carga e no Efficiency: os indicadores não se somam.',
+                'Sem faixa definida: a cor é neutra até o usuário definir limites.',
+                'Time sem dados fica fora do numerador e do denominador e é listado no detalhe.',
+            ],
+        ],
+        'sprint_anterior' => [
+            'titulo' => 'Dados da sprint anterior',
+            'fonte' => 'Extração do Jira (view vw_item), estado dos itens hoje.',
+            'unidade' => 'Story Points (SP) e itens.',
+            'formula' => 'Alocados = itens que passaram pela sprint (o campo Sprint do item contém a sprint anterior). Aceitos = Concluído da Velocidade para a sprint anterior: SP dos itens em Done cuja sprint de referência é a anterior. Não aceitos sem continuidade = fora de Done, na sprint anterior e fora da sprint seguinte. Transbordo = itens que estão na sprint anterior e também na sprint seguinte.',
+            'entra' => 'Valor e sustentação.',
+            'nao_entra' => 'Itens cancelados.',
+            'done' => '{done}',
+            'janela' => self::JANELA_ANTERIOR_VG,
+            'onde_no_codigo' => self::ONDE_VG . ' Métodos gadgetSprintAnterior e VisaoGeralCalculator::sprintAnterior, resolverFoco. Tela: public/views/vw_overview.php (cardSprintAnterior).',
+            'limitacoes' => [
+                'Não entregue no transbordo = SP do transbordo que ainda não está em Done.',
+                'Sem sprint seguinte na PI, o transbordo fica indisponível (n/d): o transbordo para a próxima PI não é extraído.',
+                'Se a sprint anterior não está na série da Velocidade, Aceitos fica em 0.',
+            ],
+        ],
+        'cycle_time' => [
+            'titulo' => 'Cycle time por status',
+            'fonte' => 'Datas de fluxo do Jira (início e fim de fluxo, homologação e implantação), pelas colunas de dias úteis da view vw_item, resumidas por LeadTimeRepository::estatisticas (a mesma conta da tela Lead Time).',
+            'unidade' => 'Dias úteis.',
+            'formula' => 'Média, por etapa (Desenvolvimento, Homologação e Implantação), do tempo entre as datas de início e fim da etapa, nos itens entregues que têm a etapa. Lead time = soma das etapas que o item tem; o cartão mostra a média desse total nos itens com pelo menos uma etapa. ' . self::DIAS_UTEIS_LT,
+            'entra' => 'Itens de valor entregues na janela ({valor}), pela sprint de referência.',
+            'nao_entra' => 'Ideação não é contada. Sustentação fica fora. Itens entregues sem nenhuma das três etapas ficam fora das médias.',
+            'done' => '{done}',
+            'janela' => 'Modo Sprint ativa: a sprint em foco. Modo PI inteira: as sprints de valor já iniciadas da PI. A janela padrão do cartão, que bate com a tela Lead Time, são as sprints de valor já fechadas da PI.',
+            'onde_no_codigo' => self::ONDE_VG . ' Métodos formatarCycle e VisaoGeralCalculator::cycleTime; LeadTimeRepository (linha, estatisticas); db/views.sql (vw_item: dias_desenvolvimento, dias_homologacao, dias_implantacao). Tela: public/views/vw_overview.php (cardCycle).',
+            'limitacoes' => [
+                'Bate com a tela Lead Time (bloco de sprints fechadas).',
+                self::LIM_ETAPAS_LT,
+                'Usa o status e a sprint de hoje, sem histórico (changelog) do Jira.',
+            ],
+        ],
+        'team_velocity' => [
+            'titulo' => 'Team Velocity',
+            'fonte' => 'Extração do Jira e baseline do PI Planning.',
+            'unidade' => 'Story Points (SP).',
+            'formula' => 'Concluído = SP atuais dos itens em Done, atribuídos à sprint_ref (a maior sprint do item). Escopo inicial = baseline do PI Planning.',
+            'entra' => 'Itens de valor ({valor}) e de sustentação ({sust}) com sprint na PI, como na tela Velocidade.',
+            'nao_entra' => 'Itens de outros tipos, sem categoria (por exemplo Incidente e Bug). O status "Concluído" não é Done.',
+            'done' => '{done}',
+            'janela' => self::JANELA_VEL,
+            'onde_no_codigo' => self::ONDE_VG . ' Série reaproveitada de VelocidadeRepository::consultar (montarGadgets, chave team_velocity). Tela: public/views/vw_overview.php (cardTeamVelocity).',
+            'limitacoes' => [
+                'O escopo inicial é o baseline do PI Planning, não o início da sprint. Pode divergir do gadget do Jira.',
+                'Estado de hoje, não do fim da sprint.',
+            ],
+        ],
+        'burndown' => [
+            'titulo' => 'Burndown',
+            'fonte' => 'Datas de fluxo do Jira (não há burndown nativo de sprint).',
+            'unidade' => 'Story Points (SP) por dia.',
+            'formula' => 'Real = escopo da sprint menos os SP concluídos até cada dia útil, pela data de conclusão (o fim da homologação ou, sem ele, o fim de fluxo, nos itens em Done). Ideal = queda linear até o fim da sprint.',
+            'entra' => 'Itens de valor da sprint. Os itens já concluídos antes do início do período ficam fora do escopo.',
+            'nao_entra' => 'Sustentação (mostrada à parte no diagnóstico). Itens com status Cancelado.',
+            'done' => '{done}',
+            'janela' => self::JANELA_FLUXO_VG,
+            'onde_no_codigo' => self::ONDE_VG . ' Métodos gadgetFluxo e VisaoGeralCalculator::burndown, populacaoFluxo, dataConclusao. Tela: public/views/vw_overview.php (cardBurndown).',
+            'limitacoes' => [
+                'Aproximado: a data de conclusão vem das datas de fluxo, sem histórico de status.',
+                'O escopo é constante e vem do estado de hoje: itens que entraram ou saíram durante a sprint não aparecem como mudança.',
+                'Item em Done sem data de fim de fluxo não abate o real; a tela o conta no diagnóstico.',
+            ],
+        ],
+        'cfd' => [
+            'titulo' => 'Fluxo acumulado (CFD)',
+            'fonte' => 'Datas de fluxo do Jira.',
+            'unidade' => 'Story Points (SP) por dia.',
+            'formula' => 'Pendente, em andamento e concluído acumulados a cada dia útil. Concluído = itens em Done com data de conclusão (o fim da homologação ou, sem ele, o fim de fluxo) até o dia. Em andamento = itens não concluídos com início de fluxo até o dia. Pendente = escopo menos os dois.',
+            'entra' => 'Itens de valor da sprint, inclusive os já concluídos antes do início do período.',
+            'nao_entra' => 'Sustentação. Itens com status Cancelado.',
+            'done' => '{done}',
+            'janela' => self::JANELA_FLUXO_VG,
+            'onde_no_codigo' => self::ONDE_VG . ' Métodos gadgetFluxo e VisaoGeralCalculator::cfd, populacaoFluxo, dataConclusao. Tela: public/views/vw_overview.php (cardCfd).',
+            'limitacoes' => [
+                'Aproximado por datas de fluxo.',
+                'Item em Done sem data de fim de fluxo nunca entra em Concluído; a tela o conta no diagnóstico.',
+            ],
+        ],
+        'chamados' => [
+            'titulo' => 'Chamados',
+            'fonte' => 'Extração do Jira (view vw_item): itens dos tipos Incidente e Bug resolvidos, dos times da seleção na PI de referência.',
+            'unidade' => 'Dias úteis e quantidade.',
+            'formula' => 'Média e mediana de dias úteis, do início ao fim de fluxo, por tipo; % no limite = chamados resolvidos em até {chamados_limite} dia(s) útil(eis).',
+            'entra' => 'Itens dos tipos Incidente e Bug (lista fixa no código, fora do universo de valor e sustentação) já resolvidos, com data de fim de fluxo nos últimos {chamados_janela} dias.',
+            'nao_entra' => 'Chamados sem data de fim de fluxo ficam fora das médias. Também ficam fora os chamados sem início de fluxo, os de datas invertidas e os de status cancelado. Itens de outros tipos, inclusive os de sustentação ({sust}).',
+            'done' => 'Resolvido: categoria de status "Itens concluídos" (e não a lista de Done), status fora de cancelado e com data de fim de fluxo.',
+            'janela' => 'Últimos {chamados_janela} dias até hoje, pela data de fim de fluxo. Independe do seletor de sprint e do modo, mas só vale na PI corrente: em outra PI o cartão fica vazio.',
+            'onde_no_codigo' => self::ONDE_VG . ' Métodos gadgetChamados e VisaoGeralCalculator::chamados (tipos Incidente e Bug fixos no código); config/visao_geral.php (janela_chamados_dias, limite_chamado_dias). Tela: public/views/vw_overview.php (cardChamados).',
+            'limitacoes' => [
+                'A cobertura de data (chamados com data de fim de fluxo) aparece abaixo da tabela.',
+                'Aproximado: usa as datas de fluxo, sem histórico de status.',
+            ],
+        ],
+        'tempo_status' => [
+            'titulo' => 'Tempo do item em cada status',
+            'fonte' => 'Datas de fluxo do Jira.',
+            'unidade' => 'Dias úteis por fase.',
+            'formula' => 'Média de dias úteis que os itens ficaram em cada fase: Desenvolvimento, Aguardando homologação, Homologação, Aguardando implantação e Implantação. Cada fase vai de um marco de fluxo ao seguinte; a fase aberta de um item não entregue corre até hoje. A média de cada fase usa só os itens que têm a fase.',
+            'entra' => 'Itens de valor da janela.',
+            'nao_entra' => 'Sustentação (mostrada à parte no diagnóstico). Itens com status cancelado ({cancelado}).',
+            'done' => '{done}',
+            'janela' => self::JANELA_FLUXO_VG,
+            'onde_no_codigo' => self::ONDE_VG . ' Métodos gadgetTempoStatus e VisaoGeralCalculator::tempoStatus, fasesItem, populacaoFluxo; config/visao_geral.php (max_linhas_tempo_status). Tela: public/views/vw_overview.php (cardTempoStatus).',
+            'limitacoes' => [
+                'Aproximado por datas de fluxo. No modo PI a lista mostra só os itens ainda não entregues (inclui backlog e bloqueados); as médias usam todos os itens da janela.',
+                'A lista é limitada a max_linhas_tempo_status linhas (config/visao_geral.php); a tela avisa quando corta.',
+                'Fase com datas invertidas ou sem dia útil fica sem valor e entra no diagnóstico.',
+            ],
+        ],
         'cancelados' => [
             'titulo' => 'Cancelados na PI',
             'fonte' => 'Extração do Jira (view vw_item): itens da PI de referência dos times da seleção que têm extração (VisaoGeralRepository::itens).',
@@ -791,7 +995,7 @@ final class MetodologiaService
             'entra' => 'Itens de entrega de valor ({valor}) e de Sustentação ({sust}) dos times da seleção com extração na PI que passaram pela sprint anterior.',
             'nao_entra' => 'Itens com status {cancelado}. Itens de outros tipos (por exemplo Incidente e Bug). As linhas além do limite max_linhas_lista de config/visao_geral.php ficam fora da tabela, mas dentro do total.',
             'done' => 'A lista de Done ({done}; done_statuses de config/baseline.php) separa Aceitos de Não aceitos no filtro do modal. A ordem da lista usa o indicador de entregue da view vw_item (coluna entregue). Vale o status de hoje.',
-            'janela' => 'Sprint anterior: sem sprint no filtro, a sprint de valor com a maior data final anterior a hoje (a última fechada); com sprint no filtro, a sprint de valor imediatamente anterior à do filtro. Sprint seguinte: a sprint da PI, de qualquer tipo, com a menor data inicial depois da data inicial da anterior.',
+            'janela' => self::JANELA_ANTERIOR_VG,
             'onde_no_codigo' => self::ONDE_VG . ' Métodos gadgetListaSprintAnterior, resumosBaseline e VisaoGeralCalculator::listaSprintAnterior, resolverFoco. Tela: public/views/vw_overview.php (cardLista, abrirItensSprint).',
             'limitacoes' => [
                 'Usa o status de hoje, e não o do fim da sprint.',
@@ -1056,7 +1260,7 @@ final class MetodologiaService
     ];
 
     /** @return array<string,mixed> */
-    public static function paraTela(string $tela): array
+    public static function paraTela(string $tela, array $ctx = []): array
     {
         $base = dirname(__DIR__, 2);
         $baseline = is_file($base . '/config/baseline.php') ? (require $base . '/config/baseline.php') : [];
@@ -1064,15 +1268,10 @@ final class MetodologiaService
         if (!is_array($baseline)) { $baseline = []; }
         if (!is_array($vg)) { $vg = []; }
 
+        $subs = self::marcadores($baseline, $vg, $ctx);
         $blocos = [];
         foreach (self::INVENTARIO[$tela] ?? [] as $chave) {
-            $blocos[$chave] = self::bloco($chave, [
-                '{done}'  => implode(', ', $baseline['done_statuses'] ?? []),
-                '{valor}' => implode(', ', $baseline['value_delivery_types'] ?? []),
-                '{sust}'  => implode(', ', $baseline['plan_real_sustentacao_types'] ?? []),
-                '{sust_extract}' => implode(', ', $baseline['sustentacao_types'] ?? []),
-                '{cancelado}'    => implode(', ', $vg['status']['cancelado'] ?? []),
-            ]);
+            $blocos[$chave] = self::bloco($chave, $subs);
         }
 
         return [
@@ -1101,6 +1300,94 @@ final class MetodologiaService
         return $faltam;
     }
 
+    /** Lista como no JS da Visão Geral: itens separados por vírgula, "—" quando vazia. */
+    private static function lista($a): string
+    {
+        $itens = is_array($a) ? array_values(array_map('strval', $a)) : [];
+        return $itens === [] ? '—' : implode(', ', $itens);
+    }
+
+    /** Número como Intl pt-BR com até 2 casas (igual ao fmt da Visão Geral); null vira "—". */
+    private static function num($v): string
+    {
+        if ($v === null || !is_numeric($v)) {
+            return '—';
+        }
+        $s = number_format((float) $v, 2, ',', '.');
+        return rtrim(rtrim($s, '0'), ',');
+    }
+
+    /**
+     * Marcadores {x} trocados nos textos. Os de config vêm de config/baseline.php e config/visao_geral.php;
+     * $ctx (Visão Geral) traz os valores efetivos do repositório e, quando falta, vale o config.
+     * @return array<string,string>
+     */
+    private static function marcadores(array $baseline, array $vg, array $ctx): array
+    {
+        $status = is_array($ctx['status'] ?? null) ? $ctx['status'] : ($vg['status'] ?? []);
+        $sust = isset($ctx['tipos_sustentacao']) && is_array($ctx['tipos_sustentacao'])
+            ? $ctx['tipos_sustentacao']
+            : ($baseline['plan_real_sustentacao_types'] ?? []);
+
+        $ch = is_array($ctx['chamados'] ?? null) ? $ctx['chamados'] : [];
+        $limite = $ch['limite_dias'] ?? ($vg['limite_chamado_dias'] ?? 2);
+        $janela = $ch['janela_dias'] ?? ($vg['janela_chamados_dias'] ?? 30);
+
+        $fc = is_array($ctx['fator_carga'] ?? null) ? $ctx['fator_carga'] : ($vg['fator_carga'] ?? []);
+        $fx = is_array($fc['faixas'] ?? null) ? $fc['faixas'] : [];
+        $dispFc = $fc['disponibilidade_pct'] ?? 80;
+        $dl = is_array($ctx['debt_load'] ?? null) ? $ctx['debt_load'] : [];
+        $tiposDl = $dl['tipos'] ?? ($vg['debt_load']['tipos'] ?? ['Débito Técnico', 'Suporte']);
+        $excluiDt = array_key_exists('efficiency_exclui_debito_tecnico', $dl)
+            ? !empty($dl['efficiency_exclui_debito_tecnico'])
+            : !empty($vg['efficiency']['excluir_debito_tecnico']);
+
+        $fontePainel = 'Painel de Controle (desenvolvedores e horas/dia por time)';
+        $fonteSeed = 'valores padrão de config/capacity.php (o Painel ainda não foi salvo)';
+        $fonte = $fc['fonte_capacidade'] ?? ($dl['fonte_capacidade'] ?? null);
+        if ($fonte === 'painel') {
+            $fonteCap = $fontePainel;
+        } elseif ($fonte !== null) {
+            $fonteCap = $fonteSeed;
+        } else {
+            $fonteCap = $fontePainel . ' quando já salvo; senão, os ' . $fonteSeed;
+        }
+
+        $rec = is_array($ctx['reconciliacao'] ?? null) ? $ctx['reconciliacao'] : [];
+        $conferencia = ($rec['aceitos_local_sp'] ?? null) !== null
+            ? 'Conferência: cálculo local ' . self::num($rec['aceitos_local_sp'])
+                . ' SP · Velocidade ' . self::num($rec['aceitos_velocidade_sp'] ?? null)
+                . ' SP · resíduo ' . self::num($rec['residuo_aceitos'] ?? null) . ' SP.'
+            : '';
+
+        return [
+            '{done}'  => implode(', ', $baseline['done_statuses'] ?? []),
+            '{valor}' => implode(', ', $baseline['value_delivery_types'] ?? []),
+            '{sust}'  => implode(', ', $sust),
+            '{sust_extract}' => implode(', ', $baseline['sustentacao_types'] ?? []),
+            '{cancelado}'    => implode(', ', $status['cancelado'] ?? []),
+            '{st_backlog}'      => self::lista($status['backlog'] ?? []),
+            '{st_bloqueado}'    => self::lista($status['bloqueado'] ?? []),
+            '{st_em_andamento}' => self::lista($status['em_andamento'] ?? []),
+            '{chamados_limite}' => self::num($limite),
+            '{chamados_janela}' => self::num($janela),
+            '{fonte_cap}' => $fonteCap,
+            '{fc_disp}'   => self::num($dispFc),
+            '{fc_sust}'   => !empty($fc['incluir_sustentacao'])
+                ? 'A sustentação entra na demanda (regra configurada).'
+                : 'Sustentação (' . self::lista($sust) . ') fica fora do fator e aparece só na decomposição.',
+            '{fc_faixas}' => 'abaixo de ' . self::num($fx['subutilizacao_ate'] ?? 85) . '% possível subutilização; até '
+                . self::num($fx['recomendada_ate'] ?? 95) . '% recomendada; até ' . self::num($fx['limite'] ?? 100)
+                . '% atenção a sobrecarga; acima, demanda acima da capacidade líquida.',
+            '{dl_disp}'   => self::num($dl['disponibilidade_pct'] ?? $dispFc),
+            '{dl_tipos}'  => self::lista($tiposDl),
+            '{efficiency_debito}' => $excluiDt
+                ? 'Débito Técnico está excluído do h/SP (regra configurada) e continua contado no diagnóstico.'
+                : 'Débito Técnico está incluso e é destacado no detalhe.',
+            '{conferencia}' => $conferencia,
+        ];
+    }
+
     /** Bloco da chave; sem texto cadastrado devolve o esqueleto vazio (stub). */
     private static function bloco(string $chave, array $subs = []): array
     {
@@ -1110,7 +1397,10 @@ final class MetodologiaService
             $out[$c] = isset($b[$c]) ? strtr((string) $b[$c], $subs) : '';
         }
         $out['limitacoes'] = isset($b['limitacoes']) && is_array($b['limitacoes'])
-            ? array_map(static function ($t) use ($subs) { return strtr((string) $t, $subs); }, array_values($b['limitacoes']))
+            ? array_values(array_filter(
+                array_map(static function ($t) use ($subs) { return strtr((string) $t, $subs); }, array_values($b['limitacoes'])),
+                static function ($t) { return trim($t) !== ''; }
+            ))
             : [];
         if (!empty($b['diferencas_jira']) && is_array($b['diferencas_jira'])) {
             $out['diferencas_jira'] = array_map(static function ($t) use ($subs) { return strtr((string) $t, $subs); }, array_values($b['diferencas_jira']));

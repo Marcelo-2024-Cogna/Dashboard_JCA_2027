@@ -212,15 +212,15 @@ class VisaoGeralRepository
             ],
             'gadgets'  => $gadgets,
             'avisos'   => $avisos,
-            'metodologia' => $this->metodologia(),
+            'metodologia' => $this->metodologia($gadgets),
         ];
     }
 
     /** Regras de classificação lidas dos arquivos de config (para as legendas da tela). */
-    private function metodologia(): array
+    private function metodologia(array $gadgets = []): array
     {
         $baseline = require dirname(__DIR__, 2) . '/config/baseline.php';
-        return [
+        $m = [
             'done_statuses'       => array_values($baseline['done_statuses'] ?? []),
             'tipos_valor'         => array_values($baseline['value_delivery_types'] ?? []),
             'tipos_sustentacao'   => array_values($this->tiposSustentacao),
@@ -235,7 +235,6 @@ class VisaoGeralRepository
                 'limite_dias' => (int) ($this->config['limite_chamado_dias'] ?? 2),
             ],
             'limite_linhas_lista' => (int) ($this->config['max_linhas_lista'] ?? 500),
-            'blocos'              => \App\Services\MetodologiaService::paraTela('overview')['blocos'],
             'fator_carga'         => $this->configFatorCarga()['cfg'] + [
                 'fonte_capacidade' => $this->fonteCapacidade(),
             ],
@@ -246,6 +245,13 @@ class VisaoGeralRepository
                 'efficiency_exclui_debito_tecnico' => !empty($this->config['efficiency']['excluir_debito_tecnico']),
             ],
         ];
+        // Textos das legendas: fonte única em MetodologiaService; recebe os valores efetivos acima.
+        $reconciliacao = $gadgets['andamento']['reconciliacao'] ?? [];
+        $m['blocos'] = \App\Services\MetodologiaService::paraTela(
+            'overview',
+            $m + ['reconciliacao' => is_array($reconciliacao) ? $reconciliacao : []]
+        )['blocos'];
+        return $m;
     }
 
     /** Tipos de item que contam como dívida no Debt Load (config/visao_geral.php). */

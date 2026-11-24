@@ -392,12 +392,28 @@ if (!$semBanco) {
         ];
     };
 
+    // Recortes a partir da própria resposta (sem sprint nem PI fixos, para não quebrar na virada de PI):
+    // PI inteira, a última sprint fechada (janela.sprint_anterior) e a sprint em foco (janela.sprint_foco).
+    $base = $obter(['modo' => 'pi']);
+    $sprintsCaso = [];
+    foreach ([$base['janela']['sprint_anterior']['nome'] ?? null, $base['janela']['sprint_foco']['nome'] ?? null] as $sn) {
+        if ($sn !== null && !in_array($sn, $sprintsCaso, true)) $sprintsCaso[] = $sn;
+    }
+    $recortes = [];
+    foreach ($sprintsCaso as $sn) $recortes[] = [$sn, 'sprint'];
+    $recortes[] = ['', 'pi'];
     $casos = [];
     foreach (['Secretaria e Gestor de Unidades', ''] as $j) {
-        foreach ([['SP 26.4.3', 'sprint'], ['SP 26.4.4', 'sprint'], ['', 'pi']] as $s) {
+        foreach ($recortes as $s) {
             $casos[] = [$j, $s[0], $s[1]];
         }
     }
+    // Só o que depende do relógio entre duas consultas (número de defasagem_horas e do aviso) é normalizado;
+    // a igualdade byte a byte do cache, com relógio injetado, é conferida em teste_cache_visao_geral.php.
+    $normRelogio = function (string $s): string {
+        $s = preg_replace('/"defasagem_horas":(-?[0-9.eE+\-]+|null)/', '"defasagem_horas":"<RELOGIO>"', $s);
+        return preg_replace('/A carga mais antiga do Jira tem -?[0-9.eE+\-]+ h de defasagem\./', 'A carga mais antiga do Jira tem <RELOGIO> h de defasagem.', $s);
+    };
     verdade(is_file($arqPainel), 'data/config/capacity.json local ausente (a SQL direta lê o Painel)');
 
     foreach ($casos as $c) {
@@ -441,7 +457,7 @@ if (!$semBanco) {
 
     // Demanda em SPE == barra sprint_planning do Plan x Real, por sprint filtrada.
     foreach (['Secretaria e Gestor de Unidades', ''] as $j) {
-        foreach (['SP 26.4.3', 'SP 26.4.4'] as $sp) {
+        foreach ($sprintsCaso as $sp) {
             $rot = ($j === '' ? '(consolidado)' : $j) . ' ' . $sp;
             t("{$rot}: SPE do fator de carga == barra sprint_planning do Plan x Real", function () use ($j, $sp, $obter) {
                 $p = $obter(['jornada' => $j, 'sprint' => $sp]);
@@ -458,7 +474,7 @@ if (!$semBanco) {
         }
     }
 
-    t('SEM cache == MISS == HIT (byte a byte) e corpo < 4 MiB', function () {
+    t('SEM cache == MISS == HIT (sem o número do relógio) e corpo < 4 MiB', function () use ($normRelogio) {
         $dir = sys_get_temp_dir() . '/fc_teste_' . getmypid() . '_' . bin2hex(random_bytes(3));
         @mkdir($dir, 0777, true);
         try {
@@ -472,8 +488,8 @@ if (!$semBanco) {
             $miss = $mk()->obterVisaoGeral($f);
             $hit = $mk()->obterVisaoGeral($f);
             igual('MISS', $miss['estado']); igual('HIT', $hit['estado']);
-            igual($sem['corpo'], $miss['corpo'], 'SEM vs MISS');
-            igual($miss['corpo'], $hit['corpo'], 'MISS vs HIT');
+            igual($normRelogio($sem['corpo']), $normRelogio($miss['corpo']), 'SEM vs MISS');
+            igual($normRelogio($miss['corpo']), $normRelogio($hit['corpo']), 'MISS vs HIT');
             verdade(strlen($hit['corpo']) < 4194304, 'tamanho');
             verdade(strpos($hit['corpo'], '"fator_carga"') !== false, 'fator_carga no corpo');
         } finally {
@@ -515,8 +531,8 @@ if (!$semBanco) {
         }
     });
 
-    t('relatório: FC da Secretaria com a composição de times_composicao (devs/horas do banco) x Painel', function () use ($obter, $sqlDireta) {
-        foreach (['SP 26.4.3', 'SP 26.4.4'] as $sp) {
+    t('relatório: FC da Secretaria com a composição de times_composicao (devs/horas do banco) x Painel', function () use ($obter, $sqlDireta, $sprintsCaso) {
+        foreach ($sprintsCaso as $sp) {
             $p = $obter(['jornada' => 'Secretaria e Gestor de Unidades', 'sprint' => $sp]);
             $a = $sqlDireta($p, 'painel');
             $b = $sqlDireta($p, 'banco');

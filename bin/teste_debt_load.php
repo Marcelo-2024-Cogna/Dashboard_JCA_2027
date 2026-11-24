@@ -9,6 +9,12 @@
  *          mesmo denominador do Fator de Carga, efficiency_comparativo x efficiency_baseline,
  *          repositório com excluir_debito_tecnico=true, SEM cache == MISS == HIT, e as
  *          tabelas antes x depois do Efficiency e do impacto no Fator de Carga.
+ *          Não depende da data nem de números fixos do banco: os recortes (sprint fechada mais
+ *          recente, sprint em foco e PI inteira) saem de janela.* da própria resposta, e os valores
+ *          esperados saem da SQL direta sobre a mesma janela (janela.hoje e sprints incluídas).
+ *          Cada recorte é consultado uma só vez (memória) para o teste caber em ~1 minuto.
+ *          Os casos unitários da Parte U (exemplo fechado: 7 devs, 6 h/dia, 8 dias, 80%, baseline
+ *          7 h/SP, 8 SP => 20,8%) usam dados sintéticos e valem em qualquer dia.
  * Parte R  (--referencia=<pasta antes>): o corpo novo sem gadgets.debt_load e sem
  *          metodologia.debt_load == corpo capturado antes (visao-geral__*.json).
  *
@@ -300,8 +306,22 @@ if (!$semBanco) {
     putenv('VG_CACHE=0');
     $ctrl = new GraficosController(new PrevisibilidadeRepository());
     $pdo = Database::pdo();
-    $obter = function (array $f) use ($ctrl): array {
-        return json_decode($ctrl->obterVisaoGeral($f + ['jornada' => '', 'time' => '', 'versao' => '', 'sprint' => ''])['corpo'], true);
+    $memo = [];
+    $obter = function (array $f) use ($ctrl, &$memo): array {
+        $f += ['jornada' => '', 'time' => '', 'versao' => '', 'sprint' => ''];
+        ksort($f);
+        $k = json_encode($f);
+        if (!isset($memo[$k])) {
+            $memo[$k] = json_decode($ctrl->obterVisaoGeral($f)['corpo'], true);
+        }
+        return $memo[$k];
+    };
+    // Normaliza só o que depende do relógio entre duas consultas: o número em extracao.defasagem_horas
+    // e o número no aviso 'A carga mais antiga do Jira tem N h de defasagem.' (o cache em si é
+    // conferido byte a byte, com relógio injetado, em teste_cache_visao_geral.php).
+    $normRelogio = function (string $s): string {
+        $s = preg_replace('/"defasagem_horas":(-?[0-9.eE+\-]+|null)/', '"defasagem_horas":"<RELOGIO>"', $s);
+        return preg_replace('/A carga mais antiga do Jira tem -?[0-9.eE+\-]+ h de defasagem\./', 'A carga mais antiga do Jira tem <RELOGIO> h de defasagem.', $s);
     };
     $arqPainel = BASE_DIR . '/data/config/capacity.json';
     $tiposDivida = ['Débito Técnico', 'Suporte'];
@@ -388,9 +408,22 @@ if (!$semBanco) {
         ];
     };
 
+    // Recortes a partir da própria resposta (nada de sprint ou PI fixos): PI inteira, a última sprint
+    // fechada (janela.sprint_anterior) e a sprint em foco (janela.sprint_foco), no consolidado e numa jornada.
+    $base = $obter(['modo' => 'pi']);
+    $jornadas = array_values(array_unique(array_column($base['universo']['times'], 'jornada')));
+    $jornada = in_array('Secretaria e Gestor de Unidades', $jornadas, true) ? 'Secretaria e Gestor de Unidades' : ($jornadas[0] ?? '');
+    $sprintsCaso = [];
+    foreach ([$base['janela']['sprint_anterior']['nome'] ?? null, $base['janela']['sprint_foco']['nome'] ?? null] as $sn) {
+        if ($sn !== null && !in_array($sn, $sprintsCaso, true)) $sprintsCaso[] = $sn;
+    }
+    echo '  PI ' . $base['janela']['pi'] . ', hoje ' . $base['janela']['hoje'] . ', jornada "' . $jornada . '", sprints ' . implode(', ', $sprintsCaso) . "\n";
+    $recortes = [];
+    foreach ($sprintsCaso as $sn) $recortes[] = [$sn, 'sprint'];
+    $recortes[] = ['', 'pi'];
     $casos = [];
-    foreach (['Secretaria e Gestor de Unidades', ''] as $j) {
-        foreach ([['SP 26.4.3', 'sprint'], ['SP 26.4.4', 'sprint'], ['', 'pi']] as $s) {
+    foreach ([$jornada, ''] as $j) {
+        foreach ($recortes as $s) {
             $casos[] = [$j, $s[0], $s[1]];
         }
     }
@@ -446,12 +479,32 @@ if (!$semBanco) {
         });
     }
 
-    t('critérios de aceite: Secretaria SP 26.4.3 (6,2 / 10 / 161,72) e consolidado PI (5,2 / 223 / 26 de 40)', function () use ($obter) {
-        $a = $obter(['jornada' => 'Secretaria e Gestor de Unidades', 'sprint' => 'SP 26.4.3'])['gadgets']['debt_load'];
-        proximo(6.2, $a['dl_pct'], 'dl_pct', 0.001); proximo(10, $a['sp_divida'], 'sp_divida', 0.001); proximo(161.72, $a['capacidade_sp'], 'capacidade_sp', 0.001);
-        $b = $obter(['modo' => 'pi'])['gadgets']['debt_load'];
-        proximo(5.2, $b['dl_pct'], 'dl_pct pi', 0.001); proximo(223, $b['sp_divida'], 'sp_divida pi', 0.001);
-        igual(26, $b['cobertura']['times_com_dados']); igual(40, $b['cobertura']['times_total']);
+    // Critérios de aceite sem número fixo: o que valia para 21/11 (6,2% / 10 SP / 161,72 SP da Secretaria e
+    // 5,2% / 223 SP / 26 de 40 times do consolidado) agora é verificado como regra, com os valores da própria
+    // janela: cada time com dados fecha capacidade = líquida ÷ baseline e DL = SP ÷ capacidade; o total é a soma
+    // dos times (não a média dos percentuais) e a cobertura é times com dados + sem dados = times_total.
+    t('critérios de aceite derivados da janela: capacidade, DL e cobertura fecham por time e no total', function () use ($casos, $obter) {
+        foreach ($casos as $c) {
+            $p = $obter(['jornada' => $c[0], 'sprint' => $c[1], 'modo' => $c[2]]);
+            $d = $p['gadgets']['debt_load'];
+            if ($d['estado'] !== 'ok') continue;
+            $rot = ($c[0] === '' ? 'consolidado' : $c[0]) . ' ' . ($c[1] !== '' ? $c[1] : 'PI');
+            $sp = 0.0; $cap = 0.0;
+            foreach ($d['por_time'] as $t) {
+                // baseline_h_sp vem arredondado a 2 casas: tolerância relativa de 0,5% da capacidade.
+                $esp = $t['liquida_h'] / $t['baseline_h_sp'];
+                proximo($esp, $t['capacidade_sp'], "{$rot} {$t['projeto_key']}: capacidade = líquida ÷ baseline", max(0.05, $esp * 0.005));
+                proximo($t['capacidade_sp'] > 0 ? $t['sp_divida'] / $t['capacidade_sp'] * 100 : null, $t['dl_pct'], "{$rot} {$t['projeto_key']}: DL = SP ÷ capacidade", 0.06);
+                $sp += $t['sp_divida']; $cap += $t['capacidade_sp'];
+            }
+            $tolSoma = 0.01 * count($d['por_time']) + 0.05; // cada time vem arredondado a 2 casas
+            proximo($sp, $d['sp_divida'], "{$rot}: SP total = soma dos times", $tolSoma);
+            proximo($cap, $d['capacidade_sp'], "{$rot}: capacidade total = soma dos times", $tolSoma);
+            proximo($cap > 0 ? $sp / $cap * 100 : null, $d['dl_pct'], "{$rot}: DL total = soma ÷ soma", 0.1);
+            igual(count($d['por_time']), $d['cobertura']['times_com_dados'], "{$rot}: times com dados");
+            igual($d['cobertura']['times_total'], $d['cobertura']['times_com_dados'] + count($d['cobertura']['times_sem_dados']), "{$rot}: com + sem = total");
+            igual(count($p['universo']['times']), $d['cobertura']['times_total'], "{$rot}: times_total = universo");
+        }
     });
 
     t('efficiency_baseline (padrão) == efficiency_comparativo.com_debito_tecnico; modo ativo = com', function () use ($obter, $casos) {
@@ -483,24 +536,26 @@ if (!$semBanco) {
         }
     });
 
-    t('repositório com excluir_debito_tecnico=true: efficiency_baseline == comparativo.sem_debito_tecnico e só o Efficiency muda', function () use ($casos) {
+    t('repositório com excluir_debito_tecnico=true: efficiency_baseline == comparativo.sem_debito_tecnico e só o Efficiency muda', function () use ($casos, $obter, $normRelogio) {
         $cfg = require BASE_DIR . '/config/visao_geral.php';
         $cfgTrue = $cfg;
         $cfgTrue['efficiency']['excluir_debito_tecnico'] = true;
-        $repoA = new VisaoGeralRepository(null, null, null, null, $cfg);
         $repoB = new VisaoGeralRepository(null, null, null, null, $cfgTrue);
-        $hoje = date('Y-m-d');
         $flags = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION;
-        $norm = function (array $p) use ($flags): string {
-            unset($p['gadgets']['efficiency_baseline'], $p['gadgets']['debt_load']['efficiency_comparativo']['modo_ativo'],
-                  $p['metodologia']['debt_load']['efficiency_exclui_debito_tecnico']);
-            $s = json_encode($p, $flags);
-            return preg_replace('/"defasagem_horas":(-?[0-9.eE+\-]+|null)/', '"defasagem_horas":"<RELOGIO>"', $s);
+        // Os dois lados passam por JSON (objeto vazio vira [] nos dois) e perdem 'success' e os campos de relógio.
+        $norm = function (array $p) use ($flags, $normRelogio): string {
+            $p = json_decode(json_encode($p, $flags), true);
+            unset($p['success'], $p['gadgets']['efficiency_baseline'], $p['gadgets']['debt_load']['efficiency_comparativo']['modo_ativo'],
+                  $p['metodologia']['debt_load']['efficiency_exclui_debito_tecnico'], $p['metodologia']['blocos']['efficiency']);
+            return $normRelogio(json_encode($p, $flags));
         };
         foreach ($casos as $c) {
             $f = ['jornada' => $c[0], 'time' => '', 'versao' => '', 'sprint' => $c[1], 'modo' => $c[2]];
-            $a = $repoA->consultar($f, $hoje);
-            $b = $repoB->consultar($f, $hoje);
+            // Lado A (config padrão, excluir=false): a consulta do recorte já feita acima, sem repetir a chamada pesada.
+            $a = $obter($f);
+            // Lado B passa pelo mesmo JSON do controller, para os tipos (5.0 x 5) e objetos vazios baterem com o lado A.
+            $b = json_decode(json_encode($repoB->consultar($f, $a['janela']['hoje']),
+                JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PARTIAL_OUTPUT_ON_ERROR), true);
             $e = $b['gadgets']['efficiency_baseline'];
             $cmp = $b['gadgets']['debt_load']['efficiency_comparativo'];
             igual('sem_debito_tecnico', $cmp['modo_ativo']);
@@ -513,7 +568,7 @@ if (!$semBanco) {
         }
     });
 
-    t('SEM cache == MISS == HIT (byte a byte) e corpo < 4 MiB', function () {
+    t('SEM cache == MISS == HIT (sem o número do relógio) e corpo < 4 MiB', function () use ($normRelogio) {
         $dir = sys_get_temp_dir() . '/dl_teste_' . getmypid() . '_' . bin2hex(random_bytes(3));
         @mkdir($dir, 0777, true);
         try {
@@ -527,8 +582,9 @@ if (!$semBanco) {
             $miss = $mk()->obterVisaoGeral($f);
             $hit = $mk()->obterVisaoGeral($f);
             igual('MISS', $miss['estado']); igual('HIT', $hit['estado']);
-            igual($sem['corpo'], $miss['corpo'], 'SEM vs MISS');
-            igual($miss['corpo'], $hit['corpo'], 'MISS vs HIT');
+            // Só o número que depende do relógio é normalizado (as consultas são feitas em instantes diferentes).
+            igual($normRelogio($sem['corpo']), $normRelogio($miss['corpo']), 'SEM vs MISS');
+            igual($normRelogio($miss['corpo']), $normRelogio($hit['corpo']), 'MISS vs HIT');
             verdade(strlen($hit['corpo']) < 4194304, 'tamanho');
             verdade(strpos($hit['corpo'], '"debt_load"') !== false, 'debt_load no corpo');
         } finally {
@@ -546,7 +602,7 @@ if (!$semBanco) {
             $a = $d['efficiency_comparativo']['com_debito_tecnico'];
             $b = $d['efficiency_comparativo']['sem_debito_tecnico'];
             $i = $d['impacto_fator_carga'];
-            echo '          ' . ($c[0] === '' ? 'consolidado' : 'Secretaria') . ' ' . ($c[1] !== '' ? $c[1] : 'PI')
+            echo '          ' . ($c[0] === '' ? 'consolidado' : $c[0]) . ' ' . ($c[1] !== '' ? $c[1] : 'PI')
                 . ' | ' . $f($a['h_por_sp']) . ' -> ' . $f($b['h_por_sp'])
                 . ' | ' . $f($a['razao_pct']) . ' -> ' . $f($b['razao_pct'])
                 . ' | ' . $f($a['baseline_h_por_sp']) . ' -> ' . $f($b['baseline_h_por_sp'])

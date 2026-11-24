@@ -5,7 +5,9 @@
  * Sem banco. Confere MetodologiaService (done_statuses == config/baseline.php,
  * blocos completos nas telas PREENCHIDAS), uso de App.Legenda.botao(chave) nas
  * views, ausência de innerHTML nos trechos de legenda e a chave `metodologia`
- * nos endpoints (GraficosController::ARQUIVOS_VERSAO e código).
+ * nos endpoints (GraficosController::ARQUIVOS_VERSAO e código). Cobre também os 12 blocos
+ * migrados da Visão Geral (valores de config via ctx) e confere que nenhum texto de legenda
+ * existe fora do serviço (varredura de views, JS, app, bin e config).
  *
  * Uso: php bin/teste_legendas.php
  * Saída 0 = tudo passou; 1 = alguma falha. Compatível com PHP 7.4 e 8.x.
@@ -134,6 +136,98 @@ t('Visão Geral mantém chaves atuais de metodologia e acrescenta blocos', funct
     foreach (['done_statuses', 'tipos_valor', 'tipos_sustentacao', 'status', 'chamados', 'fator_carga', 'debt_load', 'blocos'] as $k) {
         exige(strpos($src, "'{$k}'") !== false, $k);
     }
+});
+
+/** Os 12 blocos que antes ficavam em LEGENDAS no JS de vw_overview.php. */
+const BLOCOS_MIGRADOS = [
+    'andamento', 'aceitos', 'sprint_anterior', 'cycle_time', 'team_velocity', 'burndown',
+    'cfd', 'chamados', 'tempo_status', 'efficiency', 'fator_carga', 'debt_load',
+];
+
+t('os 12 blocos antigos da Visão Geral estão no serviço e têm botão na view', function () {
+    $src = (string) file_get_contents(BASE_DIR . '/public/views/vw_overview.php');
+    foreach (BLOCOS_MIGRADOS as $k) {
+        exige(in_array($k, M::INVENTARIO['overview'], true), "{$k} fora do INVENTARIO");
+        exige(isset(M::paraTela('overview')['blocos'][$k]), "{$k} sem bloco");
+        exige(strpos($src, "App.Legenda.botao('{$k}'") !== false, "{$k} sem botão na view");
+    }
+});
+
+t('nenhum marcador {x} fica sem troca em nenhuma tela', function () {
+    foreach (array_keys(M::INVENTARIO) as $tela) {
+        foreach (M::paraTela($tela)['blocos'] as $chave => $b) {
+            exige(preg_match('/\{[a-z_]+\}/', json_encode($b, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) !== 1, "{$tela}/{$chave}: marcador sem troca");
+        }
+    }
+});
+
+t('Visão Geral: valores de config entram nos blocos migrados (ctx)', function () {
+    $ctx = [
+        'status' => ['cancelado' => ['XCanc'], 'bloqueado' => ['XBloq'], 'backlog' => ['XBack'], 'em_andamento' => ['XAnd1', 'XAnd2']],
+        'tipos_sustentacao' => ['XSust'],
+        'chamados' => ['janela_dias' => 45, 'limite_dias' => 3],
+        'fator_carga' => ['disponibilidade_pct' => 75.5, 'incluir_sustentacao' => true, 'fonte_capacidade' => 'painel',
+            'faixas' => ['subutilizacao_ate' => 70, 'recomendada_ate' => 90, 'limite' => 110]],
+        'debt_load' => ['tipos' => ['XDivida'], 'disponibilidade_pct' => 60, 'fonte_capacidade' => 'painel',
+            'efficiency_exclui_debito_tecnico' => true],
+        'reconciliacao' => ['aceitos_local_sp' => 12.5, 'aceitos_velocidade_sp' => 1234.5, 'residuo_aceitos' => 0],
+    ];
+    $b = M::paraTela('overview', $ctx)['blocos'];
+    $txt = static function (string $k) use ($b): string { return json_encode($b[$k], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); };
+    exige(strpos($txt('andamento'), 'XBack') !== false && strpos($txt('andamento'), 'XAnd1, XAnd2') !== false, 'status do andamento');
+    exige(strpos($txt('chamados'), '45 dias') !== false && strpos($txt('chamados'), '3 dia(s)') !== false, 'chamados janela/limite');
+    exige(strpos($txt('fator_carga'), '75,5%') !== false && strpos($txt('fator_carga'), 'entra na demanda') !== false, 'fator_carga disp/sust');
+    exige(strpos($txt('fator_carga'), 'abaixo de 70%') !== false && strpos($txt('fator_carga'), 'até 110%') !== false, 'fator_carga faixas');
+    exige(strpos($txt('fator_carga'), 'Painel de Controle') !== false, 'fonte painel');
+    exige(strpos($txt('debt_load'), 'XDivida') !== false && strpos($txt('debt_load'), '60%') !== false, 'debt_load tipos/disp');
+    $seed = M::paraTela('overview', ['fator_carga' => ['fonte_capacidade' => 'config/capacity.php'], 'debt_load' => ['fonte_capacidade' => 'config/capacity.php']])['blocos'];
+    exige(strpos(json_encode($seed['debt_load'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), 'valores padrão de config/capacity.php') !== false, 'fonte seed');
+    exige(strpos($txt('efficiency'), 'excluído do h/SP') !== false, 'efficiency exclui DT');
+    exige(strpos($txt('aceitos'), 'cálculo local 12,5 SP · Velocidade 1.234,5 SP · resíduo 0 SP') !== false, 'conferência');
+    exige(strpos($txt('cancelados'), 'XCanc') !== false, 'cancelado do ctx');
+    $semRec = M::paraTela('overview')['blocos']['aceitos'];
+    exige(strpos(json_encode($semRec, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), 'Conferência') === false, 'sem reconciliação não há linha de conferência');
+    exige(M::validarBloco($semRec) === [], 'aceitos sem ctx continua completo');
+});
+
+t('Chamados: legenda diz Incidente e Bug (regra do código), não os tipos de sustentação', function () {
+    $b = M::paraTela('overview')['blocos']['chamados'];
+    exige(strpos($b['fonte'], 'Incidente e Bug') !== false && strpos($b['entra'], 'Incidente e Bug') !== false, 'tipos');
+    exige(strpos($b['fonte'] . $b['entra'], 'sustentação resolvidos') === false, 'texto antigo');
+    $src = (string) file_get_contents(BASE_DIR . '/app/Services/VisaoGeralCalculator.php');
+    exige(strpos($src, "\$tipos = ['Incidente', 'Bug'];") !== false, 'tipos fixos do código mudaram: revisar a legenda');
+});
+
+t('Visão Geral: repositório entrega os blocos pelo serviço (com ctx)', function () {
+    $src = (string) file_get_contents(BASE_DIR . '/app/Repositories/VisaoGeralRepository.php');
+    exige(preg_match("/MetodologiaService::paraTela\\(\\s*'overview'\\s*,/", $src) === 1, 'paraTela com ctx');
+    exige(strpos($src, "'reconciliacao'") !== false, 'reconciliacao no ctx');
+});
+
+t('fonte única: nenhum texto de legenda fora de MetodologiaService', function () {
+    $proibidos = ['/\bLEGENDAS\b/', '/\bnaoEntra\b/', '/\bobservacoes\b/', '/[\'"]nao_entra[\'"]\s*(=>|:)/', '/\bonde_no_codigo\b/',
+        '/Regra de Done/', '/O que não entra/', '/Fonte no código/', '/Janela\/período/'];
+    $arquivos = [];
+    foreach (['/public/views', '/public/assets/js', '/app', '/bin', '/config'] as $dir) {
+        $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(BASE_DIR . $dir, FilesystemIterator::SKIP_DOTS));
+        foreach ($it as $f) {
+            if (in_array($f->getExtension(), ['php', 'js'], true)) $arquivos[] = $f->getPathname();
+        }
+    }
+    $permitidos = ['MetodologiaService.php', 'app.js', 'teste_legendas.php'];
+    $lidos = 0;
+    foreach ($arquivos as $f) {
+        if (in_array(basename($f), $permitidos, true)) continue;
+        $src = (string) file_get_contents($f);
+        $lidos++;
+        foreach ($proibidos as $re) {
+            exige(preg_match($re, $src) !== 1, basename($f) . ' contém texto/estrutura de legenda fora do serviço (' . $re . ')');
+        }
+    }
+    exige($lidos > 20, 'varredura leu poucos arquivos: ' . $lidos);
+    // O renderizador único (app.js) é o único lugar com os rótulos de campo.
+    $js = (string) file_get_contents(BASE_DIR . '/public/assets/js/app.js');
+    exige(strpos($js, 'Regra de Done') !== false, 'renderizador esperado em app.js');
 });
 
 echo "\n" . $resultados['ok'] . ' PASSOU, ' . $resultados['falha'] . " FALHOU\n";

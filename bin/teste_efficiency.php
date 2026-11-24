@@ -307,7 +307,13 @@ if (!$semBanco) {
         });
     }
 
-    t('SEM cache == MISS == HIT (byte a byte) e corpo < 4 MiB', function () {
+    // Só o que depende do relógio entre duas consultas (número de defasagem_horas e do aviso) é normalizado;
+    // a igualdade byte a byte do cache, com relógio injetado, é conferida em teste_cache_visao_geral.php.
+    $normRelogio = function (string $s): string {
+        $s = preg_replace('/"defasagem_horas":(-?[0-9.eE+\-]+|null)/', '"defasagem_horas":"<RELOGIO>"', $s);
+        return preg_replace('/A carga mais antiga do Jira tem -?[0-9.eE+\-]+ h de defasagem\./', 'A carga mais antiga do Jira tem <RELOGIO> h de defasagem.', $s);
+    };
+    t('SEM cache == MISS == HIT (sem o número do relógio) e corpo < 4 MiB', function () use ($normRelogio) {
         $dir = sys_get_temp_dir() . '/eff_teste_' . getmypid() . '_' . bin2hex(random_bytes(3));
         @mkdir($dir, 0777, true);
         try {
@@ -321,8 +327,8 @@ if (!$semBanco) {
             $miss = $mk()->obterVisaoGeral($f);
             $hit = $mk()->obterVisaoGeral($f);
             igual('MISS', $miss['estado']); igual('HIT', $hit['estado']);
-            igual($sem['corpo'], $miss['corpo'], 'SEM vs MISS');
-            igual($miss['corpo'], $hit['corpo'], 'MISS vs HIT');
+            igual($normRelogio($sem['corpo']), $normRelogio($miss['corpo']), 'SEM vs MISS');
+            igual($normRelogio($miss['corpo']), $normRelogio($hit['corpo']), 'MISS vs HIT');
             verdade(strlen($hit['corpo']) < 4194304, 'tamanho');
         } finally {
             putenv('VG_CACHE=0');
