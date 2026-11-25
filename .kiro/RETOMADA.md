@@ -591,6 +591,26 @@ Sugestão de permissões do Kiro (`~/.kiro/settings/permissions.yaml`) apresenta
   regressão (código já passa em 7.4 e 8.2); (5) Debt Load Ratio (SP; Débito Técnico + Suporte); (6) reconciliar Painel x
   `times_composicao`; (7) decidir `deploy/excluir.txt` para os testes de `bin/` e corrigir `deploy/LEIAME.md:62`.
 
+## ESTADO EM 25/11/2026 (fim do dia)
+
+- **GitHub (`origin/main`) em `348bfd9`; servidor com o deploy de `4b53af0`** (legendas de fonte única, 5S lotes 1-2, API v1.0 removida).
+  Falta no servidor: `348bfd9` (aviso "Módulo Pendente!" em Épicos e Sustentação) e os commits de padronização (`eeb1b53`, inertes lá).
+  A limpeza manual dos arquivos órfãos da API v1.0 no servidor foi feita pelo usuário (arquivos movidos para `/apps/_diag/api_v1_removida`).
+- **Hook de pré-commit ATIVO neste clone** (`git config core.hooksPath .githooks`): lint, segredos, arquivos proibidos, CRLF (aviso) e
+  `bin/teste_todos.php --rapido`. Pular só os testes: `JCA_PULAR_TESTES=1`; pular tudo: `--no-verify` (usar em commits enormes).
+  `bin/teste_todos.php` é o executor único (`--rapido`, `--sem-banco`, `--lista`, `--job-noturno`). `.editorconfig` e `* text=auto eol=lf` no
+  `.gitattributes` (a renormalização não alterou nenhum arquivo: o índice já estava em LF).
+- **Removidos/versionados hoje**: `virtualHost.bash` (apagado a pedido); `jql-jira.bash` versionado (ADGP = SGGU; os JQLs são só exemplos
+  de uso/histórico: não comparar a plataforma contra eles). `app/Srv` será renomeado no início da v2.0.
+- **Épicos e Sustentação** mostram `Aviso: Módulo Pendente!` (leem o `/extract` legado, vazio no servidor; tratamento só na fusão PEP x JCA).
+- **Em andamento**: `deploy.ps1` passará a REMOVER no servidor os arquivos que saíram do repositório, com backup e rollback, usando um
+  manifesto do último deploy (nunca "tudo que não está no pacote"); o primeiro deploy com o recurso só inicializa o manifesto.
+  Relatório: `.agents/tasks/deploy-orfaos.md`.
+- **Observação de desempenho**: cada resposta da Visão Geral carrega os textos de TODAS as legendas (cache aquecido 1,03 MB -> 1,86 MB). Está
+  abaixo do limite de 4 MiB; melhoria futura: servir legendas por endpoint próprio, só quando o usuário clica.
+- **Amanhã (26/11)**: o usuário compartilha o documento de feedback do time de testes (pelo que viu, mudanças estéticas, não de regra);
+  analisar e priorizar. Depois: `Definicoes` único (primeiro módulo da v2.0, dias úteis), extração noturna e `df -h /var` do servidor.
+
 ## DECISÕES DE 24/11/2026 (5S + base da v2.0; relatório `.agents/tasks/higienizacao-5s-v2.md`)
 
 - **Publicado**: legendas "Como é calculado" em todas as telas (`MetodologiaService` é a fonte única; `e252189`, `cda4539`),
