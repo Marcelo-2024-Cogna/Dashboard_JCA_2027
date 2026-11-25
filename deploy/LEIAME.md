@@ -386,3 +386,34 @@ Somente plano; nada disto esta implementado nem ativo.
 3. Tornar o `sudo` nao interativo de forma restrita: instalar `aplicar_release.sh` em `/apps/_deploy/bin/` com dono `root` e uma regra de sudoers que permita so esse script (nunca `NOPASSWD` curinga sobre `/tmp`). Ajustar `deploy.ps1` para enviar o pacote para um diretorio e chamar o script fixo. O fluxo manual atual reduz o risco do `/tmp` (nome GUID e conferencia de tipo, dono e sha256 do script antes do `sudo`, secao 12), mas isso nao substitui o script fixo de dono `root` para um `sudo` nao interativo.
 4. Workflow manual (`workflow_dispatch`) com entradas `referencia` e `dry_run`, executando `deploy/deploy.ps1 -Sim`. Esboco em `deploy/ci/deploy.yml.exemplo` (NAO copiar para `.github/workflows` antes de cumprir os itens acima).
 5. Proteger o environment `homologacao` com aprovacao manual e restringir quem pode disparar o workflow.
+
+## 14. Padronizacao e hook de pre-commit
+
+Padrao do repositorio: texto em UTF-8 sem BOM, fim de linha LF, regras em `.editorconfig` e `.gitattributes` (`* text=auto eol=lf`; binarios marcados como `binary`).
+
+Ativar o hook (uma vez por clone):
+
+```
+git config core.hooksPath .githooks
+```
+
+Rodar os testes (cada `bin/teste_*.php` num processo PHP separado; exit 0 so se todos passarem):
+
+```
+php bin/teste_todos.php --lista      # mostra os testes
+php bin/teste_todos.php --rapido     # = --sem-banco, so testes sem gravacao no projeto
+php bin/teste_todos.php --sem-banco
+php bin/teste_todos.php              # usa o banco local (so SELECT)
+php bin/teste_todos.php --job-noturno   # inclui teste_job_noturno (exige mysqld descartavel)
+```
+
+O hook `.githooks/pre-commit` olha so os arquivos staged e bloqueia o commit quando:
+
+- um `.php` tem erro de sintaxe (`php -l`; usa `JCA_PHP`, depois `php` no PATH, depois `C:/xampp/php/php.exe`);
+- o conteudo tem padrao de segredo (token Atlassian, chave privada, senha ou token literal). A mensagem mostra arquivo e linha, nunca o valor;
+- entra um arquivo que nao deve ser versionado: `config/db.php`, `config/secrets.local.php`, `deploy/deploy.local.ps1`, `.kiro/settings/mcp.json` ou `data/config/*.json` com cara de credencial;
+- ha `.php` em `app/`, `bin/`, `config/` ou `public/` e `bin/teste_todos.php --rapido` falha.
+
+O hook so avisa (sem bloquear) quando o conteudo staged tem CRLF. `JCA_PULAR_TESTES=1` pula so os testes. Para ignorar o hook inteiro, de forma consciente: `git commit --no-verify`.
+
+No Linux/macOS o hook precisa de permissao de execucao (`git update-index --chmod=+x .githooks/pre-commit`). O Git for Windows executa o hook sem esse bit.

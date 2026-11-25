@@ -1,0 +1,35 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# Markdown: dois espacos no fim da linha sao quebra de linha; listas usam 2 ou 4 (padrao misto no repo).
+[*.md]
+trim_trailing_whitespace = false
+indent_size = unset
+
+# CSS: o app.css usa 2 espacos.
+[*.css]
+indent_size = 2
+
+# deploy/remoto/aplicar_release.sh usa 2 e deploy/cron/limpeza_var.sh usa 4: nao impor.
+[*.sh]
+indent_size = unset
+
+# Scripts do deploy ja estao em LF no repositorio.
+[*.{ps1,bat,cmd}]
+end_of_line = lf
+
+# Binarios e bibliotecas de terceiros: o editor nao deve reescrever.
+[public/assets/vendor/**]
+charset = unset
+end_of_line = unset
+insert_final_newline = unset
+trim_trailing_whitespace = unset
+indent_style = unset
+indent_size = unset

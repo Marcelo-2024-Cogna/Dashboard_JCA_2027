@@ -1,0 +1,145 @@
+#!/bin/sh
+# Hook de pre-commit do JCA (versionado). Ativar uma vez por clone:
+#   git config core.hooksPath .githooks
+#
+# Olha SO os arquivos staged (git diff --cached --diff-filter=ACM) e o conteudo
+# do INDICE, nao o do disco:
+#   (a) php -l nos .php
+#   (b) bloqueia padroes de segredo (token Atlassian, chave privada, senha literal,
+#       token longo). Nunca imprime o segredo: so arquivo, linha e regra.
+#   (c) bloqueia arquivos que nao devem ser versionados (config/db.php etc.)
+#   (d) avisa (nao bloqueia) se o conteudo staged tiver CRLF
+#   (e) roda 'php bin/teste_todos.php --rapido' se houver .php em app/ bin/ config/ public/
+#
+# Variaveis: JCA_PHP=<caminho do php>  |  JCA_PULAR_TESTES=1 pula so o item (e).
+# Para ignorar tudo conscientemente: git commit --no-verify
+
+cd "$(git rev-parse --show-toplevel)" || exit 1
+
+# ---- PHP: JCA_PHP, depois 'php' no PATH, depois o XAMPP --------------------
+PHP=""
+if [ -n "$JCA_PHP" ] && [ -x "$JCA_PHP" ]; then
+    PHP="$JCA_PHP"
+elif command -v php >/dev/null 2>&1; then
+    PHP="php"
+elif [ -x "C:/xampp/php/php.exe" ]; then
+    PHP="C:/xampp/php/php.exe"
+fi
+
+lista="$(mktemp 2>/dev/null || echo "${TMPDIR:-/tmp}/jca_precommit_$$")"
+conteudo="$lista.conteudo"
+trap 'rm -f "$lista" "$conteudo"' EXIT
+git -c core.quotepath=off diff --cached --name-only --diff-filter=ACM > "$lista"
+[ -s "$lista" ] || exit 0
+
+erros=0
+avisos=0
+tem_codigo=0
+
+# Padroes montados em pedacos para que este arquivo nao case com ele mesmo.
+P_ATL="ATA""TT[A-Za-z0-9_=+/-]{16,}"
+P_CHAVE="-----BEGIN [A-Z ]*PRIV""ATE KEY-----"
+P_SENHA="(^|[^A-Za-z])(pass(word|wd)?|senha|secret|secreto|api_?key|token)[\"']?[[:space:]]*(=>|=|:)[[:space:]]*[\"'][^\"'\$[:space:]]{6,}[\"']"
+P_TOKEN="(Bearer[[:space:]]+[A-Za-z0-9._~+/-]{30,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36,}|xox[abprs]-[A-Za-z0-9-]{20,}|(^|[^A-Za-z])(token|secret|key|chave)[A-Za-z0-9_]*[\"']?[[:space:]]*(=>|=|:)[[:space:]]*[\"'][A-Za-z0-9_+/=.-]{32,}[\"'])"
+# Linhas com estes marcadores sao exemplo/placeholder ou leitura de ambiente.
+IGNORA='exemplo|example|changeme|placeholder|sua_senha|senha_aqui|xxxx|\.\.\.|<[^>]+>|\$\{|\$_(ENV|SERVER|POST|GET)|getenv|env\('
+
+# Credencial dentro de JSON de configuracao (chave sugestiva com valor preenchido).
+P_JSONCRED="\"[^\"]*(pass|senha|token|secret|api_?key|credential|credencial)[^\"]*\"[[:space:]]*:[[:space:]]*\"[^\"]+\""
+
+# Extensoes que nunca sao varridas como texto.
+binario() {
+    case "$1" in
+        *.xlsx|*.xls|*.xlsm|*.docx|*.pdf|*.png|*.jpg|*.jpeg|*.gif|*.webp|*.ico|*.zip|*.gz|*.tar|*.7z|*.woff|*.woff2|*.ttf|*.eot|*.otf) return 0 ;;
+    esac
+    return 1
+}
+
+# varre REGRA PADRAO [-i]: usa o conteudo ja extraido em $conteudo; imprime so numeros de linha (ate 5).
+varre() {
+    regra="$1"; pad="$2"; ci="$3"
+    nums="$(grep -nIE $ci -e "$pad" "$conteudo" | grep -viE "$IGNORA" | cut -d: -f1 | head -5 | tr '\n' ' ')"
+    if [ -n "$nums" ]; then
+        echo "  [SEGREDO] $f  linha(s): $nums -> $regra" >&2
+        erros=$((erros + 1))
+    fi
+}
+echo "pre-commit: verificando $(wc -l < "$lista" | tr -d ' ') arquivo(s) staged..." >&2
+
+# ---- (c) arquivos que nao podem ser versionados ----------------------------
+while IFS= read -r f; do
+    case "$f" in
+        config/db.php|config/secrets.local.php|deploy/deploy.local.ps1|.kiro/settings/mcp.json)
+            echo "  [PROIBIDO] $f  (credenciais locais; nao deve ir para o repositorio)" >&2
+            echo "             Para tirar do commit: git restore --staged -- \"$f\"" >&2
+            erros=$((erros + 1)) ;;
+        data/config/*.json)
+            nums="$(git show ":$f" 2>/dev/null | grep -nIiE -e "$P_JSONCRED" | grep -viE "$IGNORA" | cut -d: -f1 | head -5 | tr '\n' ' ')"
+            if [ -n "$nums" ]; then
+                echo "  [PROIBIDO] $f  linha(s): $nums -> JSON de configuracao com cara de credencial" >&2
+                erros=$((erros + 1))
+            fi ;;
+    esac
+done < "$lista"
+
+# ---- (b) segredos, (d) CRLF, (a) lint --------------------------------------
+# O conteudo do indice e extraido uma vez por arquivo (git show e lento no Windows).
+# Caminho rapido: um unico grep com todos os padroes; so se casar, detalha por regra.
+TODOS="$P_ATL|$P_CHAVE|$P_SENHA|$P_TOKEN"
+while IFS= read -r f; do
+    binario "$f" && continue
+    git show ":$f" > "$conteudo" 2>/dev/null || continue
+    # Nao varre: o proprio hook, vendor, modelos (*.example/*.exemplo) e fixtures *.test.js.
+    case "$f" in .githooks/*|public/assets/vendor/*|*.example|*.exemplo|*.test.js) ;; *)
+        if grep -qIiE -e "$TODOS" "$conteudo"; then
+            varre "token Atlassian (ATATT...)" "$P_ATL"
+            varre "chave privada (BEGIN ... PRIVATE KEY)" "$P_CHAVE"
+            varre "senha/segredo literal no codigo" "$P_SENHA" -i
+            varre "token longo literal" "$P_TOKEN" -i
+        fi ;;
+    esac
+    if [ -n "$(tr -cd '\r' < "$conteudo" | head -c 1)" ]; then
+        echo "  [AVISO] $f tem CRLF no indice (o padrao do repo e LF; veja .gitattributes)" >&2
+        avisos=$((avisos + 1))
+    fi
+    case "$f" in
+        *.php)
+            case "$f" in app/*|bin/*|config/*|public/*) tem_codigo=1 ;; esac
+            if [ -n "$PHP" ]; then
+                saida="$("$PHP" -l < "$conteudo" 2>&1)" || {
+                    echo "  [SINTAXE] $f" >&2
+                    echo "$saida" | grep -v '^$' | sed 's/^/             /' >&2
+                    erros=$((erros + 1))
+                }
+            fi ;;
+    esac
+done < "$lista"
+if [ -z "$PHP" ] && grep -q '\.php$' "$lista"; then
+    echo "  [AVISO] PHP nao encontrado (JCA_PHP, PATH, C:/xampp/php/php.exe): lint e testes pulados" >&2
+    avisos=$((avisos + 1))
+    tem_codigo=0
+fi
+
+# ---- (e) testes rapidos -----------------------------------------------------
+if [ "$tem_codigo" = "1" ]; then
+    if [ "$JCA_PULAR_TESTES" = "1" ]; then
+        echo "  [AVISO] testes rapidos pulados (JCA_PULAR_TESTES=1)" >&2
+        avisos=$((avisos + 1))
+    elif [ "$erros" -eq 0 ]; then
+        echo "pre-commit: rodando bin/teste_todos.php --rapido (JCA_PULAR_TESTES=1 pula)..." >&2
+        "$PHP" bin/teste_todos.php --rapido >&2 || {
+            echo "  [TESTES] bin/teste_todos.php --rapido falhou" >&2
+            erros=$((erros + 1))
+        }
+    fi
+fi
+
+if [ "$erros" -gt 0 ]; then
+    echo "" >&2
+    echo "pre-commit: COMMIT BLOQUEADO ($erros problema(s))." >&2
+    echo "  Corrija e faca 'git add' de novo. Se for falso positivo e voce tem certeza:" >&2
+    echo "  git commit --no-verify" >&2
+    exit 1
+fi
+[ "$avisos" -gt 0 ] && echo "pre-commit: OK com $avisos aviso(s)." >&2
+exit 0

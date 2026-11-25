@@ -1,3 +1,30 @@
+# Padrao do repositorio: texto sempre LF (no indice e no disco), mesmo com core.autocrlf=true.
+# Binarios ficam explicitos abaixo para a normalizacao nunca tocar neles. As regras
+# seguintes sao mais especificas e prevalecem sobre esta (a ultima que casa vence).
+* text=auto eol=lf
+
+# Binarios (nao converter, nao mostrar diff de texto).
+*.xlsx  binary
+*.xls   binary
+*.xlsm  binary
+*.docx  binary
+*.pdf   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.ico   binary
+*.zip   binary
+*.gz    binary
+*.tar   binary
+*.7z    binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.eot   binary
+*.otf   binary
+
 # Arquivos que vao para o servidor Linux de producao: SEMPRE LF.
 # (core.autocrlf=true no Windows converteria para CRLF; um crontab ou vhost com
 # CR no fim das linhas falha de forma silenciosa no Linux.)
