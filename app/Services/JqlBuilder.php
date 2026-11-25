@@ -25,7 +25,7 @@ class JqlBuilder
 
     /**
      * JQL completa da PI corrente: todos os projetos, todas as sprints
-     * do ciclo, tipos padrão. Usada por /extract e /baseline/capture.
+     * do ciclo, tipos padrão. Usada por /extract.
      */
     public function forCurrentPi(): string
     {

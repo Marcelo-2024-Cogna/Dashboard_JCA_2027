@@ -14,7 +14,7 @@ namespace App\Controllers;
  * view modular (public/views/vw_{secao}.php) no lugar do conteúdo.
  *
  * As views carregam seus dados via fetch pontual às rotas JSON já
- * existentes (/metrics, /extract, /capacity/*) — sem SPA, sem reload
+ * existentes (/extract, /filtros, /graficos/*) — sem SPA, sem reload
  * completo para atualizar gráficos.
  */
 class ViewController

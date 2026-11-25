@@ -49,36 +49,10 @@ $configRepo = new \App\Repositories\ConfigRepository(
 // baselineConfig = regras de negócio (PHP) + PI efetiva (JSON/seed).
 $effectivePi    = $configRepo->getPi();
 $baselineConfig = array_merge($phpBaseline, $effectivePi);
-// capacityConfig no formato legado que os Services já consomem.
-$capacityConfig = $configRepo->capacityAsLegacyMaps();
-
-// ── Factory do repositório de baseline ──────────────────────────────────────
-// Hoje: JSON. Futuro: trocar por PdoBaselineRepository (MySQL/PostgreSQL)
-// implementando a mesma interface — nenhuma outra linha muda.
-$makeBaselineRepo = function () use ($baselineConfig) {
-    return new \App\Repositories\JsonBaselineRepository($baselineConfig['storage_dir']);
-};
 
 // ── JqlBuilder: fonte única de montagem de JQL ──────────────────────────────
 // Usa a PI EFETIVA (pode ter sido editada pelo Painel).
 $jqlBuilder = new \App\Services\JqlBuilder($baselineConfig);
-
-// ── Factory do controller de baseline/métricas ──────────────────────────────
-// Recebe o capacityConfig (sprint_dates) para a janela de sprints fechadas.
-$makeBaselineController = function () use ($config, $baselineConfig, $capacityConfig, $makeBaselineRepo, $jqlBuilder) {
-    return new \App\Controllers\BaselineController(
-        $config, $baselineConfig, $makeBaselineRepo(), $jqlBuilder, $capacityConfig
-    );
-};
-
-// ── Factory do controller de capacidade (histórico + cálculo) ────────────────
-$makeCapacityController = function () use ($baselineConfig, $capacityConfig, $makeBaselineRepo) {
-    $repo = new \App\Repositories\CapacityRepository($baselineConfig['capacity_dir']);
-    $calc = new \App\Services\CapacityCalculator();
-    return new \App\Controllers\CapacityController(
-        $repo, $calc, $makeBaselineRepo(), $baselineConfig, $capacityConfig
-    );
-};
 
 // ── Roteamento ───────────────────────────────────────────────────────────────
 // Prefixo da app no servidor, detectado a partir de SCRIPT_NAME (sem literais):
@@ -131,43 +105,6 @@ switch (true) {
     case $uri === '/extract':
         $controller = new \App\Controllers\ExtractorController($config, DATA_DIR, $jqlBuilder);
         $controller->handle();
-        break;
-
-    // ── Captura da baseline (snapshot imutável da PI) ────────────────────
-    case $uri === '/baseline/capture':
-        $makeBaselineController()->capture();
-        break;
-
-    // ── Snapshot de progresso (evolução/burn-up — acumula) ───────────────
-    case $uri === '/baseline/progress':
-        $makeBaselineController()->progress();
-        break;
-
-    // ── Lista de snapshots armazenados ───────────────────────────────────
-    case $uri === '/baseline/list':
-        $makeBaselineController()->list();
-        break;
-
-    // ── Métricas consolidadas (Velocidade, Previsibilidade, Scope Creep) ─
-    case $uri === '/metrics':
-        $makeBaselineController()->metrics();
-        break;
-
-    // ── Capacidade e Velocidade dos times (PI Planning) ──────────────────
-    case $uri === '/capacity/plan':
-        $makeCapacityController()->plan();
-        break;
-
-    case $uri === '/capacity/sprint':
-        $makeCapacityController()->addSprint();
-        break;
-
-    case $uri === '/capacity/sync':
-        $makeCapacityController()->sync();
-        break;
-
-    case $uri === '/capacity/history':
-        $makeCapacityController()->history();
         break;
 
     // ── Painel de Controle: parâmetros editáveis (PI + Capacidade) ───────

@@ -132,7 +132,7 @@ chown -R www-data:www-data data ; chmod -R u=rwX,g=rwX,o= data
 chown root:www-data config/*.php ; chmod 640 config/db.php config/secrets.local.php
 ```
 
-Pastas: `data/` (raiz, para `items.json` e `notificacoes.log`), `data/logs`, `data/agendamentos`, `data/baselines`, `data/progress`, `data/capacity`, `data/config`, `data/exports` e `data/import` (estas duas so para scripts de `bin/`), `data/locks` (locks `flock` do job noturno e das extracoes por PI; precisa de escrita pelo usuario do cron) e `data/cache` (cache de respostas; gerado em runtime, fora do deploy). O verificador tambem grava `data/extract_check_estado.json` (em `data/`).
+Pastas: `data/` (raiz, para `items.json` e `notificacoes.log`), `data/logs`, `data/agendamentos`, `data/config`, `data/exports` e `data/import` (estas duas so para scripts de `bin/`), `data/locks` (locks `flock` do job noturno e das extracoes por PI; precisa de escrita pelo usuario do cron) e `data/cache` (cache de respostas; gerado em runtime, fora do deploy). O verificador tambem grava `data/extract_check_estado.json` (em `data/`).
 
 ## 7. Apache
 
