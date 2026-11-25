@@ -7,7 +7,9 @@
 #
 #  Uso:
 #    aplicar_release.sh [--dry-run] [--limpar-cache|--manter-cache]
-#                       [--smoke-url URL] [--smoke-host HOST] ZIP SHA256
+#                       [--smoke-url URL] [--smoke-host HOST]
+#                       [--sem-remocao | --permitir-remocao-grande]
+#                       [--limite-remocao N] ZIP SHA256
 #    aplicar_release.sh [--dry-run] --rollback [AAAAMMDD-HHMMSS]
 #
 #  Codigos de saida:
@@ -22,6 +24,7 @@
 #  Variaveis sobrescreviveis (principalmente para teste):
 #    APP_DIR (/apps/metricas_jca)   DEPLOY_DIR (/apps/_deploy)
 #    MANTER_BACKUPS (10)            PHP_BIN (php)
+#    MAX_REMOCAO (60)  limite de orfaos por deploy (ver "Remocao de orfaos")
 #    PULAR_SUDO=1  nao usa "sudo -u" ao limpar o cache
 #    PULAR_CHOWN=1 nao executa chown
 #    PULAR_SMOKE=1 nao executa o smoke test
@@ -32,6 +35,24 @@
 #  --dry-run: nao cria nada em APP_DIR nem em DEPLOY_DIR (sem mkdir, lock,
 #  log ou backup). Unico efeito: um diretorio temporario run.XXXXXX ao lado do
 #  ZIP (ou em $TMPDIR/tmp, no --rollback), para extrair o pacote; removido ao sair.
+#
+#  Remocao de orfaos (padrao LIGADO; --sem-remocao desliga):
+#    Depois de um deploy bem-sucedido grava DEPLOY_DIR/manifesto_atual.txt, a
+#    lista dos arquivos que o pacote colocou em app bin config public deploy db.
+#    No deploy seguinte, ORFAOS = manifesto anterior MENOS lista do pacote novo.
+#    So o que um deploy anterior colocou la pode ser removido; nunca "tudo que
+#    esta no servidor e nao esta no pacote" (config/db.php, config/secrets.local.php,
+#    data/** e arquivos so do servidor ficam intactos). Sem manifesto (primeira
+#    execucao) nada e removido: so se inicializa o manifesto.
+#    Cada orfao e validado (rel_valido/negado/caminho_sob, pasta aplicada, arquivo
+#    regular, sem link no caminho) ANTES de qualquer alteracao; manifesto invalido
+#    aborta com 2. Os removidos entram no tar.gz do backup (linhas "R" do manifesto
+#    do backup) antes de serem apagados, e o manifesto anterior vai junto
+#    (.deploy/manifesto_anterior.txt) para o rollback restaura-lo. Diretorios
+#    ficam so se nao vazios; os que ficarem vazios (menos as pastas-raiz) sofrem
+#    rmdir, nunca rm -r. Trava: aborta com 2, sem alterar nada, se houver mais de
+#    MAX_REMOCAO orfaos ou se o pacote tiver menos de 50% dos arquivos do manifesto
+#    anterior; --permitir-remocao-grande ignora a trava.
 #
 #  NUNCA grava em /var nem /tmp (so o zip chega la, de passagem).
 #  NUNCA toca em data/ (exceto garantir o dono de data/cache), em
@@ -53,6 +74,13 @@ MIN_LIVRE_MB=${MIN_LIVRE_MB:-1024}
 WEB_GRUPO=${WEB_GRUPO:-www-data}
 WEB_USUARIO=${WEB_USUARIO:-www-data}
 DEPLOY_TESTE_ESPERA_S=${DEPLOY_TESTE_ESPERA_S:-}
+
+MAX_REMOCAO=${MAX_REMOCAO:-60}
+MAN_ATUAL="$DEPLOY_DIR/manifesto_atual.txt"
+REMOCAO=1
+REMOCAO_GRANDE=0
+MAN_ACAO=manter
+NREM=0
 
 RE_TS='^[0-9]{8}-[0-9]{6}$'
 RE_BACKUP='^[0-9]{8}-[0-9]{6}\.tar\.gz$'
@@ -132,11 +160,38 @@ negado() {
   return 1
 }
 
+# manifesto_item_valido CAMINHO: entrada aceita no manifesto de deploy anterior
+# (relativa, valida, nao negada, dentro de uma pasta aplicada e nunca a propria pasta)
+manifesto_item_valido() {
+  local p=$1 primeiro
+  rel_valido "$p" || return 1
+  negado "$p" && return 1
+  primeiro=${p%%/*}
+  [ "$p" != "$primeiro" ] || return 1
+  case "$primeiro" in app|bin|config|public|deploy|db) return 0 ;; esac
+  return 1
+}
+
+# pai_com_link CAMINHO_REL: verdadeiro se algum diretorio do caminho (sob APP_DIR) e link simbolico
+pai_com_link() {
+  local rel=${1%/*} acc="$APP_DIR" parte
+  local -a partes
+  [ "$rel" != "$1" ] || return 1
+  IFS=/ read -r -a partes <<< "$rel"
+  for parte in "${partes[@]}"; do
+    acc="$acc/$parte"
+    [ -L "$acc" ] && return 0
+  done
+  return 1
+}
+
 uso() {
   cat <<'EOF'
 Uso:
   aplicar_release.sh [--dry-run] [--limpar-cache|--manter-cache]
-                     [--smoke-url URL] [--smoke-host HOST] ZIP SHA256
+                     [--smoke-url URL] [--smoke-host HOST]
+                     [--sem-remocao | --permitir-remocao-grande]
+                     [--limite-remocao N] ZIP SHA256
   aplicar_release.sh [--dry-run] --rollback [AAAAMMDD-HHMMSS]
 EOF
 }
@@ -175,6 +230,9 @@ while [ $# -gt 0 ]; do
       ;;
     --limpar-cache) CACHE=sim ;;
     --manter-cache) CACHE=nao ;;
+    --sem-remocao) REMOCAO=0 ;;
+    --permitir-remocao-grande) REMOCAO_GRANDE=1 ;;
+    --limite-remocao) [ $# -gt 1 ] || { erro "--limite-remocao exige um valor."; exit 2; }; MAX_REMOCAO=$2; shift ;;
     --smoke-url)  [ $# -gt 1 ] || { erro "--smoke-url exige um valor."; exit 2; }; SMOKE_URL=$2; shift ;;
     --smoke-host) [ $# -gt 1 ] || { erro "--smoke-host exige um valor."; exit 2; }; SMOKE_HOST=$2; shift ;;
     -h|--help) uso; exit 0 ;;
@@ -197,6 +255,9 @@ case "$DEPLOY_DIR/" in "$APP_DIR"/*) erro "DEPLOY_DIR nao pode ficar dentro de A
 [[ $SMOKE_URL =~ ^https?://[A-Za-z0-9._:/-]+$ ]] || { erro "SMOKE_URL invalida: $SMOKE_URL"; exit 2; }
 SMOKE_URL=${SMOKE_URL%/}
 if [ -n "$SMOKE_HOST" ] && ! [[ $SMOKE_HOST =~ ^[A-Za-z0-9._:-]+$ ]]; then erro "SMOKE_HOST invalido."; exit 2; fi
+[[ $MAX_REMOCAO =~ ^[0-9]{1,6}$ ]] && [ "$MAX_REMOCAO" -ge 1 ] || { erro "MAX_REMOCAO/--limite-remocao invalido (inteiro >= 1): $MAX_REMOCAO"; exit 2; }
+if [ "$REMOCAO" = "0" ] && [ "$REMOCAO_GRANDE" = "1" ]; then erro "--sem-remocao e --permitir-remocao-grande nao combinam."; exit 2; fi
+if [ "$MODO" = "rollback" ] && { [ "$REMOCAO" = "0" ] || [ "$REMOCAO_GRANDE" = "1" ]; }; then erro "--sem-remocao e --permitir-remocao-grande so valem no deploy."; exit 2; fi
 if [ -n "$ROLLBACK_TS" ] && ! [[ $ROLLBACK_TS =~ $RE_TS ]]; then erro "Timestamp invalido (esperado AAAAMMDD-HHMMSS): $ROLLBACK_TS"; exit 2; fi
 if [ -n "$DEPLOY_TESTE_ESPERA_S" ] && ! [[ $DEPLOY_TESTE_ESPERA_S =~ ^[0-9]{1,3}$ ]]; then erro "DEPLOY_TESTE_ESPERA_S invalido."; exit 2; fi
 if [ "$MODO" = "deploy" ] && { [ -z "$ZIP" ] || [ -z "$SHA" ]; }; then erro "Informe ZIP e SHA256."; uso; exit 2; fi
@@ -385,21 +446,33 @@ podar_backups() {
   return 0
 }
 
-# criar_backup LISTA_M LISTA_N LISTA_D: define BACKUP_NOME e BACKUP_ARQ
+# criar_backup LISTA_M LISTA_N LISTA_D [LISTA_R]: define BACKUP_NOME e BACKUP_ARQ
+# O tar leva os modificados (M) e os que serao removidos (R); o manifesto interno
+# registra M, N, D, R e "P 0|1" (1 = o manifesto de deploy anterior segue em
+# .deploy/manifesto_anterior.txt, para o rollback restaura-lo).
 criar_backup() {
-  local lm=$1 ln=$2 ld=$3 esperado parcial final contagem
+  local lm=$1 ln=$2 ld=$3 lr=${4:-} esperado parcial final contagem lt="$META/tar_lista.txt" ant=0
+  local -a extras=(.deploy/manifesto.txt)
+  if [ -z "$lr" ]; then lr="$META/vazio_R.txt"; : > "$lr"; fi
   BACKUP_NOME=$(date -u +%Y%m%d-%H%M%S)
   while [ -e "$DEPLOY_DIR/backups/$BACKUP_NOME.tar.gz" ]; do sleep 1; BACKUP_NOME=$(date -u +%Y%m%d-%H%M%S); done
   final="$DEPLOY_DIR/backups/$BACKUP_NOME.tar.gz"
   parcial="$final.parcial"
   caminho_sob "$DEPLOY_DIR/backups" "$parcial" || return 1
+  cat "$lm" "$lr" > "$lt" || return 1
+  if [ -f "$MAN_ATUAL" ] && [ ! -L "$MAN_ATUAL" ]; then
+    cp -- "$MAN_ATUAL" "$META/man/.deploy/manifesto_anterior.txt" || return 1
+    extras+=(.deploy/manifesto_anterior.txt); ant=1
+  fi
   {
     awk '{print "M " $0}' "$lm"
     awk '{print "N " $0}' "$ln"
     awk '{print "D " $0}' "$ld"
+    awk '{print "R " $0}' "$lr"
+    echo "P $ant"
   } > "$META/man/.deploy/manifesto.txt" || return 1
-  tar --force-local -czf "$parcial" -C "$APP_DIR" -T "$lm" -C "$META/man" .deploy/manifesto.txt || { rm -f -- "$parcial"; return 1; }
-  esperado=$(wc -l < "$lm"); esperado=$((esperado + 1))
+  tar --force-local -czf "$parcial" -C "$APP_DIR" -T "$lt" -C "$META/man" "${extras[@]}" || { rm -f -- "$parcial"; return 1; }
+  esperado=$(wc -l < "$lt"); esperado=$((esperado + 1 + ant))
   contagem=$(tar --force-local -tzf "$parcial" | wc -l); contagem=$((contagem + 0))
   if [ "$contagem" != "$esperado" ]; then
     erro "Backup inconsistente (esperado $esperado entradas, obtido $contagem)."
@@ -411,19 +484,52 @@ criar_backup() {
   return 0
 }
 
-# restaurar BACKUP_ARQ: restaura os M, remove os N e os diretorios novos vazios
+# restaurar_manifesto BACKUP_ARQ MANIFESTO_DO_BACKUP: devolve o manifesto de deploy
+# que existia antes do deploy do backup ("P 1": copia guardada no backup; "P 0": nao
+# havia manifesto, entao remove o atual; backup sem linha P: antigo, nao mexe)
+restaurar_manifesto() {
+  local bk=$1 man=$2 p tmp="$MAN_ATUAL.rb"
+  caminho_sob "$DEPLOY_DIR" "$MAN_ATUAL" || { erro "Manifesto fora de DEPLOY_DIR: $MAN_ATUAL"; return 1; }
+  p=$(awk '$1=="P"{print $2; exit}' "$man")
+  case "$p" in
+    1)
+      if tar --force-local -xzOf "$bk" .deploy/manifesto_anterior.txt > "$tmp" && mv -f -- "$tmp" "$MAN_ATUAL"; then
+        info "Manifesto de deploy anterior restaurado."
+      else
+        rm -f -- "$tmp"; erro "Nao foi possivel restaurar o manifesto de deploy anterior."; return 1
+      fi ;;
+    0)
+      rm -f -- "$MAN_ATUAL"
+      info "Manifesto de deploy removido (nao existia antes deste deploy)." ;;
+  esac
+  return 0
+}
+
+# restaurar BACKUP_ARQ: restaura os M e os R (removidos pelo deploy), remove os N e
+# os diretorios novos vazios, e devolve o manifesto de deploy anterior
 restaurar() {
-  local bk=$1 man="$META/rb_manifesto.txt" rm_="$META/rb_M.txt" rn="$META/rb_N.txt" rd="$META/rb_D.txt" f d
+  local bk=$1 man="$META/rb_manifesto.txt" rm_="$META/rb_M.txt" rn="$META/rb_N.txt" rd="$META/rb_D.txt" rr="$META/rb_R.txt" rdn="$META/rb_dirs.txt" f d
   tar --force-local -xzOf "$bk" .deploy/manifesto.txt > "$man" || { erro "Manifesto ilegivel em $bk."; return 1; }
-  awk '$1=="M"{sub(/^M /,""); print}' "$man" > "$rm_"
+  awk '$1=="M"||$1=="R"{sub(/^[MR] /,""); print}' "$man" > "$rm_"
+  awk '$1=="R"{sub(/^R /,""); print}' "$man" > "$rr"
   awk '$1=="N"{sub(/^N /,""); print}' "$man" > "$rn"
   awk '$1=="D"{sub(/^D /,""); print}' "$man" | LC_ALL=C sort -r > "$rd"
   while IFS= read -r f; do
     rel_valido "$f" && ! negado "$f" || { erro "Manifesto com caminho invalido: $f"; return 1; }
   done < <(cat "$rm_" "$rn" "$rd")
+  # diretorios que o tar vai recriar (removidos por estarem vazios): modo/dono padrao do deploy
+  : > "$rdn"
+  while IFS= read -r f; do calc_dirs_novos "$f" >> "$rdn"; done < "$rm_"
+  LC_ALL=C sort -u -o "$rdn" "$rdn"
   if [ -s "$rm_" ]; then
     tar --force-local -xzpf "$bk" -C "$APP_DIR" -T "$rm_" || { erro "Falha ao extrair o backup."; return 1; }
   fi
+  while IFS= read -r d; do
+    [ -n "$d" ] || continue
+    caminho_sob "$APP_DIR" "$APP_DIR/$d" || continue
+    ajustar_modo 755 "$APP_DIR/$d"
+    ajustar_dono "root:$WEB_GRUPO" "$APP_DIR/$d"
+  done < "$rdn"
   while IFS= read -r f; do
     caminho_sob "$APP_DIR" "$APP_DIR/$f" || { erro "Caminho fora de APP_DIR: $f"; return 1; }
     rm -f -- "$APP_DIR/$f"
@@ -433,7 +539,8 @@ restaurar() {
     rmdir -- "$APP_DIR/$d" 2>/dev/null
   done < "$rd"
   garantir_cache_dono
-  info "Arquivos restaurados: $(wc -l < "$rm_" | tr -d ' ') ; removidos: $(wc -l < "$rn" | tr -d ' ')."
+  restaurar_manifesto "$bk" "$man" || return 1
+  info "Arquivos restaurados: $(wc -l < "$rm_" | tr -d ' ') (dos quais $(wc -l < "$rr" | tr -d ' ') removidos pelo deploy) ; removidos: $(wc -l < "$rn" | tr -d ' ')."
   [ "$LIMPEZA_CACHE_FEITA" != "1" ] || limpar_cache
   cat "$rm_" > "$META/rb_lint.txt"
   lint_lista "$META/rb_lint.txt" || { erro "Lint falhou apos o rollback."; return 1; }
@@ -459,11 +566,13 @@ fluxo_rollback() {
   tar --force-local -xzOf "$bk" .deploy/manifesto.txt > "$META/sel_manifesto.txt" || { erro "Backup ilegivel: $alvo"; exit 2; }
   awk '$1=="M"{sub(/^M /,""); print}' "$META/sel_manifesto.txt" > "$META/sel_M.txt"
   awk '$1=="N"{sub(/^N /,""); print}' "$META/sel_manifesto.txt" > "$META/sel_N.txt"
+  awk '$1=="R"{sub(/^R /,""); print}' "$META/sel_manifesto.txt" > "$META/sel_R.txt"
   while IFS= read -r f; do
     rel_valido "$f" && ! negado "$f" || { erro "Manifesto com caminho invalido: $f"; exit 2; }
-  done < <(cat "$META/sel_M.txt" "$META/sel_N.txt")
-  info "Seriam restaurados: $(wc -l < "$META/sel_M.txt" | tr -d ' ') arquivo(s); removidos: $(wc -l < "$META/sel_N.txt" | tr -d ' ') arquivo(s) novo(s)."
+  done < <(cat "$META/sel_M.txt" "$META/sel_N.txt" "$META/sel_R.txt")
+  info "Seriam restaurados: $(wc -l < "$META/sel_M.txt" | tr -d ' ') arquivo(s) modificado(s) e $(wc -l < "$META/sel_R.txt" | tr -d ' ') removido(s) pelo deploy; removidos: $(wc -l < "$META/sel_N.txt" | tr -d ' ') arquivo(s) novo(s)."
   sed 's/^/  restaura  /' "$META/sel_M.txt"
+  sed 's/^/  restaura  /; s/$/  (removido pelo deploy)/' "$META/sel_R.txt"
   sed 's/^/  remove    /' "$META/sel_N.txt"
   if [ "$DRY" = "1" ]; then info "Dry-run: nada foi alterado em APP_DIR nem em DEPLOY_DIR (nada criado; temporario removido ao sair)."; exit 0; fi
 
@@ -479,7 +588,7 @@ fluxo_rollback() {
       echo "$f" >> "$META/pre_N.txt"
       calc_dirs_novos "$f" >> "$META/pre_D.txt"
     fi
-  done < "$META/sel_M.txt"
+  done < <(cat "$META/sel_M.txt" "$META/sel_R.txt")
   LC_ALL=C sort -u -o "$META/pre_D.txt" "$META/pre_D.txt"
   criar_backup "$META/pre_M.txt" "$META/pre_N.txt" "$META/pre_D.txt" || { erro "Falha ao criar o backup pre-rollback."; exit 1; }
   registrar "ROLLBACK iniciado para $alvo (pre-rollback=$BACKUP_NOME)"
@@ -519,6 +628,107 @@ reverter_automatico() {
   exit 4
 }
 
+# planejar_remocao: define MAN_ACAO (manter|init|atualizar), META/R.txt (arquivos a
+# remover) e NREM. NAO altera nada; qualquer problema aborta com 2 antes de mexer.
+planejar_remocao() {
+  local f dest n_prev n_pkg n_orf ausentes=0 trava=0
+  : > "$META/R.txt"; : > "$META/orfaos.txt"
+  LC_ALL=C sort -u -o "$META/pkg.txt" "$META/pkg.txt"
+  n_pkg=$(wc -l < "$META/pkg.txt" | tr -d ' ')
+  MAN_ACAO=manter; NREM=0
+  if [ "$REMOCAO" != "1" ]; then
+    aviso "Remocao de orfaos DESLIGADA (--sem-remocao): nada sera removido e o manifesto fica como esta ($MAN_ATUAL)."
+    return 0
+  fi
+  if [ -L "$MAN_ATUAL" ] || { [ -e "$MAN_ATUAL" ] && [ ! -f "$MAN_ATUAL" ]; }; then
+    erro "Manifesto de deploy nao e arquivo regular (link ou diretorio): $MAN_ATUAL. Nada foi alterado."; exit 2
+  fi
+  if [ ! -e "$MAN_ATUAL" ]; then
+    MAN_ACAO=init
+    aviso "PRIMEIRA EXECUCAO da remocao de orfaos: nao existe manifesto de deploy anterior ($MAN_ATUAL); NADA sera removido neste deploy."
+    aviso "O manifesto sera inicializado com os $n_pkg arquivo(s) deste pacote (no dry-run, nada e gravado). A remocao vale a partir do proximo deploy."
+    return 0
+  fi
+  sed '/^$/d' "$MAN_ATUAL" | LC_ALL=C sort -u > "$META/man_prev.txt" || { erro "Manifesto ilegivel: $MAN_ATUAL"; exit 2; }
+  while IFS= read -r f; do
+    if ! manifesto_item_valido "$f"; then
+      trava=$((trava + 1))
+      [ "$trava" -gt 20 ] || erro "Manifesto de deploy invalido ou adulterado ($MAN_ATUAL): entrada recusada: $(printf '%q' "$f")"
+    fi
+  done < "$META/man_prev.txt"
+  if [ "$trava" -gt 0 ]; then
+    erro "$trava entrada(s) recusada(s) no manifesto (mostradas ate 20). Nada foi removido nem alterado."
+    erro "Corrija o manifesto (um caminho relativo por linha, LF, dentro de app bin config public deploy db) ou use --sem-remocao."
+    exit 2
+  fi
+  LC_ALL=C comm -23 "$META/man_prev.txt" "$META/pkg.txt" > "$META/orfaos.txt"
+  n_prev=$(wc -l < "$META/man_prev.txt" | tr -d ' ')
+  n_orf=$(wc -l < "$META/orfaos.txt" | tr -d ' ')
+  if [ "$REMOCAO_GRANDE" != "1" ]; then
+    if [ "$n_orf" -gt "$MAX_REMOCAO" ]; then
+      erro "Trava de seguranca: o pacote deixaria $n_orf orfao(s) para remover (limite $MAX_REMOCAO)."; trava=1
+    fi
+    if [ $((n_pkg * 2)) -lt "$n_prev" ]; then
+      erro "Trava de seguranca: o pacote tem $n_pkg arquivo(s), menos de 50% dos $n_prev do manifesto anterior (pacote quebrado?)."; trava=1
+    fi
+    if [ "$trava" = "1" ]; then
+      erro "Nada foi removido nem alterado. Confira o pacote; se for intencional, repita com -PermitirRemocaoGrande (--permitir-remocao-grande) ou use -SemRemocao (--sem-remocao)."
+      exit 2
+    fi
+  fi
+  while IFS= read -r f; do
+    dest="$APP_DIR/$f"
+    caminho_sob "$APP_DIR" "$dest" || { erro "Orfao fora de APP_DIR: $f. Nada foi removido."; exit 2; }
+    if [ ! -e "$dest" ] && [ ! -L "$dest" ]; then ausentes=$((ausentes + 1)); continue; fi
+    if [ -L "$dest" ] || [ ! -f "$dest" ]; then erro "Orfao nao e arquivo regular (link ou diretorio): $f. Nada foi removido."; exit 2; fi
+    if pai_com_link "$f"; then erro "Orfao com link simbolico no caminho: $f. Nada foi removido."; exit 2; fi
+    printf '%s\n' "$f" >> "$META/R.txt"
+  done < "$META/orfaos.txt"
+  NREM=$(wc -l < "$META/R.txt" | tr -d ' ')
+  if cmp -s "$META/man_prev.txt" "$META/pkg.txt"; then MAN_ACAO=manter; else MAN_ACAO=atualizar; fi
+  info "Manifesto anterior: $n_prev arquivo(s); pacote: $n_pkg; orfaos: $n_orf ($NREM presentes no servidor, $ausentes ja ausentes)."
+  return 0
+}
+
+# escrever_manifesto: grava o manifesto do pacote aplicado (atomico: temporario + mv)
+escrever_manifesto() {
+  local tmp="$MAN_ATUAL.novo"
+  [ "$MAN_ACAO" = "init" ] || [ "$MAN_ACAO" = "atualizar" ] || return 0
+  caminho_sob "$DEPLOY_DIR" "$tmp" || return 1
+  cp -- "$META/pkg.txt" "$tmp" || { rm -f -- "$tmp"; return 1; }
+  chmod 640 "$tmp" 2>/dev/null
+  mv -f -- "$tmp" "$MAN_ATUAL" || { rm -f -- "$tmp"; return 1; }
+  info "Manifesto de deploy gravado ($MAN_ACAO): $(wc -l < "$MAN_ATUAL" | tr -d ' ') arquivo(s) em $MAN_ATUAL."
+  registrar "MANIFESTO $MAN_ACAO $(wc -l < "$MAN_ATUAL" | tr -d ' ') arquivo(s)"
+  return 0
+}
+
+# remover_orfaos: apaga arquivo a arquivo (ja validado e ja no backup) e depois
+# faz rmdir dos diretorios que ficaram vazios (nunca as pastas-raiz, nunca rm -r)
+remover_orfaos() {
+  local f d n=0 nd=0
+  [ -s "$META/R.txt" ] || return 0
+  while IFS= read -r f; do
+    if ! rel_valido "$f" || negado "$f" || ! caminho_sob "$APP_DIR" "$APP_DIR/$f"; then
+      reverter_automatico "Remocao recusada para caminho invalido: $f"
+    fi
+    if [ -L "$APP_DIR/$f" ] || [ ! -f "$APP_DIR/$f" ]; then continue; fi
+    rm -f -- "$APP_DIR/$f" || reverter_automatico "Falha ao remover $f"
+    n=$((n + 1))
+    d=${f%/*}
+    while [ "$d" != "${d%/*}" ]; do
+      caminho_sob "$APP_DIR" "$APP_DIR/$d" || break
+      [ ! -L "$APP_DIR/$d" ] || break
+      rmdir -- "$APP_DIR/$d" 2>/dev/null || break
+      nd=$((nd + 1))
+      d=${d%/*}
+    done
+  done < "$META/R.txt"
+  info "Removidos: $n arquivo(s); diretorios que ficaram vazios removidos: $nd."
+  registrar "REMOVIDOS $n arquivo(s), $nd diretorio(s) vazio(s)"
+  return 0
+}
+
 fluxo_deploy() {
   local real n f primeiro dest d
   real=$(sha256sum -- "$ZIP" | awk '{print $1}')
@@ -548,7 +758,7 @@ fluxo_deploy() {
   if [ -n "$(find "$STAGE" -type l 2>/dev/null | head -n 1)" ]; then erro "Pacote contem link simbolico."; exit 2; fi
   (cd "$STAGE" && find . -type f | sed 's|^\./||' | LC_ALL=C sort) > "$META/todos.txt"
 
-  : > "$META/M.txt"; : > "$META/N.txt"; : > "$META/ident.txt"; : > "$META/ignorados.txt"
+  : > "$META/M.txt"; : > "$META/N.txt"; : > "$META/ident.txt"; : > "$META/ignorados.txt"; : > "$META/pkg.txt"
   while IFS= read -r f; do
     rel_valido "$f" || { erro "Arquivo invalido no pacote: $f"; exit 2; }
     negado "$f" && { erro "Pacote contem caminho proibido: $f"; exit 2; }
@@ -557,6 +767,7 @@ fluxo_deploy() {
       app|bin|config|public|deploy|db) [ "$f" != "$primeiro" ] || { echo "$f" >> "$META/ignorados.txt"; continue; } ;;
       *) echo "$f" >> "$META/ignorados.txt"; continue ;;
     esac
+    echo "$f" >> "$META/pkg.txt"
     case "$f" in
       *.sh|deploy/*)
         if tem_cr "$STAGE/$f"; then erro "Arquivo com CR (CRLF) no pacote: $f"; exit 2; fi ;;
@@ -570,18 +781,26 @@ fluxo_deploy() {
     fi
   done < "$META/todos.txt"
 
-  local nm nn ni ng
+  local nm nn ni ng rotulo_rem=removido
   nm=$(wc -l < "$META/M.txt" | tr -d ' '); nn=$(wc -l < "$META/N.txt" | tr -d ' ')
   ni=$(wc -l < "$META/ident.txt" | tr -d ' '); ng=$(wc -l < "$META/ignorados.txt" | tr -d ' ')
-  info "Resumo: $nm modificado(s), $nn novo(s), $ni identico(s), $ng ignorado(s)."
+  planejar_remocao
+  [ "$DRY" != "1" ] || rotulo_rem=removeria
+  info "Resumo: $nm modificado(s), $nn novo(s), $ni identico(s), $ng ignorado(s), $NREM removido(s)."
   sed 's/^/  modificado  /' "$META/M.txt"
   sed 's/^/  novo        /' "$META/N.txt"
+  sed "s/^/  $rotulo_rem"'    /' "$META/R.txt"
   if [ "$ng" != "0" ]; then
     aviso "$ng arquivo(s) do pacote FORA das pastas aplicadas (app bin config public deploy db) NAO serao publicados:"
     head -n 50 "$META/ignorados.txt" | sed 's/^/  ignorado    /'
     [ "$ng" -le 50 ] || aviso "  ... e mais $((ng - 50)) ignorado(s)."
   fi
-  if [ "$nm" = "0" ] && [ "$nn" = "0" ]; then info "Nada a aplicar."; exit 0; fi
+  if [ "$nm" = "0" ] && [ "$nn" = "0" ] && [ "$NREM" = "0" ]; then
+    info "Nada a aplicar."
+    if [ "$DRY" != "1" ] && ! escrever_manifesto; then perm_falhou "manifesto de deploy nao gravado em $MAN_ATUAL"; sair_ok; fi
+    [ "$DRY" != "1" ] || [ "$MAN_ACAO" = "manter" ] || info "Dry-run: o manifesto de deploy seria gravado ($MAN_ACAO); nada foi gravado."
+    exit 0
+  fi
   if [ "$DRY" = "1" ]; then info "Dry-run: nada foi alterado em APP_DIR nem em DEPLOY_DIR (nada criado: sem mkdir, lock, log ou backup; a extracao temporaria ao lado do zip e removida ao sair)."; exit 0; fi
 
   cat "$META/M.txt" "$META/N.txt" | LC_ALL=C sort > "$META/aplicar.txt"
@@ -589,8 +808,8 @@ fluxo_deploy() {
   while IFS= read -r f; do calc_dirs_novos "$f" >> "$META/D.txt"; done < "$META/aplicar.txt"
   LC_ALL=C sort -u -o "$META/D.txt" "$META/D.txt"
 
-  criar_backup "$META/M.txt" "$META/N.txt" "$META/D.txt" || { erro "Falha ao criar o backup; nada foi copiado."; exit 1; }
-  registrar "DEPLOY iniciado sha256=$SHA M=$nm N=$nn backup=$BACKUP_NOME"
+  criar_backup "$META/M.txt" "$META/N.txt" "$META/D.txt" "$META/R.txt" || { erro "Falha ao criar o backup; nada foi copiado."; exit 1; }
+  registrar "DEPLOY iniciado sha256=$SHA M=$nm N=$nn R=$NREM backup=$BACKUP_NOME"
   podar_backups
 
   # aplica
@@ -600,6 +819,9 @@ fluxo_deploy() {
       reverter_automatico "Falha ao copiar $f"
     fi
   done < "$META/aplicar.txt"
+
+  # orfaos: ja estao no backup; apagados um a um (lint/smoke abaixo ainda podem reverter)
+  remover_orfaos
 
   # donos e permissoes, so no que esta execucao tocou
   while IFS= read -r d; do
@@ -620,13 +842,15 @@ fluxo_deploy() {
   case "$CACHE" in
     sim) limpar=1 ;;
     nao) limpar=0 ;;
-    *) if grep -Eq '^(app|config|db)/' "$META/aplicar.txt"; then limpar=1; fi ;;
+    *) if cat "$META/aplicar.txt" "$META/R.txt" | grep -Eq '^(app|config|db)/'; then limpar=1; fi ;;
   esac
   if [ "$limpar" = "1" ]; then limpar_cache; else info "Cache mantido."; fi
 
   smoke || reverter_automatico "Smoke test falhou"
 
-  registrar "DEPLOY concluido sha256=$SHA M=$nm N=$nn backup=$BACKUP_NOME"
+  escrever_manifesto || perm_falhou "manifesto de deploy nao gravado em $MAN_ATUAL (a proxima remocao usara o manifesto antigo)"
+
+  registrar "DEPLOY concluido sha256=$SHA M=$nm N=$nn R=$NREM backup=$BACKUP_NOME"
   info "Deploy concluido. Backup: $BACKUP_NOME"
   sair_ok
 }

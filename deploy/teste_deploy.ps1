@@ -9,15 +9,20 @@
   nao foi encontrado (casos B pulados: NAO e sucesso total).
 .PARAMETER Grupo
   A, B ou Todos (padrao).
+.PARAMETER Casos
+  Ids dos casos a rodar (ex.: -Casos B16,B17); o ambiente de cada caso e criado do zero.
 .EXAMPLE
   powershell -NoProfile -ExecutionPolicy Bypass -File deploy\teste_deploy.ps1 -Grupo A
 #>
 param(
-    [ValidateSet('A', 'B', 'Todos')][string]$Grupo = 'Todos'
+    [ValidateSet('A', 'B', 'Todos')][string]$Grupo = 'Todos',
+    [string[]]$Casos = @()
 )
 
 $ErrorActionPreference = 'Continue'
+$Casos = @($Casos | ForEach-Object { $_ -split ',' } | Where-Object { $_ })  # -File entrega 'B1,B2' como uma string so
 $ProgressPreference = 'SilentlyContinue'
+
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
@@ -33,17 +38,19 @@ function Afirmar([bool]$Cond, [string]$Msg) { if (-not $Cond) { throw $Msg } }
 
 function Caso([string]$Id, [string]$Nome, [scriptblock]$Corpo, [bool]$PrecisaBash = $false) {
     if ($Grupo -ne 'Todos' -and -not $Id.StartsWith($Grupo)) { return }
+    if ($Casos.Count -gt 0 -and $Casos -notcontains $Id) { return }
     if ($PrecisaBash -and -not $script:Bash) {
         Write-Host ("PULADO  {0} {1} (bash nao encontrado)" -f $Id, $Nome) -ForegroundColor Yellow
         $script:Pulados++
         return
     }
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
     try {
         & $Corpo
-        Write-Host ("PASSOU  {0} {1}" -f $Id, $Nome) -ForegroundColor Green
+        Write-Host ("PASSOU  {0} {1} ({2:N1} s)" -f $Id, $Nome, $sw.Elapsed.TotalSeconds) -ForegroundColor Green
         $script:Pass++
     } catch {
-        Write-Host ("FALHOU  {0} {1}: {2}" -f $Id, $Nome, $_.Exception.Message) -ForegroundColor Red
+        Write-Host ("FALHOU  {0} {1}: {2} ({3:N1} s)" -f $Id, $Nome, $_.Exception.Message, $sw.Elapsed.TotalSeconds) -ForegroundColor Red
         $script:Fail++
     }
 }
@@ -301,6 +308,7 @@ Caso 'A6a' 'stubs: deploy = 1 scp (2 arquivos) + ssh de espaco + ssh -t com sudo
     Afirmar ($x.Ssh[1] -match '(^| )-t ' -and $x.Ssh[1] -match 'sudo bash /tmp/jca_aplicar_[0-9a-f]{32}\.sh') ('ssh: ' + $x.Ssh[1])
     Afirmar ($x.Ssh[1] -match 'h=[0-9a-f]{64}; ' -and $x.Ssh[1] -match '-L \$p' -and $x.Ssh[1] -match 'stat -c %U' -and $x.Ssh[1] -match 'chmod 600' -and $x.Ssh[1] -match 'sha256sum') ('ssh sem checagem do script: ' + $x.Ssh[1])
     Afirmar (-not ($x.Ssh[1] -match '--dry-run')) 'dry-run indevido'
+    Afirmar (-not ($x.Ssh[1] -match 'remocao')) ('flag de remocao indevida por padrao (a remocao e o padrao do servidor): ' + $x.Ssh[1])
     $x2 = Invoke-ComStubs @('-Alvo', 'usuario@servidor') @{ JCA_STUB_DF = '99999999' }
     $n1 = [regex]::Match($x.Scp[0], 'jca_aplicar_[0-9a-f]{32}').Value; $n2 = [regex]::Match($x2.Scp[0], 'jca_aplicar_[0-9a-f]{32}').Value
     Afirmar ($n1 -ne $n2) 'nome do script repetiu entre execucoes'
@@ -317,6 +325,21 @@ Caso 'A6c' 'stubs: -Rollback envia so o script' {
     Afirmar ($x.R.Codigo -eq 0) ('codigo ' + $x.R.Codigo + ': ' + $x.R.Saida)
     Afirmar ($x.Scp.Count -eq 1 -and $x.Scp[0] -match 'jca_aplicar_' -and -not ($x.Scp[0] -match 'jca_release_')) ('scp: ' + ($x.Scp -join '|'))
     Afirmar ($x.Ssh.Count -eq 2 -and $x.Ssh[1] -match '--rollback') ('ssh: ' + ($x.Ssh -join '|'))
+}
+
+Caso 'A6g' 'stubs: -SemRemocao, -PermitirRemocaoGrande e -LimiteRemocao sao repassados; combinacoes invalidas recusadas sem ssh/scp' {
+    $x = Invoke-ComStubs @('-Alvo', 'usuario@servidor', '-SemRemocao', '-SemChecagemEspaco')
+    Afirmar ($x.R.Codigo -eq 0) ('codigo ' + $x.R.Codigo + ': ' + $x.R.Saida)
+    Afirmar ($x.Ssh.Count -eq 1 -and $x.Ssh[0] -match '--sem-remocao ' -and -not ($x.Ssh[0] -match 'permitir')) ('ssh: ' + ($x.Ssh -join '|'))
+    Afirmar ($x.R.Saida -match 'Remocao:\s+DESLIGADA') ('a confirmacao nao mostra a remocao desligada: ' + $x.R.Saida)
+    $x = Invoke-ComStubs @('-Alvo', 'usuario@servidor', '-PermitirRemocaoGrande', '-LimiteRemocao', '90', '-SemChecagemEspaco')
+    Afirmar ($x.R.Codigo -eq 0) ('codigo ' + $x.R.Codigo + ': ' + $x.R.Saida)
+    Afirmar ($x.Ssh[0] -match '--permitir-remocao-grande --limite-remocao 90 ' -and -not ($x.Ssh[0] -match 'sem-remocao')) ('ssh: ' + ($x.Ssh -join '|'))
+    foreach ($ruim in @(@('-SemRemocao', '-PermitirRemocaoGrande'), @('-Rollback', '-SemRemocao'), @('-LimiteRemocao', '-5'))) {
+        $x = Invoke-ComStubs (@('-Alvo', 'usuario@servidor') + $ruim)
+        Afirmar ($x.R.Codigo -eq 2) (($ruim -join ' ') + ': esperado 2, obtido ' + $x.R.Codigo + ': ' + $x.R.Saida)
+        Afirmar ($x.Scp.Count -eq 0 -and $x.Ssh.Count -eq 0) (($ruim -join ' ') + ': chamou ssh/scp')
+    }
 }
 
 Caso 'A6e' 'stubs: -SemChecagemEspaco faz so o ssh de execucao' {
@@ -508,6 +531,22 @@ function Invoke-Deploy($A, [string]$Zip, [string]$Sha, [string[]]$Opcoes = @(), 
 
 function Get-Backups($A) { @(Get-ChildItem -LiteralPath (Join-Path $A.DepW 'backups') -Filter '*.tar.gz' -ErrorAction SilentlyContinue) }
 
+# ---- auxiliares da remocao de orfaos (manifesto do ultimo deploy)
+function Get-ManPath($A) { Join-Path $A.DepW 'manifesto_atual.txt' }
+function Get-ManLinhas($A) { $p = Get-ManPath $A; if (Test-Path -LiteralPath $p) { @(Get-Content -LiteralPath $p | Where-Object { $_ -ne '' }) } else { @() } }
+function Set-ManLinhas($A, [string[]]$Linhas) { [System.IO.File]::WriteAllText((Get-ManPath $A), (($Linhas -join "`n") + "`n"), $script:Utf8) }
+function Get-ManSha($A) { $p = Get-ManPath $A; if (Test-Path -LiteralPath $p) { Get-Sha $p } else { 'AUSENTE' } }
+function Get-TarLista([string]$Tar) { @(& $script:Bash -c "tar --force-local -tzf '$(ConvertTo-Misto $Tar)'") }
+function Get-TarTexto([string]$Tar, [string]$Membro) { (& $script:Bash -c "tar --force-local -xzOf '$(ConvertTo-Misto $Tar)' $Membro") -join "`n" }
+function Write-Php([string]$Arq, [string]$N) { Write-Texto $Arq ("<?php echo '$N';`n") }
+$PkgBase = @('app/a.php', 'app/novo.php', 'config/visao_geral.php', 'deploy/remoto/x.sh')
+$ExtraVelhos = @{ 'app/velho.php' = "<?php echo 'v';`n"; 'app/Srv/x.php' = "<?php echo 'x';`n"; 'app/Srv/Sub/y.php' = "<?php echo 'y';`n"; 'app/Mantem/m.php' = "<?php echo 'm';`n" }
+# servidor "depois de um deploy anterior": arquivos antigos que o pacote novo nao tem + o manifesto desse deploy
+function Initialize-Velhos($A) {
+    foreach ($k in $ExtraVelhos.Keys) { Write-Texto (Join-Path $A.AppW ($k.Replace('/', '\'))) $ExtraVelhos[$k] }
+    Set-ManLinhas $A ($PkgBase + @($ExtraVelhos.Keys))
+}
+
 Caso 'B0' 'bash -n no aplicar_release.sh' {
     $out = & $script:Bash -n $ShMisto 2>&1
     Afirmar ($LASTEXITCODE -eq 0) ("erro de sintaxe: " + ($out -join ' '))
@@ -560,6 +599,7 @@ Caso 'B2' 'deploy aplica so o esperado e preserva data/ e segredos' {
     Afirmar ((Get-Content -Raw (Join-Path $a.DepW 'deploy.log')) -match 'DEPLOY concluido') 'deploy.log sem a linha de conclusao'
     Afirmar ($r.Saida -match 'Cache de resposta limpo') 'cache nao foi limpo (app/ mudou)'
     Afirmar ($r.Saida -match 'ignorado\s+LICENSE') ('arquivo ignorado sem nome no resumo: ' + $r.Saida)
+    Afirmar ($r.Saida -match 'PRIMEIRA EXECUCAO' -and (Get-ManLinhas $a).Count -eq 4) ('primeira execucao deveria inicializar o manifesto com os 4 arquivos aplicados: ' + ((Get-ManLinhas $a) -join '|'))
 } $true
 
 Caso 'B3' 'idempotencia: repetir nao faz nada' {
@@ -691,7 +731,7 @@ Caso 'B9' 'segundo deploy simultaneo e recusado pelo lock (exit 5)' {
         foreach ($k in $envBg.Keys) { [Environment]::SetEnvironmentVariable($k, $salvo[$k]) }
     }
     $achou = $false
-    for ($i = 0; $i -lt 40; $i++) {
+    for ($i = 0; $i -lt 240; $i++) {
         if ((Test-Path (Join-Path $a.DepW 'deploy.lock.d')) -or (Test-Path (Join-Path $a.DepW 'deploy.lock'))) { $achou = $true; break }
         Start-Sleep -Milliseconds 250
     }
@@ -807,6 +847,266 @@ Caso 'B15' 'espaco insuficiente (MIN_LIVRE_MB enorme) aborta com 2 sem criar nad
     $r = Invoke-Deploy $a $zip $sha @() @{ MIN_LIVRE_MB = '999999999' }
     Afirmar ($r.Codigo -eq 2 -and $r.Saida -match 'Espaco livre insuficiente') ("codigo " + $r.Codigo + ": " + $r.Saida)
     Afirmar ((Get-HashArvore $a.AppW) -eq $antes) 'arvore mudou'
+} $true
+
+
+
+# ---- remocao de orfaos (manifesto do ultimo deploy)
+# Custo: cada execucao do script remoto no Git Bash leva dezenas de segundos (cada fork e lento
+# neste Windows). Por isso o servidor e o manifesto "de um deploy anterior" sao semeados direto
+# (Initialize-Velhos), em vez de rodar um deploy extra; a primeira execucao real e coberta em B2/B16/B18.
+
+Caso 'B16' 'primeira execucao (sem manifesto): nao remove nada e inicializa o manifesto, tambem com "Nada a aplicar"; -SemRemocao nao cria manifesto' {
+    $a = New-Arvore
+    Write-Php "$($a.AppW)\app\legado_antigo.php" 'l'
+    Write-Php "$($a.AppW)\app\so_servidor.php" 's'
+    $h0 = @{}; foreach ($p in 'app\legado_antigo.php', 'app\so_servidor.php') { $h0[$p] = Get-Sha (Join-Path $a.AppW $p) }
+    $zip = Join-Path $a.Base 'r.zip'; $sha = New-ZipOk $zip
+    # (1) dry-run na primeira execucao: avisa e nao grava
+    $rd = Invoke-Deploy $a $zip $sha @('--dry-run')
+    Afirmar ($rd.Codigo -eq 0 -and $rd.Saida -match 'PRIMEIRA EXECUCAO' -and $rd.Saida -match 'NADA sera removido') ('dry-run primeira: ' + $rd.Saida)
+    Afirmar (-not (Test-Path -LiteralPath (Get-ManPath $a))) 'dry-run gravou o manifesto'
+    # (2) -SemRemocao aplica o pacote e NAO cria manifesto
+    $r3 = Invoke-Deploy $a $zip $sha @('--sem-remocao')
+    Afirmar ($r3.Codigo -eq 0 -and $r3.Saida -match 'DESLIGADA' -and $r3.Saida -match ', 0 removido\(s\)') ('sem-remocao: ' + $r3.Codigo + ': ' + $r3.Saida)
+    Afirmar (-not (Test-Path -LiteralPath (Get-ManPath $a))) '--sem-remocao criou o manifesto'
+    Afirmar (Test-Path (Join-Path $a.AppW 'app\novo.php')) '--sem-remocao nao aplicou o pacote'
+    # (3) servidor ja igual ao pacote (o caso real do usuario): "Nada a aplicar" e mesmo assim inicializa o manifesto
+    $r4 = Invoke-Deploy $a $zip $sha
+    Afirmar ($r4.Codigo -eq 0 -and $r4.Saida -match 'Nada a aplicar' -and $r4.Saida -match 'PRIMEIRA EXECUCAO') ('nada a aplicar + primeira: ' + $r4.Codigo + ': ' + $r4.Saida)
+    Afirmar ($r4.Saida -match ', 0 removido\(s\)' -and -not ($r4.Saida -match 'Removidos: ')) 'removeu algo na primeira execucao'
+    $m = @(Get-ManLinhas $a); Afirmar ((($m | Sort-Object) -join '|') -eq (($PkgBase | Sort-Object) -join '|')) ('manifesto inicial: ' + ($m -join '|'))
+    Afirmar (-not ((Get-ManLinhas $a) -contains 'LICENSE')) 'manifesto contem arquivo fora das pastas aplicadas'
+    Afirmar ((Get-Backups $a).Count -eq 1) ('so o deploy com mudancas cria backup: ' + (Get-Backups $a).Count)
+    foreach ($p in $h0.Keys) { Afirmar ((Get-Sha (Join-Path $a.AppW $p)) -eq $h0[$p]) "$p (so do servidor) foi tocado" }
+} $true
+
+Caso 'B17' 'deploy sem os arquivos X: remove X (e diretorios vazios), grava no backup, atualiza o manifesto; arquivos so-do-servidor intactos' {
+    $a = New-Arvore
+    Initialize-Velhos $a
+    # so do servidor (nao estao em manifesto nenhum)
+    Write-Php "$($a.AppW)\app\so_servidor.php" 's'
+    Write-Php "$($a.AppW)\config\extra_servidor.php" 'e'
+    Write-Php "$($a.AppW)\public\so_servidor.php" 'p'
+    Write-Php "$($a.AppW)\app\Mantem\do_servidor.php" 'd'
+    $sv = @{}; foreach ($p in 'app\so_servidor.php', 'config\extra_servidor.php', 'public\so_servidor.php', 'app\Mantem\do_servidor.php', 'config\db.php', 'config\secrets.local.php', 'data\config\pi.json', 'data\logs\x.log') { $sv[$p] = Get-Sha (Join-Path $a.AppW $p) }
+    $conteudos = @{}; foreach ($k in $ExtraVelhos.Keys) { $conteudos[$k] = Get-Sha (Join-Path $a.AppW ($k.Replace('/', '\'))) }
+    $man1 = Get-ManSha $a
+    $zip2 = Join-Path $a.Base 'r2.zip'; $sha2 = New-ZipOk $zip2 @{ 'app/novo2.php' = "<?php echo 2;`n" }
+    $r2 = Invoke-Deploy $a $zip2 $sha2
+    Afirmar ($r2.Codigo -eq 0) ("deploy: " + $r2.Codigo + ": " + $r2.Saida)
+    Afirmar (-not ($r2.Saida -match 'PRIMEIRA EXECUCAO')) 'disse primeira execucao com manifesto existente'
+    foreach ($k in $ExtraVelhos.Keys) { Afirmar (-not (Test-Path -LiteralPath (Join-Path $a.AppW ($k.Replace('/', '\'))))) "$k nao foi removido" }
+    Afirmar (-not (Test-Path -LiteralPath (Join-Path $a.AppW 'app\Srv'))) 'app/Srv (vazio) nao foi removido'
+    Afirmar (Test-Path -LiteralPath (Join-Path $a.AppW 'app\Mantem\do_servidor.php')) 'app/Mantem (nao vazio) foi removido'
+    Afirmar (Test-Path -LiteralPath (Join-Path $a.AppW 'app\novo2.php')) 'app/novo2.php nao foi criado'
+    foreach ($p in $sv.Keys) { Afirmar ((Get-Sha (Join-Path $a.AppW $p)) -eq $sv[$p]) "$p (so do servidor) foi tocado" }
+    Afirmar ($r2.Saida -match ', 4 removido\(s\)') ('resumo sem "4 removido(s)": ' + $r2.Saida)
+    foreach ($k in $ExtraVelhos.Keys) { Afirmar ($r2.Saida -match ('removido\s+' + [regex]::Escape($k))) "resumo nao lista $k" }
+    Afirmar ($r2.Saida -match 'Removidos: 4 arquivo\(s\); diretorios que ficaram vazios removidos: 2') ('mensagem de remocao: ' + $r2.Saida)
+    $m2 = Get-ManLinhas $a
+    Afirmar ($m2.Count -eq 5 -and $m2 -contains 'app/novo2.php' -and -not ($m2 -contains 'app/velho.php') -and -not ($m2 -contains 'app/so_servidor.php')) ('manifesto novo: ' + ($m2 -join '|'))
+    $bks = @(Get-Backups $a); Afirmar ($bks.Count -eq 1) ('backups: ' + $bks.Count)
+    $lst = Get-TarLista $bks[0].FullName
+    foreach ($k in $ExtraVelhos.Keys) { Afirmar ($lst -contains $k) "backup nao contem o removido $k" }
+    Afirmar ($lst -contains '.deploy/manifesto_anterior.txt') ('backup sem o manifesto anterior: ' + ($lst -join '|'))
+    $mb = Get-TarTexto $bks[0].FullName '.deploy/manifesto.txt'
+    Afirmar ($mb -match '(?m)^R app/velho\.php$' -and $mb -match '(?m)^R app/Srv/Sub/y\.php$' -and $mb -match '(?m)^P 1$') ("manifesto do backup: $mb")
+    $ant = Get-TarTexto $bks[0].FullName '.deploy/manifesto_anterior.txt'
+    Afirmar ((($ant -split "`n") | Where-Object { $_ }).Count -eq 8 -and $ant -match 'app/velho\.php') ('manifesto anterior no backup: ' + $ant)
+    # o conteudo guardado no backup e o do arquivo removido
+    $dir = Join-Path $a.Base 'extr'; $null = New-Item -ItemType Directory -Path $dir -Force
+    & $script:Bash -c "tar --force-local -xzf '$(ConvertTo-Misto $bks[0].FullName)' -C '$(ConvertTo-Misto $dir)' app/velho.php"
+    Afirmar ((Get-Sha (Join-Path $dir 'app\velho.php')) -eq $conteudos['app/velho.php']) 'conteudo do removido no backup difere'
+    Afirmar ((Get-Content -Raw (Join-Path $a.DepW 'deploy.log')) -match 'REMOVIDOS 4 arquivo') 'deploy.log sem a linha de remocao'
+    Afirmar ($man1 -ne (Get-ManSha $a)) 'manifesto nao mudou'
+} $true
+
+Caso 'B18' '--rollback restaura os removidos byte a byte e o manifesto anterior (e volta a "sem manifesto" no rollback da primeira execucao)' {
+    $a = New-Arvore
+    $zip1 = Join-Path $a.Base 'r1.zip'; $sha1 = New-ZipOk $zip1
+    $r1 = Invoke-Deploy $a $zip1 $sha1
+    Afirmar ($r1.Codigo -eq 0 -and $r1.Saida -match 'PRIMEIRA EXECUCAO') ("deploy 1 (primeira execucao): " + $r1.Codigo + ": " + $r1.Saida)
+    Initialize-Velhos $a
+    $h1 = Get-HashArvore $a.AppW; $m1 = Get-ManSha $a
+    $zip2 = Join-Path $a.Base 'r2.zip'; $sha2 = New-ZipOk $zip2 @{ 'app/novo2.php' = "<?php echo 2;`n" }
+    $r2 = Invoke-Deploy $a $zip2 $sha2
+    Afirmar ($r2.Codigo -eq 0 -and $r2.Saida -match ', 4 removido\(s\)') ("deploy 2: " + $r2.Codigo + ": " + $r2.Saida)
+    Afirmar ((Get-HashArvore $a.AppW) -ne $h1 -and $m1 -ne (Get-ManSha $a)) 'deploy 2 nao mudou arvore e manifesto'
+    $rb = Invoke-Remoto @{ APP_DIR = $a.App; DEPLOY_DIR = $a.Dep } @('--rollback')
+    Afirmar ($rb.Codigo -eq 0) ("rollback: " + $rb.Codigo + ": " + $rb.Saida)
+    Afirmar ($rb.Saida -match 'dos quais 4 removidos pelo deploy') ('contagem de restaurados: ' + $rb.Saida)
+    Afirmar ((Get-HashArvore $a.AppW) -eq $h1) 'rollback nao restaurou a arvore (incluindo os removidos) byte a byte'
+    Afirmar ((Get-ManSha $a) -eq $m1) 'rollback nao restaurou o manifesto anterior'
+    Afirmar ($rb.Saida -match 'Manifesto de deploy anterior restaurado') ('mensagem do manifesto: ' + $rb.Saida)
+    # rollback do deploy 1 (primeira execucao: nao havia manifesto): volta a "sem manifesto"
+    $bk1 = ((Get-Backups $a | Sort-Object Name | Select-Object -First 1).BaseName) -replace '\.tar$', ''
+    $rb1 = Invoke-Remoto @{ APP_DIR = $a.App; DEPLOY_DIR = $a.Dep } @('--rollback', $bk1)
+    Afirmar ($rb1.Codigo -eq 0) ("rollback do deploy 1: " + $rb1.Codigo + ": " + $rb1.Saida)
+    Afirmar ((Get-ManSha $a) -eq 'AUSENTE' -and $rb1.Saida -match 'Manifesto de deploy removido') 'rollback da primeira execucao nao removeu o manifesto'
+} $true
+
+Caso 'B19' 'falha de lint apos a remocao: rollback automatico restaura o removido byte a byte e o manifesto' {
+    $a = New-Arvore
+    Initialize-Velhos $a
+    $h1 = Get-HashArvore $a.AppW; $m1 = Get-ManSha $a
+    $zip2 = Join-Path $a.Base 'r2.zip'; $sha2 = New-ZipOk $zip2 @{ 'app/quebrado.php' = "<?php echo ;`n" }
+    $r2 = Invoke-Deploy $a $zip2 $sha2
+    Afirmar ($r2.Codigo -eq 3) ("esperado 3, obtido " + $r2.Codigo + ": " + $r2.Saida)
+    Afirmar ($r2.Saida -match 'Removidos: 4 arquivo') 'a remocao nao aconteceu antes do lint (teste sem efeito)'
+    Afirmar ($r2.Saida -match 'Lint falhou em app/quebrado\.php') 'lint nao falhou onde deveria'
+    Afirmar ((Get-HashArvore $a.AppW) -eq $h1) 'arvore diferente do estado anterior (removidos nao voltaram byte a byte)'
+    Afirmar ((Get-ManSha $a) -eq $m1) 'manifesto mudou apesar do rollback'
+    Afirmar ((Get-Content -Raw (Join-Path $a.DepW 'deploy.log')) -match 'ROLLBACK automatico concluido') 'log sem rollback automatico'
+    Afirmar ((Get-Backups $a).Count -eq 1) 'esperado o backup do deploy que falhou'
+} $true
+
+Caso 'B20' 'dry-run lista "removeria" e nao altera nada (nem manifesto, nem DEPLOY_DIR)' {
+    $a = New-Arvore
+    Initialize-Velhos $a
+    $zip2 = Join-Path $a.Base 'r2.zip'; $sha2 = New-ZipOk $zip2 @{ 'app/novo2.php' = "<?php echo 2;`n" }
+    $hA = Get-HashArvore $a.AppW; $hD = Get-HashArvore $a.DepW
+    $r = Invoke-Deploy $a $zip2 $sha2 @('--dry-run')
+    Afirmar ($r.Codigo -eq 0) ("dry-run: " + $r.Codigo + ": " + $r.Saida)
+    foreach ($k in $ExtraVelhos.Keys) { Afirmar ($r.Saida -match ('removeria\s+' + [regex]::Escape($k))) "dry-run nao lista 'removeria $k'" }
+    Afirmar ($r.Saida -match 'novo\s+app/novo2\.php' -and $r.Saida -match ', 4 removido\(s\)' -and -not ($r.Saida -match '\sremovido\s+app/')) 'lista de modificados/novos/removidos incorreta'
+    Afirmar ((Get-HashArvore $a.AppW) -eq $hA) 'dry-run alterou APP_DIR'
+    Afirmar ((Get-HashArvore $a.DepW) -eq $hD) 'dry-run alterou DEPLOY_DIR (manifesto, backups ou log)'
+} $true
+
+Caso 'B21' 'manifesto adulterado (db.php, data/x, ../x, ...) nao remove nada e aborta com 2; -SemRemocao nao le o manifesto' {
+    $a = New-Arvore
+    Write-Texto "$($a.AppW)\data\x" "dado`n"
+    Write-Texto "$($a.Base)\x" "fora de APP_DIR`n"
+    Write-Php "$($a.AppW)\app\velho.php" 'v'
+    $ruins = @('config/db.php', 'config/secrets.local.php', 'data/x', '../x', 'app/../../x', '/etc/passwd', 'app\x.php', 'app', 'lib/x.php', 'app//x.php')
+    Set-ManLinhas $a (@('app/velho.php') + $ruins)
+    $zip2 = Join-Path $a.Base 'r2.zip'; $sha2 = New-ZipOk $zip2 @{ 'app/novo2.php' = "<?php echo 2;`n" }
+    $h = Get-HashArvore $a.AppW; $fora = Get-Sha (Join-Path $a.Base 'x'); $m0 = Get-ManSha $a
+    $r = Invoke-Deploy $a $zip2 $sha2
+    Afirmar ($r.Codigo -eq 2) ("esperado 2, obtido " + $r.Codigo + ": " + $r.Saida)
+    Afirmar ($r.Saida -match '10 entrada\(s\) recusada\(s\)') ('contagem de entradas recusadas: ' + $r.Saida)
+    foreach ($ruim in $ruins) {
+        $esp = $ruim.Replace('\', '\\')   # printf %q duplica a barra invertida
+        Afirmar ($r.Saida.Contains("entrada recusada: $esp")) ("a entrada '$ruim' nao foi recusada: " + $r.Saida)
+    }
+    Afirmar (-not ($r.Saida -match 'entrada recusada: app/velho\.php')) 'recusou a entrada legitima'
+    Afirmar ((Get-HashArvore $a.AppW) -eq $h) 'a arvore mudou (algo foi removido ou aplicado)'
+    Afirmar ((Get-Backups $a).Count -eq 0) 'criou backup'
+    Afirmar ((Get-Sha (Join-Path $a.Base 'x')) -eq $fora) 'tocou em arquivo fora de APP_DIR'
+    foreach ($p in 'config\db.php', 'config\secrets.local.php', 'data\x', 'app\velho.php') { Afirmar (Test-Path -LiteralPath (Join-Path $a.AppW $p)) "$p sumiu" }
+    Afirmar ((Get-ManSha $a) -eq $m0) 'o abort alterou o manifesto'
+    # --sem-remocao nao le o manifesto: o mesmo manifesto adulterado nao impede o deploy
+    $rs = Invoke-Deploy $a $zip2 $sha2 @('--sem-remocao')
+    Afirmar ($rs.Codigo -eq 0 -and (Test-Path -LiteralPath (Join-Path $a.AppW 'app\velho.php')) -and (Get-ManSha $a) -eq $m0) ('--sem-remocao com manifesto adulterado: ' + $rs.Codigo + ': ' + $rs.Saida)
+} $true
+
+Caso 'B22' 'trava: mais de 60 orfaos (padrao), limite configuravel, menos de 50% do manifesto; -PermitirRemocaoGrande ultrapassa' {
+    $zip = Join-Path $T 'b22.zip'; $sha = New-ZipOk $zip
+    # (a) padrao 60: manifesto com 62 orfaos (inexistentes no servidor); tambem fere os 50%
+    $a = New-Arvore
+    Set-ManLinhas $a ($PkgBase + @(1..62 | ForEach-Object { 'app/orfao{0:000}.php' -f $_ }))
+    $h = Get-HashArvore $a.AppW; $hm = Get-ManSha $a
+    $r = Invoke-Deploy $a $zip $sha
+    Afirmar ($r.Codigo -eq 2 -and $r.Saida -match '62 orfao\(s\) para remover \(limite 60\)') ('padrao 60: ' + $r.Codigo + ': ' + $r.Saida)
+    Afirmar ((Get-HashArvore $a.AppW) -eq $h -and (Get-ManSha $a) -eq $hm) 'a trava alterou arvore ou manifesto'
+    Afirmar ((Get-Backups $a).Count -eq 0) 'a trava criou backup'
+    # (b) so a quantidade: 3 orfaos reais; limite 2 aborta, limite 3 (igual) remove
+    $b = New-Arvore
+    foreach ($i in 1..3) { Write-Php "$($b.AppW)\app\o$i.php" "o$i" }
+    Set-ManLinhas $b ($PkgBase + @('app/o1.php', 'app/o2.php', 'app/o3.php'))
+    $hb = Get-HashArvore $b.AppW
+    $rb = Invoke-Deploy $b $zip $sha @('--limite-remocao', '2')
+    Afirmar ($rb.Codigo -eq 2 -and $rb.Saida -match 'limite 2' -and -not ($rb.Saida -match '50%')) ('limite 2: ' + $rb.Codigo + ': ' + $rb.Saida)
+    Afirmar ((Get-HashArvore $b.AppW) -eq $hb) 'limite 2 alterou a arvore'
+    $rb3 = Invoke-Deploy $b $zip $sha @('--limite-remocao', '3')
+    Afirmar ($rb3.Codigo -eq 0 -and -not (Test-Path (Join-Path $b.AppW 'app\o1.php')) -and -not (Test-Path (Join-Path $b.AppW 'app\o3.php'))) ('limite 3 deveria remover: ' + $rb3.Codigo + ': ' + $rb3.Saida)
+    # (c) 50%: manifesto com 9 arquivos, pacote com 4 (5 orfaos, abaixo do limite); -PermitirRemocaoGrande ultrapassa
+    $c = New-Arvore
+    foreach ($i in 1..5) { Write-Php "$($c.AppW)\app\p$i.php" "p$i" }
+    Set-ManLinhas $c ($PkgBase + @(1..5 | ForEach-Object { "app/p$_.php" }))
+    $hc = Get-HashArvore $c.AppW
+    $rc = Invoke-Deploy $c $zip $sha
+    Afirmar ($rc.Codigo -eq 2 -and $rc.Saida -match 'menos de 50% dos 9' -and -not ($rc.Saida -match 'limite 60')) ('50%: ' + $rc.Codigo + ': ' + $rc.Saida)
+    Afirmar ((Get-HashArvore $c.AppW) -eq $hc) '50% alterou a arvore'
+    $rcg = Invoke-Deploy $c $zip $sha @('--permitir-remocao-grande')
+    Afirmar ($rcg.Codigo -eq 0 -and -not (Test-Path (Join-Path $c.AppW 'app\p1.php')) -and -not (Test-Path (Join-Path $c.AppW 'app\p5.php'))) ('50% com permitir: ' + $rcg.Codigo + ': ' + $rcg.Saida)
+} $true
+
+Caso 'B23' '-SemRemocao: nao remove e mantem o manifesto como esta; combinacoes invalidas recusadas' {
+    $a = New-Arvore
+    Initialize-Velhos $a
+    $m1 = Get-ManSha $a
+    $zip2 = Join-Path $a.Base 'r2.zip'; $sha2 = New-ZipOk $zip2 @{ 'app/novo2.php' = "<?php echo 2;`n" }
+    $r = Invoke-Deploy $a $zip2 $sha2 @('--sem-remocao')
+    Afirmar ($r.Codigo -eq 0 -and $r.Saida -match 'DESLIGADA') ('sem-remocao: ' + $r.Codigo + ': ' + $r.Saida)
+    foreach ($k in $ExtraVelhos.Keys) { Afirmar (Test-Path -LiteralPath (Join-Path $a.AppW ($k.Replace('/', '\')))) "$k foi removido com --sem-remocao" }
+    Afirmar (Test-Path (Join-Path $a.AppW 'app\novo2.php')) 'o deploy normal nao foi aplicado'
+    Afirmar ((Get-ManSha $a) -eq $m1) 'o manifesto mudou com --sem-remocao'
+    Afirmar ($r.Saida -match ', 0 removido\(s\)') 'resumo sem a contagem'
+    $x = Invoke-Remoto @{ APP_DIR = $a.App; DEPLOY_DIR = $a.Dep } @('--sem-remocao', '--permitir-remocao-grande', (ConvertTo-Misto $zip2), $sha2)
+    Afirmar ($x.Codigo -eq 2) ('combinacao invalida: ' + $x.Codigo)
+    $y = Invoke-Remoto @{ APP_DIR = $a.App; DEPLOY_DIR = $a.Dep } @('--rollback', '--sem-remocao')
+    Afirmar ($y.Codigo -eq 2) ('--sem-remocao com --rollback: ' + $y.Codigo)
+} $true
+
+Caso 'B24' 'so remocoes (servidor ja igual ao pacote): rmdir de vazios, nao vazio fica, pasta-raiz e dir vazio nao relacionado ficam; rollback devolve tudo' {
+    $a = New-Arvore
+    # servidor identico ao pacote (nada modificado nem novo): so ha orfaos
+    Write-Texto "$($a.AppW)\app\a.php" "<?php echo `"novo`";`n"
+    Write-Texto "$($a.AppW)\app\novo.php" "<?php echo 2;`n"
+    Write-Texto "$($a.AppW)\deploy\remoto\x.sh" "#!/bin/bash`necho x`n"
+    foreach ($p in 'app\Srv\Sub\y.php', 'app\Srv\x.php', 'app\Keep\z.php', 'db\unico.php') { Write-Php (Join-Path $a.AppW $p) 'q' }
+    Write-Php "$($a.AppW)\app\Keep\so_servidor.php" 's'
+    $null = New-Item -ItemType Directory -Path "$($a.AppW)\app\vazio_antigo" -Force
+    $zip = Join-Path $a.Base 'r.zip'; $sha = New-ZipOk $zip
+    Set-ManLinhas $a ($PkgBase + @('app/Srv/Sub/y.php', 'app/Srv/x.php', 'app/Keep/z.php', 'db/unico.php'))
+    $sv = Get-Sha "$($a.AppW)\app\Keep\so_servidor.php"
+    $h0 = Get-HashArvore $a.AppW
+    $r = Invoke-Deploy $a $zip $sha
+    Afirmar ($r.Codigo -eq 0 -and -not ($r.Saida -match 'Nada a aplicar')) ("deploy: " + $r.Codigo + ": " + $r.Saida)
+    Afirmar ($r.Saida -match 'Resumo: 0 modificado\(s\), 0 novo\(s\)') ('esperado so remocoes: ' + $r.Saida)
+    Afirmar (-not (Test-Path "$($a.AppW)\app\Srv")) 'app/Srv e app/Srv/Sub (vazios) deveriam ter sido removidos'
+    Afirmar ((Test-Path "$($a.AppW)\app\Keep\so_servidor.php") -and (Get-Sha "$($a.AppW)\app\Keep\so_servidor.php") -eq $sv) 'app/Keep (nao vazio) deveria ficar intacto'
+    Afirmar (-not (Test-Path "$($a.AppW)\app\Keep\z.php")) 'app/Keep/z.php (orfao) deveria sumir'
+    Afirmar ((Test-Path "$($a.AppW)\db") -and @(Get-ChildItem "$($a.AppW)\db" -Force).Count -eq 0) 'a pasta-raiz db deveria ficar (vazia)'
+    Afirmar (Test-Path "$($a.AppW)\app\vazio_antigo") 'dir vazio sem relacao com a remocao foi apagado'
+    Afirmar ($r.Saida -match 'Removidos: 4 arquivo\(s\); diretorios que ficaram vazios removidos: 2') ('contagem: ' + $r.Saida)
+    Afirmar ((Get-ManLinhas $a).Count -eq 4) 'manifesto novo deveria ter so os 4 do pacote'
+    # rollback devolve tudo, inclusive os diretorios
+    $rb = Invoke-Remoto @{ APP_DIR = $a.App; DEPLOY_DIR = $a.Dep } @('--rollback')
+    Afirmar ($rb.Codigo -eq 0) ('rollback: ' + $rb.Codigo + ': ' + $rb.Saida)
+    Afirmar ((Get-HashArvore $a.AppW) -eq $h0) 'rollback nao devolveu a arvore (arquivos e diretorios) ao estado anterior'
+} $true
+
+Caso 'B25' 'orfao que virou diretorio: aborta com 2 sem remover nada' {
+    $a = New-Arvore
+    $zip = Join-Path $a.Base 'r.zip'; $sha = New-ZipOk $zip
+    Write-Php "$($a.AppW)\app\o1.php" 'o'
+    $null = New-Item -ItemType Directory -Path "$($a.AppW)\app\virou_dir.php" -Force
+    Set-ManLinhas $a ($PkgBase + @('app/o1.php', 'app/virou_dir.php'))
+    $h = Get-HashArvore $a.AppW
+    $r = Invoke-Deploy $a $zip $sha
+    Afirmar ($r.Codigo -eq 2 -and $r.Saida -match 'nao e arquivo regular') ('diretorio no lugar do orfao: ' + $r.Codigo + ': ' + $r.Saida)
+    Afirmar ((Get-HashArvore $a.AppW) -eq $h) 'removeu algo apesar do abort'
+} $true
+
+Caso 'B26' 'validar_base (extraida do script) com caminhos de estilo Linux' {
+    $txt = [System.IO.File]::ReadAllText((Join-Path $PSScriptRoot 'remoto\aplicar_release.sh'))
+    $m = [regex]::Match($txt, '(?ms)^validar_base\(\) \{.*?^\}')
+    Afirmar $m.Success 'funcao validar_base nao encontrada no script'
+    $aceitos = @('/apps/metricas_jca', '/apps/_deploy', '/apps/a/b/c', 'C:/x/y')
+    $recusados = @('/var/x/y', '/var/lib', '/tmp/x/y', '/apps/../x', '/apps/x/..', '/apps//x', '/apps', '/apps/', '/apps/x/', '/', '', 'relativo/x', '/apps/a b/c', '/apps/a;b/c')
+    $sb = New-Object System.Text.StringBuilder
+    [void]$sb.Append("erro() { :; }`n" + $m.Value + "`n")
+    [void]$sb.Append("t() { if validar_base T `"`$1`" >/dev/null 2>&1; then echo `"OK|`$1`"; else echo `"NO|`$1`"; fi; }`n")
+    foreach ($c in ($aceitos + $recusados)) { [void]$sb.Append("t '" + $c + "'`n") }
+    $sh = Join-Path $T 'validar_base_teste.sh'
+    Write-Texto $sh $sb.ToString()
+    $salvo = [Environment]::GetEnvironmentVariable('MSYS_NO_PATHCONV')
+    try { [Environment]::SetEnvironmentVariable('MSYS_NO_PATHCONV', '1'); $out = @(& $script:Bash (ConvertTo-Misto $sh) 2>&1 | ForEach-Object { "$_" }) } finally { [Environment]::SetEnvironmentVariable('MSYS_NO_PATHCONV', $salvo) }
+    foreach ($c in $aceitos) { Afirmar ($out -contains "OK|$c") "deveria ACEITAR '$c': $($out -join ' ')" }
+    foreach ($c in $recusados) { Afirmar ($out -contains "NO|$c") "deveria RECUSAR '$c': $($out -join ' ')" }
 } $true
 
 } finally {

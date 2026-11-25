@@ -27,6 +27,12 @@
 .PARAMETER Forcar        permite working tree sujo (avisa em vez de abortar).
 .PARAMETER LimparCache   forca a limpeza do cache de resposta.
 .PARAMETER ManterCache   nao limpa o cache.
+.PARAMETER SemRemocao    nesta execucao nao remove do servidor os arquivos que sairam do repositorio
+                         (o manifesto do ultimo deploy fica como esta). Padrao: a remocao esta LIGADA,
+                         sempre com backup; so remove o que um deploy anterior colocou la.
+.PARAMETER PermitirRemocaoGrande  ignora a trava de seguranca (mais de 60 orfaos, ou pacote com menos de
+                         50% dos arquivos do deploy anterior). Use so se a remocao grande for intencional.
+.PARAMETER LimiteRemocao limite de orfaos da trava (padrao do servidor: 60).
 .PARAMETER SomentePacote monta e verifica o pacote, imprime o caminho e termina.
 .PARAMETER Sim           nao pede confirmacao.
 .PARAMETER SemChecagemEspaco  pula a consulta previa (1 ssh extra) ao espaco livre de /tmp no servidor.
@@ -48,6 +54,9 @@ param(
     [switch]$Forcar,
     [switch]$LimparCache,
     [switch]$ManterCache,
+    [switch]$SemRemocao,
+    [switch]$PermitirRemocaoGrande,
+    [int]$LimiteRemocao = 0,
     [switch]$SomentePacote,
     [switch]$Sim,
     [switch]$SemChecagemEspaco,
@@ -349,6 +358,9 @@ function Invoke-Principal {
     if ($Timestamp -and $Timestamp -notmatch '^[0-9]{8}-[0-9]{6}$') { Stop-Deploy "Timestamp invalido (use AAAAMMDD-HHMMSS): $Timestamp" 2 }
     if ($Timestamp -and -not $Rollback) { Stop-Deploy '-Timestamp so vale com -Rollback.' 2 }
     if ($LimparCache -and $ManterCache) { Stop-Deploy 'Use -LimparCache ou -ManterCache, nao os dois.' 2 }
+    if ($SemRemocao -and $PermitirRemocaoGrande) { Stop-Deploy 'Use -SemRemocao ou -PermitirRemocaoGrande, nao os dois.' 2 }
+    if ($Rollback -and ($SemRemocao -or $PermitirRemocaoGrande -or $LimiteRemocao -ne 0)) { Stop-Deploy '-SemRemocao, -PermitirRemocaoGrande e -LimiteRemocao so valem no deploy (nao com -Rollback).' 2 }
+    if ($LimiteRemocao -lt 0 -or $LimiteRemocao -gt 999999) { Stop-Deploy '-LimiteRemocao invalido (use 1 a 999999).' 2 }
     if ($Rollback -and $SomentePacote) { Stop-Deploy '-Rollback e -SomentePacote nao combinam.' 2 }
     if (-not $SmokeUrl -and $cfg.SmokeUrl)   { $script:SmokeUrl = $cfg.SmokeUrl }
     if (-not $SmokeHost -and $cfg.SmokeHost) { $script:SmokeHost = $cfg.SmokeHost }
@@ -423,6 +435,9 @@ function Invoke-Principal {
     } else {
         if ($LimparCache) { $opcoes.Add('--limpar-cache') }
         if ($ManterCache) { $opcoes.Add('--manter-cache') }
+        if ($SemRemocao) { $opcoes.Add('--sem-remocao') }
+        if ($PermitirRemocaoGrande) { $opcoes.Add('--permitir-remocao-grande') }
+        if ($LimiteRemocao -gt 0) { $opcoes.Add('--limite-remocao'); $opcoes.Add([string]$LimiteRemocao) }
         if ($SmokeUrl)  { $opcoes.Add('--smoke-url'); $opcoes.Add($SmokeUrl) }
         if ($SmokeHost) { $opcoes.Add('--smoke-host'); $opcoes.Add($SmokeHost) }
         $opcoes.Add($remotoZip)
@@ -438,6 +453,8 @@ function Invoke-Principal {
         Write-Host "Referencia: $Referencia ($($sha.Substring(0, 7)))"
         Write-Host "SHA256:     $sha256"
         Write-Host ("Tamanho:    {0:N0} bytes" -f $tamanho)
+        $remTxt = if ($SemRemocao) { 'DESLIGADA (-SemRemocao)' } elseif ($PermitirRemocaoGrande) { 'ligada, SEM a trava de quantidade (-PermitirRemocaoGrande)' } else { 'ligada (so orfaos de deploy anterior, com backup)' }
+        Write-Host "Remocao:    $remTxt"
     }
     Write-Host ''
     if (-not $DryRun -and -not $Sim) {
