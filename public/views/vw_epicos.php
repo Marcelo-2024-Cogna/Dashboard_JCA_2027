@@ -6,6 +6,7 @@
  * SP total) por épico. Dados via /extract.
  */
 ?>
+<div class="alert alert-warn" role="status">Aviso: Módulo Pendente!</div>
 <div id="ep-root">
   <div class="loading"><div class="spinner"></div> Carregando épicos...</div>
 </div>

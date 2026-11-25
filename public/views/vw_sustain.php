@@ -7,6 +7,7 @@
  * Dados via /extract.
  */
 ?>
+<div class="alert alert-warn" role="status">Aviso: Módulo Pendente!</div>
 <div id="su-root">
   <div class="loading"><div class="spinner"></div> Carregando sustentação...</div>
 </div>

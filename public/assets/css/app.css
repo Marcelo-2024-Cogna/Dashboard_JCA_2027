@@ -211,6 +211,7 @@ tbody td { padding: 8px 13px; }
 .alert-error { background: rgba(244,63,94,.1); border: 1px solid var(--rose); color: #fda4af; }
 .alert-ok { background: rgba(16,185,129,.1); border: 1px solid var(--green); color: #6ee7b7; }
 .alert-info { background: rgba(99,102,241,.1); border: 1px solid var(--indigo); color: #a5b4fc; }
+.alert-warn { background: rgba(245,158,11,.1); border: 1px solid var(--amber); color: #fcd34d; }
 
 /* ── Badges de status ── */
 .bs { display: inline-block; padding: 2px 9px; border-radius: 20px; font-size: .68rem; font-weight: 600; }
