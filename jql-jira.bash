@@ -1,5 +1,6 @@
 # JQL de pesquisas - usados em Filtros dos dahboard por times.
 # Parametrizados por times, sprints e versões corrigidas em alguns casos
+# São exeplos que as jornadas usam para seus times em seus dashboards
 
 #FILTRO: Listar Solicitações por sprint
 project = SGSE AND issuetype in("Solicitação de Serviço") AND sprint in opensprints()
@@ -52,7 +53,7 @@ project = SGSE and issuetype in standardIssueTypes() AND Sprint in("SP 26.4.2")
 project = SGSE and issuetype in standardIssueTypes() and Sprint in ("SP 26.4.3") and Sprint in ("SP 26.4.2")
 
 #FILTRO: Listar todos Itens alocados na sprint anterior
-project = ADGP AND issuetype in standardIssueTypes() AND fixVersion in unreleasedVersions() AND Sprint in closedSprints() AND Sprint not in(futureSprints()) and "Story Points[Number]" != 0
+project = SGGU AND issuetype in standardIssueTypes() AND fixVersion in unreleasedVersions() AND Sprint in closedSprints() AND Sprint not in(futureSprints()) and "Story Points[Number]" != 0
 
 #FILTRO: Listar todos Itens alocados na sprint atual
-project = ADGP AND issuetype in standardIssueTypes() AND Sprint in openSprints()
+project = SGGU AND issuetype in standardIssueTypes() AND Sprint in openSprints()
