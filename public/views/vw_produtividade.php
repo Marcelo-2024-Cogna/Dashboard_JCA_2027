@@ -296,6 +296,20 @@
     return card;
   }
 
+  // ── Sinalizador D1: h/ponto contra a referência de planejamento do time ──
+  const classificarPd = (valor, refPlan) => window.App.Sinal.classificar('produtividade', valor, refPlan,
+    { motivoSemRef: 'sem referência de planejamento' });
+  const textoSinal = r => (r.nivel === 'neutro'
+    ? (r.motivo === 'sem valor' ? '' : r.motivo) : r.motivo + ' h/pt');
+  // Concatena a dica ao title atual da célula (não substitui)
+  function sinalizar(td, valor, refPlan) {
+    const r = classificarPd(valor, refPlan);
+    const semRef = !(Number(refPlan) > 0);
+    const dica = semRef ? 'sem referência de planejamento' : textoSinal(r);
+    const atual = td.title;
+    window.App.Sinal.aplicar(td, r.nivel, atual && dica ? atual + ' · ' + dica : (dica || atual));
+  }
+
   // ── (3) Tabela ─────────────────────────────────────────────────────────
   function tabela(d) {
     const pis = d.pis, ref = piRef(d);
@@ -332,6 +346,7 @@
     };
     d.por_time.forEach(t => {
       const tr = el('tr');
+      let nivelRef = null;
       const tdn = el('td', null, t.time); tdn.title = t.jornada + ' · ' + t.projeto_key; tr.appendChild(tdn);
       pis.forEach(p => {
         const x = t.por_pi[p.desc_pi];
@@ -341,10 +356,13 @@
             + (x.itens_sp_nulo ? ' · ' + x.itens_sp_nulo + ' sem SP' : '');
           if (x.itens_sp_nulo) td.appendChild(el('span', 'pr-sub', ' ⚠'));
         } else td.title = 'Sem dados neste time e PI';
+        sinalizar(td, x && x.produtividade, t.referencia_planejamento);
+        if (ref && p.desc_pi === ref.desc_pi) nivelRef = classificarPd(x && x.produtividade, t.referencia_planejamento);
       });
       celula(tr, f2(t.referencia_planejamento), '');
       const v = t.variacao_vs_referencia;
-      celula(tr, v ? (v.absoluta > 0 ? '▲ ' : v.absoluta < 0 ? '▼ ' : '') + sinal(v.absoluta) + (v.pct != null ? ' · ' + (v.pct > 0 ? '+' : v.pct < 0 ? '−' : '') + nf1.format(Math.abs(v.pct)) + '%' : '') : '—', '');
+      const tdD = celula(tr, v ? (v.absoluta > 0 ? '▲ ' : v.absoluta < 0 ? '▼ ' : '') + sinal(v.absoluta) + (v.pct != null ? ' · ' + (v.pct > 0 ? '+' : v.pct < 0 ? '−' : '') + nf1.format(Math.abs(v.pct)) + '%' : '') : '—', '');
+      if (nivelRef) window.App.Sinal.aplicar(tdD, nivelRef.nivel, textoSinal(nivelRef));
       const sg = t.sugestao_proxima_pi;
       const tds = celula(tr, sg ? f2(sg.valor) : '—', 'lt-total');
       if (sg) tds.appendChild(el('span', 'pr-sub', ' (' + sg.pi_origem + ')'));
@@ -377,6 +395,9 @@
       + 'Δ = produtividade da PI de referência menos a referência de planejamento (▼ menos horas por ponto que o planejado).');
     nota.style.margin = '8px 4px 0';
     card.appendChild(nota);
+    const leg = el('div', 'pr-sub', window.App.Sinal.legenda('produtividade') + ' Menos horas por ponto é melhor.');
+    leg.style.margin = '4px 4px 0';
+    card.appendChild(leg);
     return card;
   }
 

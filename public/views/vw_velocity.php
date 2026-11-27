@@ -227,6 +227,23 @@
     thead.appendChild(trh); tb.appendChild(thead);
   }
 
+  // Sinalizador B1: classifica concluido/escopo_final e aplica nas células dadas.
+  // O title existente da célula é preservado (a dica é concatenada).
+  function sinalizar(tds, concluido, escopoFinal, emAndamento) {
+    const r = window.App.Sinal.classificar('velocidade', concluido, escopoFinal, { emAndamento: !!emAndamento });
+    const dica = emAndamento ? 'sprint em andamento: ainda sem avaliação'
+      : (r.nivel === 'neutro' ? 'sem avaliação: ' + r.motivo : r.motivo);
+    tds.forEach(td => {
+      const atual = td.title;
+      window.App.Sinal.aplicar(td, r.nivel, atual ? atual + ' · ' + dica : dica);
+    });
+  }
+  function legendaSinal(card) {
+    const l = el('div', 'pr-sub', window.App.Sinal.legenda('velocidade'));
+    l.style.margin = '8px 4px 0';
+    card.appendChild(l);
+  }
+
   function tabelaSprints(d) {
     const { card, tb } = tabelaBase('Pontos por sprint',
       'Pontos por sprint: escopo inicial, adicionado, removido, mudança de escopo, escopo final, concluído, percentual concluído e velocidade média');
@@ -247,8 +264,10 @@
       tr.appendChild(el('td', 'num', fmt(s.removido)));
       tr.appendChild(el('td', 'num', fmtD(s.mudanca_escopo)));
       tr.appendChild(el('td', 'num', fmt(s.escopo_final)));
-      tr.appendChild(el('td', 'num', fmt(s.concluido)));
-      tr.appendChild(el('td', 'num', pct(s.concluido, s.escopo_final)));
+      const tdC = el('td', 'num', fmt(s.concluido));
+      const tdP = el('td', 'num', pct(s.concluido, s.escopo_final));
+      sinalizar([tdC, tdP], s.concluido, s.escopo_final, andamento);
+      tr.append(tdC, tdP);
       tr.appendChild(el('td', 'num', fmt(s.velocidade_media)));
       if (andamento) tr.style.fontStyle = 'italic';
       tbody.appendChild(tr);
@@ -263,10 +282,13 @@
     trf.appendChild(el('td', 'num', fmt(tot.removido)));
     trf.appendChild(el('td', 'num', fmtD(tot.mudanca_escopo)));
     trf.appendChild(el('td', 'num', fmt(tot.escopo_final)));
-    trf.appendChild(el('td', 'num', fmt(tot.concluido)));
-    trf.appendChild(el('td', 'num', pct(tot.concluido, tot.escopo_final)));
+    const tdTC = el('td', 'num', fmt(tot.concluido));
+    const tdTP = el('td', 'num', pct(tot.concluido, tot.escopo_final));
+    sinalizar([tdTC, tdTP], tot.concluido, tot.escopo_final, false);
+    trf.append(tdTC, tdTP);
     trf.appendChild(el('td', 'num', fmt((d.resumo || {}).velocidade_ultimas_n)));
     tf.appendChild(trf); tb.appendChild(tf);
+    legendaSinal(card);
     return card;
   }
 
@@ -324,7 +346,9 @@
     const linha = (tr, x) => {
       tr.appendChild(el('td', 'num', fmt(x.escopo_inicial)));
       tr.appendChild(el('td', 'num', fmt(x.escopo_final)));
-      tr.appendChild(el('td', 'num', fmt(x.concluido)));
+      const tdE = el('td', 'num', fmt(x.concluido));
+      sinalizar([tdE], x.concluido, x.escopo_final, false);
+      tr.appendChild(tdE);
       tr.appendChild(el('td', 'num', fmtD(Math.round((x.concluido - x.escopo_inicial) * 100) / 100)));
     };
     const tbody = el('tbody');
@@ -341,6 +365,7 @@
     trf.append(el('td', null, 'Total da seleção'), el('td', null, ''));
     linha(trf, d.total);
     tf.appendChild(trf); tb.appendChild(tf);
+    legendaSinal(card);
     return card;
   }
 
