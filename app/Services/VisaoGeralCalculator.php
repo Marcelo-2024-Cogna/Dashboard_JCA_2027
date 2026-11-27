@@ -1218,7 +1218,7 @@ class VisaoGeralCalculator
 
         if ($incluidas === []) {
             $motivoVazio = ($sustIgnoradas !== [] && $semDias === [])
-                ? 'Sprint de sustentação: o Debt Load cobre só sprints de valor.'
+                ? 'Sprint de sustentação: a Carga de Dívida cobre só sprints de valor.'
                 : 'Nenhuma sprint do escopo tem dias úteis cadastrados.';
             return $base + [
                 'estado'       => 'vazio',
@@ -2120,6 +2120,60 @@ class VisaoGeralCalculator
             'truncado'              => $truncado,
             'resumo_disponivel_pct' => $totalItens > 0 ? round($comResumo / $totalItens * 100, 2) : null,
             'por_tipo'              => $porTipo,
+        ];
+    }
+
+    /**
+     * Lista dos itens cancelados da PI inteira (mesma população de canceladosPi: qualquer
+     * sprint ou sem sprint, valor + sustentação). Ordem: itens no foco primeiro, depois chave.
+     *
+     * @param list<array> $rows
+     * @param list<string> $refsFoco sprint_ref em foco (mesma regra da parte 'no foco' do card).
+     * @param list<string> $cancelado status de cancelado.
+     * @param array<string,string> $resumos chave => resumo.
+     * @return array lista_cancelados (o repositório acrescenta o rótulo).
+     */
+    public static function listaCancelados(array $rows, array $refsFoco, array $cancelado, array $resumos, int $maxLinhas): array
+    {
+        $flipFoco = array_flip($refsFoco);
+        $linhas = [];
+        $totalSp = 0.0; $comResumo = 0;
+
+        foreach ($rows as $r) {
+            $status = (string) ($r['status'] ?? '');
+            if (!in_array($status, $cancelado, true)) {
+                continue;
+            }
+            $chave = (string) ($r['chave'] ?? '');
+            $totalSp += (float) ($r['story_points'] ?? 0);
+            $resumo = $resumos[$chave] ?? null;
+            if ($resumo !== null) { $comResumo++; }
+            $linhas[] = [
+                'tipo'         => $r['tipo_item'] ?? null,
+                'chave'        => $chave,
+                'pai'          => ($r['pai'] ?? null) === '' ? null : ($r['pai'] ?? null),
+                'resumo'       => $resumo,
+                'status'       => $status,
+                'sprint_maior' => $r['sprint_ref'] ?? null,
+                'sp'           => ($r['story_points'] ?? null) === null ? null : (float) $r['story_points'],
+                'no_foco'      => isset($flipFoco[$r['sprint_ref'] ?? '']),
+            ];
+        }
+
+        usort($linhas, static function (array $a, array $b): int {
+            return [!$a['no_foco'], $a['chave']] <=> [!$b['no_foco'], $b['chave']];
+        });
+
+        $total    = count($linhas);
+        $truncado = $total > $maxLinhas;
+
+        return [
+            'estado'                => 'ok',
+            'itens'                 => array_slice($linhas, 0, $maxLinhas),
+            'total_itens'           => $total,
+            'total_sp'              => round($totalSp, 2),
+            'truncado'              => $truncado,
+            'resumo_disponivel_pct' => $total > 0 ? round($comResumo / $total * 100, 2) : null,
         ];
     }
 

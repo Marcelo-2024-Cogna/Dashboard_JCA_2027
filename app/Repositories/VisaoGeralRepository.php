@@ -411,6 +411,18 @@ class VisaoGeralRepository
         // ── G6b Lista da sprint atual (ou da PI) ────────────────────────
         $listaSprintAtual = $this->gadgetListaSprintAtual($rows, $refsFoco, !$isPi, $piId, $hoje, $escopoLabel, $focoNome);
 
+        // ── Lista dos cancelados da PI (card "Cancelados" da Visão Geral) ─
+        $chavesCanc = [];
+        foreach ($rows as $r) {
+            if (in_array((string) ($r['status'] ?? ''), $cancelado, true)) {
+                $chavesCanc[(string) ($r['chave'] ?? '')] = true;
+            }
+        }
+        $listaCancelados = VisaoGeralCalculator::listaCancelados(
+            $rows, $refsFoco, $cancelado, $this->resumosBaseline($piId, array_keys($chavesCanc)),
+            (int) ($this->config['max_linhas_lista'] ?? 500)
+        ) + ['classe' => 'exato', 'rotulo' => 'PI inteira'];
+
         // ── Efficiency Baseline Ratio ───────────────────────────────────
         $nomesTimes = [];
         foreach ($times as $t) {
@@ -523,18 +535,10 @@ class VisaoGeralRepository
             'chamados'              => $chamados,
             'lista_sprint_anterior' => $listaSprintAnterior,
             'lista_sprint_atual'    => $listaSprintAtual,
+            'lista_cancelados'      => $listaCancelados,
             'efficiency_baseline'   => $efficiency,
             'fator_carga'           => $fatorCarga,
             'debt_load'             => $debtLoad,
-            'sustentacao'           => [
-                'estado' => 'aguardando_modulo',
-                'classe' => 'aguardando_modulo',
-                'gadgets' => [
-                    'Visão da Sustentação na Sprint atual',
-                    'Tempo gastos em tarefas de Sustentação',
-                    'Incidentes/Solicitações da sprint anterior',
-                ],
-            ],
         ];
     }
 
@@ -988,18 +992,10 @@ class VisaoGeralRepository
             'chamados'              => $vazioAprox,
             'lista_sprint_anterior' => $vazioExato,
             'lista_sprint_atual'    => $vazioExato,
+            'lista_cancelados'      => $vazioExato,
             'efficiency_baseline'   => $vazioExato,
             'fator_carga'           => $vazioExato,
             'debt_load'             => $vazioExato,
-            'sustentacao'           => [
-                'estado' => 'aguardando_modulo',
-                'classe' => 'aguardando_modulo',
-                'gadgets' => [
-                    'Visão da Sustentação na Sprint atual',
-                    'Tempo gastos em tarefas de Sustentação',
-                    'Incidentes/Solicitações da sprint anterior',
-                ],
-            ],
         ];
     }
 }

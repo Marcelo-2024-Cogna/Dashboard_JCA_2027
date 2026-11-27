@@ -113,7 +113,7 @@
     // Cabeçalho: título à esquerda, destaque vermelho à direita
     const head = el('div');
     head.style.cssText = 'display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:8px';
-    const h = el('h3', null, 'Team Velocity ');
+    const h = el('h3', null, 'Velocidade do time ');
     h.style.margin = '0';
     h.appendChild(el('span', 'badge', 'Story Points por sprint'));
     h.appendChild(document.createTextNode(' '));
@@ -297,7 +297,7 @@
     const card = el('div', 'ccard');
     card.style.marginTop = '18px';
     const h = el('h3', null, 'Por time ');
-    h.appendChild(el('span', 'badge', 'Story Points Estimate x Story Points entregues'));
+    h.appendChild(el('span', 'badge', 'Story Points estimados x Story Points entregues'));
     h.appendChild(document.createTextNode(' '));
     h.appendChild(window.App.Legenda.botao('velocidade_por_time', MET, { rotulo: 'Velocidade por time' }));
     card.appendChild(h);
@@ -307,12 +307,12 @@
     const cv = document.createElement('canvas');
     cv.id = 'vel-times';
     cv.setAttribute('role', 'img');
-    cv.setAttribute('aria-label', 'Barras agrupadas por time: Story Points Estimate e Story Points entregues. Valores na tabela abaixo.');
+    cv.setAttribute('aria-label', 'Barras agrupadas por time: Story Points estimados e Story Points entregues. Valores na tabela abaixo.');
     wrap.appendChild(cv);
     card.appendChild(wrap);
     const leg = el('div', 'prev-legenda');
     leg.style.justifyContent = 'center';
-    [['Story Points Estimate', '#1f77b4'], ['Story Points entregues', '#2ca02c']].forEach(([n, c]) => {
+    [['Story Points estimados', '#1f77b4'], ['Story Points entregues', '#2ca02c']].forEach(([n, c]) => {
       const sp = el('span'); const i = el('i'); i.style.background = c; sp.append(i, n); leg.appendChild(sp);
     });
     card.appendChild(leg);
@@ -321,7 +321,7 @@
       data: {
         labels: pt.map(t => t.time),
         datasets: [
-          { label: 'Story Points Estimate', data: pt.map(t => t.escopo_inicial), backgroundColor: '#1f77b4' },
+          { label: 'Story Points estimados', data: pt.map(t => t.escopo_inicial), backgroundColor: '#1f77b4' },
           { label: 'Story Points entregues', data: pt.map(t => t.concluido), backgroundColor: '#2ca02c' },
         ],
       },
@@ -338,11 +338,11 @@
   }
 
   function tabelaTimes(d) {
-    const { card, tb } = tabelaBase('Pontos por time', 'Story Points Estimate, escopo final e Story Points entregues por time, com a diferença');
+    const { card, tb } = tabelaBase('Pontos por time', 'Story Points estimados, escopo final e Story Points entregues por time, com a diferença');
     card.firstChild.appendChild(document.createTextNode(' '));
     card.firstChild.appendChild(window.App.Legenda.botao('velocidade_tabela_times', MET, { rotulo: 'Pontos por time' }));
     tb.style.minWidth = '720px';
-    cabecalho(tb, [['Time', ''], ['Jornada', ''], ['Story Points Estimate', 'num'], ['Escopo Final', 'num'], ['Story Points entregues', 'num'], ['Δ entregues − Estimate', 'num']]);
+    cabecalho(tb, [['Time', ''], ['Jornada', ''], ['Story Points estimados', 'num'], ['Escopo Final', 'num'], ['Story Points entregues', 'num'], ['Δ entregues − estimados', 'num']]);
     const linha = (tr, x) => {
       tr.appendChild(el('td', 'num', fmt(x.escopo_inicial)));
       tr.appendChild(el('td', 'num', fmt(x.escopo_final)));
@@ -370,11 +370,10 @@
   }
 
   function rodape(d) {
-    const box = el('div', 'alert alert-info');
+    const box = el('details', 'pr-diag');
     box.style.marginTop = '18px';
-    box.setAttribute('role', 'note');
-    box.appendChild(el('strong', null, 'Como ler esta tela'));
-    const ul = el('ul'); ul.style.cssText = 'margin:6px 0 0;padding-left:18px;font-size:.78rem';
+    box.appendChild(el('summary', null, 'Como ler esta tela'));
+    const ul = el('ul');
     [
       'Unidade: Story Points, nas mesmas categorias do Planejado x Realizado (sustentação e entrega de valor; tipos como Incidente e Bug ficam fora).',
       'Escopo Inicial = Story Point Estimate do PI Planning (baseline) das sprints; Escopo Final = estimativa atual dos itens na sprint (Sprint Planning, sem cancelados); Concluído = Story Points entregues (Aceito, Pendente de Produção, Em produção).',

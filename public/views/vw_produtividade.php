@@ -334,7 +334,7 @@
         p.status === 'corrente' ? 'em andamento · ' + (p.origem === 'ao_vivo' ? 'ao vivo' : 'histórico') : (p.origem === 'ao_vivo' ? 'ao vivo (sprint)' : 'histórico'));
       if (p.referencia) x.title = 'PI de referência';
     });
-    th('Referência (planejamento)', 'num', 'Velocity');
+    th('Referência (planejamento)', 'num', 'Velocidade');
     th('Δ ' + (ref ? ref.desc_pi : 'PI') + ' vs referência', 'num', 'h/pt · %');
     th('Sugestão p/ próxima PI', 'num', 'PI de origem');
     thead.appendChild(trh); tb.appendChild(thead);
@@ -407,13 +407,15 @@
     box.appendChild(el('summary', null, 'Como ler este gráfico'));
     const ul = el('ul');
     [
-      'Produtividade = horas gastas ÷ pontos entregues, considerando só itens de entrega de valor entregues (Aceito, Pendente de Produção, Em produção). Item sem Story Points não usa o estimate: fica fora dos pontos.',
+      'Gráfico "Total em horas para entregar 1 ponto" (barra única): a produtividade da ' + (new Set((d.por_time || []).map(t => t.jornada)).size > 1 ? 'seleção' : 'jornada') + ' na PI de referência' + (ref ? ' (' + ref.desc_pi + ')' : '') + ', em horas por ponto. É a soma das horas de todos os times dividida pela soma dos pontos, e a etiqueta ao lado do título informa se a PI é ao vivo ou histórica.',
+      'Gráfico "Total em horas para entregar 1 ponto" (por time): colunas agrupadas por time, com uma série (cor) para cada PI, em ordem cronológica. Menos horas por ponto é melhor; um traço (—) indica time sem dados naquela PI, e não zero. Ao passar o mouse aparecem as horas, os pontos e se o valor é ao vivo ou histórico.',
+      'Produtividade = horas gastas ÷ pontos entregues, considerando só itens de entrega de valor entregues (Aceito, Pendente de Produção, Em produção). Item sem Story Points não usa a estimativa: fica fora dos pontos.',
       'Média da jornada ponderada: Σ horas ÷ Σ pontos de todos os times da seleção na PI. Times com mais pontos pesam mais; não é a média simples dos times.',
       'Origem dos valores: PIs fechadas vêm do histórico consolidado (produtividade_historico, gravado por bin/consolidar_produtividade.php). '
         + 'A PI de referência' + (ref ? ' (' + ref.desc_pi + ')' : '') + ', quando está em andamento, é calculada ao vivo pela extração, só com as sprints de valor fechadas da janela. '
         + 'Se você escolhe uma sprint no filtro, a PI de referência é recalculada ao vivo só para essa sprint; as demais PIs não mudam.',
       'Colunas: PIs em ordem cronológica até a PI de referência (filtro Versão; padrão = PI corrente), só as que têm dados para a seleção.',
-      'Referência (planejamento): h/ponto planejado na Velocity de cada time (times_composicao).',
+      'Referência (planejamento): h/ponto planejado na Velocidade de cada time (times_composicao).',
     ].forEach(t => ul.appendChild(el('li', null, t)));
     box.appendChild(ul);
     const nota = el('div', 'alert alert-info');

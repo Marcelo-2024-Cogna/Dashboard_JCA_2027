@@ -396,6 +396,26 @@
     return box;
   }
 
+  // Bloco informativo recolhível (mesmo padrão details/summary dos demais blocos da tela)
+  function comoLer() {
+    const det = el('details', 'pr-diag');
+    det.style.marginTop = '18px';
+    det.appendChild(el('summary', null, 'Como ler este gráfico'));
+    const ul = el('ul');
+    [
+      'O gráfico tem quatro barras horizontais, empilhadas por categoria: Sustentação, Entrega de Valor (sem épico), Entrega de Valor (com épico) e, só na Velocidade, Capacidade. O número à direita de cada barra é o total em pontos.',
+      'Velocidade: capacidade planejada dos times (devs × horas × dias úteis da sprint ÷ produtividade média da PI), dividida em Sustentação e Capacidade. Vem de cadastros, não de itens do Jira, e não é a Velocidade da tela Velocidade.',
+      'PI Planning: SPE da baseline dos itens cuja sprint no PI Planning está na janela. É o que foi comprometido no início da PI.',
+      'Sprint Planning: SPE de hoje dos itens cuja sprint atual está na janela, sem os cancelados. Mostra como o escopo ficou depois de novas histórias, cancelamentos e remanejamentos.',
+      'Entregues: SP atuais dos itens com status de Done cuja sprint atual está na janela.',
+      'O Δ ao lado de Sprint Planning e de Entregues é a diferença para a barra anterior: Sprint Planning menos PI Planning, e Entregues menos Sprint Planning. As três primeiras barras formam o grupo Planejado e Entregues forma o grupo Entregue.',
+      'Os cartões acima repetem o total de cada barra e o percentual em relação à barra anterior. A tabela "Pontos por barra" traz os pontos de cada categoria e a tabela "Pontos por time" abre o resultado por time (S = sustentação, SE = valor sem épico, CE = valor com épico, C = capacidade).',
+      'As barras misturam medidas diferentes: Velocidade em pontos de capacidade, PI Planning e Sprint Planning em SPE, Entregues em SP. Os Δ são uma comparação aproximada.',
+    ].forEach(t => ul.appendChild(el('li', null, t)));
+    det.appendChild(ul);
+    return det;
+  }
+
   function render(d) {
     MET = d.metodologia || null;
     root.textContent = '';
@@ -427,6 +447,7 @@
     root.appendChild(tabelaPontos(d));
     root.appendChild(tabelaTimes(d));
     root.appendChild(diagnosticos(d));
+    root.appendChild(comoLer());
   }
 
   async function load() {

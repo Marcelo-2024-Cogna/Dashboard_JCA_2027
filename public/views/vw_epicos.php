@@ -18,7 +18,7 @@
   <div class="stitle" style="margin-top:22px">Distribuição</div>
   <div class="cgrid c2">
     <div class="ccard">
-      <h3>Top Épicos por Story Points <span class="badge">total planejado</span></h3>
+      <h3>Principais épicos por Story Points <span class="badge">total planejado</span></h3>
       <div class="cwrap tall"><canvas id="ep-sp"></canvas></div>
     </div>
     <div class="ccard">
@@ -61,7 +61,7 @@
     cheia(3, window.App.Legenda.botao('ep_nao_iniciados', MET, op('Épicos não iniciados', true)));
     const tit = id => { const c = document.getElementById(id); return c && c.closest('.ccard') ? c.closest('.ccard').querySelector('h3') : null; };
     const hSp = tit('ep-sp'), hProg = tit('ep-prog');
-    if (hSp) { hSp.appendChild(document.createTextNode(' ')); hSp.appendChild(window.App.Legenda.botao('ep_grafico_sp', MET, op('Top Épicos por Story Points', false))); }
+    if (hSp) { hSp.appendChild(document.createTextNode(' ')); hSp.appendChild(window.App.Legenda.botao('ep_grafico_sp', MET, op('Principais épicos por Story Points', false))); }
     if (hProg) { hProg.appendChild(document.createTextNode(' ')); hProg.appendChild(window.App.Legenda.botao('ep_grafico_progresso', MET, op('Progresso dos Épicos', false))); }
     const card = document.getElementById('ep-lista-card');
     if (card) {

@@ -12,7 +12,7 @@ namespace App\Services;
  *   onde_no_codigo e, opcionalmente, diferencas_jira[].
  * Listas vindas de config (Done, tipos) nunca são digitadas nos textos.
  * A Visão Geral passa $ctx (valores efetivos lidos pelo VisaoGeralRepository: status, chamados,
- * Fator de Carga, Debt Load, conferência dos Aceitos) para os marcadores dependentes de config.
+ * Fator de Carga, Carga de Dívida, conferência dos Aceitos) para os marcadores dependentes de config.
  * Compatível com PHP 7.4.
  */
 final class MetodologiaService
@@ -28,7 +28,7 @@ final class MetodologiaService
         'overview' => [
             'andamento', 'aceitos', 'efficiency', 'fator_carga', 'debt_load', 'cancelados',
             'sprint_anterior', 'burndown', 'cfd', 'cycle_time', 'team_velocity', 'chamados',
-            'tempo_status', 'lista_sprint_atual', 'lista_sprint_anterior', 'sustentacao_placeholder',
+            'tempo_status', 'lista_sprint_atual', 'lista_sprint_anterior',
         ],
         'velocidade' => [
             'velocidade_grafico', 'velocidade_media', 'velocidade_tabela_sprints',
@@ -36,7 +36,7 @@ final class MetodologiaService
         ],
         'previsibilidade' => [
             'prev_previsibilidade', 'prev_committed', 'prev_entregue', 'prev_transbordo',
-            'prev_variacao', 'prev_cancelado', 'prev_escopo_adicionado',
+            'prev_variacao', 'prev_escopo_adicionado',
             'prev_grafico_time', 'prev_grafico_transbordo', 'prev_tabela',
         ],
         'plan-real' => [
@@ -44,7 +44,7 @@ final class MetodologiaService
             'pr_grafico', 'pr_tabela_pontos', 'pr_tabela_times', 'pr_diagnosticos',
         ],
         'lead-time' => [
-            'lt_medio', 'lt_itens', 'lt_etapa', 'lt_p50', 'lt_sem_implantacao',
+            'lt_medio', 'lt_itens', 'lt_etapa', 'lt_sem_implantacao',
             'lt_grafico', 'lt_tabela', 'lt_tabela_secundaria', 'lt_diagnosticos',
         ],
         'produtividade' => [
@@ -91,7 +91,7 @@ final class MetodologiaService
 
     private const TEXTOS_VELOCIDADE = [
         'velocidade_grafico' => [
-            'titulo' => 'Velocidade: barras por sprint (Team Velocity)',
+            'titulo' => 'Velocidade: barras por sprint (Velocidade do time)',
             'fonte' => 'Baseline (snapshot do PI Planning) e extração do Jira, pela view vw_planejado_realizado_item, para a PI e os times do filtro.',
             'unidade' => 'Story Points. O escopo usa Story Point Estimate (SPE); o Concluído usa Story Points (SP) atuais.',
             'formula' => 'Escopo Inicial = SPE da baseline dos itens cuja sprint na baseline é a sprint. Escopo Final = SPE da extração dos itens cuja sprint atual é a sprint, sem os de status Cancelado. Concluído = SP atuais dos itens entregues cuja sprint atual é a sprint. Adicionado = SPE da extração dos itens do Escopo Final que não estão no Inicial. Removido = SPE da baseline dos itens do Inicial que não estão no Final. Mudança de Escopo = SPE da extração menos SPE da baseline nos itens que estão nos dois. O mesmo item é reconhecido pela chave, na mesma sprint. Vale: Final = Inicial + Adicionado - Removido + Mudança.',
@@ -121,7 +121,7 @@ final class MetodologiaService
                 'O Escopo Inicial vem da baseline do PI Planning, e não do estado da sprint no dia em que ela começou.',
                 'Os pontos são os SP e SPE de hoje. O valor que o item tinha em cada data não é reconstituído, porque não há changelog.',
                 'O Concluído inclui itens de Sustentação e Suporte e usa o status de hoje, e não a coluna do board no fim da sprint.',
-                'Item que passou para uma sprint posterior (carry-over) conta como Removido na sprint de origem.',
+                'Item que passou para uma sprint posterior (transbordo) conta como Removido na sprint de origem.',
                 'A Mudança de Escopo aqui é só a reestimativa de itens presentes no Inicial e no Final. A definição usada pelo gadget do Jira não foi confirmada.',
                 'A Velocidade Média usa até 4 sprints fechadas. A janela do gadget não foi confirmada.',
                 'Esta legenda descreve o cálculo do JCA e não garante os mesmos números do gadget.',
@@ -167,32 +167,32 @@ final class MetodologiaService
         'velocidade_por_time' => [
             'titulo' => 'Velocidade por time (gráfico)',
             'fonte' => 'Mesma agregação do gráfico de Velocidade, somada por time (VelocidadeRepository).',
-            'unidade' => 'Story Points. Story Points Estimate é o Escopo Inicial (SPE da baseline); Story Points entregues é o Concluído (SP atuais).',
-            'formula' => 'Por time, soma nas sprints consideradas do Escopo Inicial (barra Story Points Estimate) e do Concluído (barra Story Points entregues). As sprints somadas aparecem acima do gráfico.',
+            'unidade' => 'Story Points. Story Points estimados é o Escopo Inicial (SPE da baseline); Story Points entregues é o Concluído (SP atuais).',
+            'formula' => 'Por time, soma nas sprints consideradas do Escopo Inicial (barra Story Points estimados) e do Concluído (barra Story Points entregues). As sprints somadas aparecem acima do gráfico.',
             'entra' => self::ITENS_VELOCIDADE,
             'nao_entra' => self::SEM_CATEGORIA . ' A sprint em andamento, exceto quando ela é a sprint escolhida no filtro.',
             'done' => self::DONE_ENTREGUE . ' Só Story Points entregues usa Done.',
             'janela' => 'Soma das sprints fechadas exibidas ou, se há sprint no filtro, apenas essa sprint (mesmo em andamento). ' . self::JANELA_VEL,
             'onde_no_codigo' => self::ONDE_VEL . ' Tela: public/views/vw_velocity.php (graficoTimes).',
             'limitacoes' => [
-                'Time sem baseline importada tem Story Points Estimate 0 (a tabela marca o time).',
+                'Time sem baseline importada tem Story Points estimados 0 (a tabela marca o time).',
                 'Times sem extração na PI ficam fora do gráfico e são citados nos avisos.',
-                'Story Points Estimate é SPE e Story Points entregues é SP, então as barras não são da mesma medida.',
+                'Story Points estimados é SPE e Story Points entregues é SP, então as barras não são da mesma medida.',
             ],
         ],
         'velocidade_tabela_times' => [
             'titulo' => 'Pontos por time (tabela)',
             'fonte' => 'Mesma agregação por time do gráfico Velocidade por time (VelocidadeRepository).',
             'unidade' => 'Story Points.',
-            'formula' => 'Por time, soma nas sprints consideradas de Story Points Estimate (Escopo Inicial), Escopo Final e Story Points entregues (Concluído). Δ entregues - Estimate = entregues menos Estimate, com 2 casas decimais. A linha Total da seleção soma os times.',
+            'formula' => 'Por time, soma nas sprints consideradas de Story Points estimados (Escopo Inicial), Escopo Final e Story Points entregues (Concluído). Δ entregues - estimados = entregues menos estimados, com 2 casas decimais. A linha Total da seleção soma os times.',
             'entra' => self::ITENS_VELOCIDADE,
             'nao_entra' => self::SEM_CATEGORIA . ' A sprint em andamento, exceto quando ela é a sprint escolhida no filtro.',
             'done' => self::DONE_ENTREGUE . ' Só Story Points entregues usa Done.',
             'janela' => 'Soma das sprints fechadas exibidas ou, se há sprint no filtro, apenas essa sprint (mesmo em andamento). ' . self::JANELA_VEL,
             'onde_no_codigo' => self::ONDE_VEL . ' Tela: public/views/vw_velocity.php (tabelaTimes).',
             'limitacoes' => [
-                'Time sem baseline importada tem Estimate 0 (o nome do time ganha uma dica).',
-                'Estimate é SPE e entregues é SP, então o Δ mistura as duas medidas.',
+                'Time sem baseline importada tem estimados 0 (o nome do time ganha uma dica).',
+                'Estimados é SPE e entregues é SP, então o Δ mistura as duas medidas.',
             ],
         ],
     ];
@@ -202,7 +202,7 @@ final class MetodologiaService
             'titulo' => 'Previsibilidade (%)',
             'fonte' => 'Baseline (PI Planning) e extração do Jira, pelas views vw_previsibilidade e vw_previsibilidade_item.',
             'unidade' => 'Percentual (1 casa decimal), calculado sobre Story Points.',
-            'formula' => 'Previsibilidade = Entregue do planejado / Committed x 100. Sem Committed o resultado é traço. A meta é 80% (constante META do repositório). Cores do gráfico e da tabela: verde a partir da meta, âmbar a partir de 60%, vermelho abaixo de 60%.',
+            'formula' => 'Previsibilidade = Entregue do planejado / Escopo Inicial x 100. Sem Escopo Inicial o resultado é traço. A meta é 80% (constante META do repositório). Cores do gráfico e da tabela: verde a partir da meta, âmbar a partir de 60%, vermelho abaixo de 60%.',
             'entra' => self::ITENS_VALOR,
             'nao_entra' => self::SO_VALOR,
             'done' => self::DONE_ENTREGUE,
@@ -212,11 +212,11 @@ final class MetodologiaService
                 'Estado de hoje: itens entregues depois da janela também contam como entregues. Não há changelog.',
                 'Item da baseline ausente da extração não conta como entregue.',
                 'O percentual do total usa a soma dos times, não a média dos percentuais.',
-                'Mistura SPE (Committed) e SP atuais (Entregue).',
+                'Mistura SPE (Escopo Inicial) e SP atuais (Entregue).',
             ],
         ],
         'prev_committed' => [
-            'titulo' => 'Committed (SPE da baseline)',
+            'titulo' => 'Escopo Inicial (SPE da baseline)',
             'fonte' => 'Baseline (snapshot do PI Planning) pela view vw_previsibilidade.',
             'unidade' => 'Story Point Estimate (SPE); o cartão mostra também a quantidade de itens.',
             'formula' => 'Soma do SPE da baseline dos itens de valor cuja sprint na baseline está na janela. Item sem SPE conta 0.',
@@ -226,18 +226,18 @@ final class MetodologiaService
             'janela' => self::JANELA_PREV,
             'onde_no_codigo' => self::ONDE_PREV,
             'limitacoes' => [
-                'Inclui itens que depois foram cancelados ou saíram da sprint, pois o Committed é a baseline.',
+                'Inclui itens que depois foram cancelados ou saíram da sprint, pois o Escopo Inicial é a baseline.',
                 'Ajustes na baseline após a carga aparecem nos avisos da tela (trilha de auditoria).',
-                'Time sem baseline importada tem Committed 0.',
+                'Time sem baseline importada tem Escopo Inicial 0.',
             ],
         ],
         'prev_entregue' => [
             'titulo' => 'Entregue do planejado (SP atuais)',
             'fonte' => 'Baseline e extração do Jira, ligadas pela chave do item na mesma PI (vw_previsibilidade).',
             'unidade' => 'Story Points (SP) atuais; o cartão mostra também a quantidade de itens.',
-            'formula' => 'Soma dos SP atuais da extração dos itens do Committed que hoje têm status de Done. Item sem SP conta 0.',
-            'entra' => 'Itens do Committed (baseline de valor na janela) que estão na extração com status de Done, mesmo que tenham sido entregues depois da janela ou em outra sprint.',
-            'nao_entra' => 'Itens do Committed ausentes da extração, não entregues ou cancelados. Itens entregues que não estavam no Committed (eles contam em Entregue total).',
+            'formula' => 'Soma dos SP atuais da extração dos itens do Escopo Inicial que hoje têm status de Done. Item sem SP conta 0.',
+            'entra' => 'Itens do Escopo Inicial (baseline de valor na janela) que estão na extração com status de Done, mesmo que tenham sido entregues depois da janela ou em outra sprint.',
+            'nao_entra' => 'Itens do Escopo Inicial ausentes da extração, não entregues ou cancelados. Itens entregues que não estavam no Escopo Inicial (eles contam em Entregue total).',
             'done' => self::DONE_ENTREGUE,
             'janela' => self::JANELA_PREV . ' A janela vale para a sprint na baseline; a entrega pode ter ocorrido depois.',
             'onde_no_codigo' => self::ONDE_PREV,
@@ -249,9 +249,9 @@ final class MetodologiaService
         'prev_transbordo' => [
             'titulo' => 'Transbordo',
             'fonte' => 'Baseline e extração do Jira, por item (vw_previsibilidade_item), classificados em PrevisibilidadeRepository::destino.',
-            'unidade' => 'SPE da baseline, mais a quantidade de itens e o percentual do Committed.',
-            'formula' => 'Transbordo = SPE da baseline dos itens do Committed cuja sprint atual é posterior à janela, estejam entregues ou abertos (balde Entregue após a janela + balde Transbordo aberto). % = Transbordo / Committed x 100. Sprint posterior é a que tem ano.pi.seq maior que o da maior sprint da janela (comparação numérica, não de texto).',
-            'entra' => 'Itens do Committed que estão na extração, não cancelados, com sprint atual posterior à maior sprint da janela.',
+            'unidade' => 'SPE da baseline, mais a quantidade de itens e o percentual do Escopo Inicial.',
+            'formula' => 'Transbordo = SPE da baseline dos itens do Escopo Inicial cuja sprint atual é posterior à janela, estejam entregues ou abertos (balde Entregue após a janela + balde Transbordo aberto). % = Transbordo / Escopo Inicial x 100. Sprint posterior é a que tem ano.pi.seq maior que o da maior sprint da janela (comparação numérica, não de texto).',
+            'entra' => 'Itens do Escopo Inicial que estão na extração, não cancelados, com sprint atual posterior à maior sprint da janela.',
             'nao_entra' => 'Itens cuja sprint atual é a da janela ou anterior, itens sem sprint (devolvidos ao backlog), cancelados e ausentes da extração.',
             'done' => 'Done só separa o transbordo em entregue após a janela e aberto. ' . self::DONE_ENTREGUE,
             'janela' => self::JANELA_PREV,
@@ -266,29 +266,14 @@ final class MetodologiaService
             'fonte' => 'Baseline e extração do Jira, pela view vw_previsibilidade.',
             'unidade' => 'Story Points (diferença com sinal).',
             'formula' => 'Variação = SP atuais dos itens planejados que hoje estão entregues menos o SPE da baseline desses mesmos itens. Positivo quer dizer que hoje valem mais pontos que no PI Planning; negativo, menos.',
-            'entra' => 'Itens do Committed com status de Done na extração.',
-            'nao_entra' => 'Itens do Committed não entregues, cancelados ou ausentes da extração.',
+            'entra' => 'Itens do Escopo Inicial com status de Done na extração.',
+            'nao_entra' => 'Itens do Escopo Inicial não entregues, cancelados ou ausentes da extração.',
             'done' => self::DONE_ENTREGUE,
             'janela' => self::JANELA_PREV,
             'onde_no_codigo' => self::ONDE_PREV,
             'limitacoes' => [
                 'Compara SP de hoje com SPE da baseline, duas medidas diferentes. Item entregue sem SP conta 0 e puxa a variação para baixo.',
                 'Não separa reestimativa de erro de preenchimento.',
-            ],
-        ],
-        'prev_cancelado' => [
-            'titulo' => 'Cancelado',
-            'fonte' => 'Baseline e extração do Jira, por item (vw_previsibilidade_item).',
-            'unidade' => 'SPE da baseline, mais a quantidade de itens.',
-            'formula' => 'Soma do SPE da baseline dos itens do Committed que estão na extração com status Cancelado.',
-            'entra' => 'Itens do Committed (valor, sprint na baseline dentro da janela) cujo status atual na extração é Cancelado.',
-            'nao_entra' => 'Itens do Committed ausentes da extração (ficam em Fora da extração) e itens cancelados fora do Committed.',
-            'done' => 'Não usa Done. O item cancelado não está entre os status de Done.',
-            'janela' => self::JANELA_PREV,
-            'onde_no_codigo' => self::ONDE_PREV,
-            'limitacoes' => [
-                'O SPE cancelado continua dentro do Committed e, por isso, baixa a Previsibilidade.',
-                'Usa o status de hoje.',
             ],
         ],
         'prev_escopo_adicionado' => [
@@ -311,7 +296,7 @@ final class MetodologiaService
             'titulo' => 'Previsibilidade por time (gráfico)',
             'fonte' => 'Mesma agregação por time dos cartões (PrevisibilidadeRepository).',
             'unidade' => 'Percentual (1 casa decimal).',
-            'formula' => 'Uma barra por time com Previsibilidade = Entregue do planejado / Committed x 100. A linha tracejada marca a meta de 80%. Time sem Committed mostra "sem committed". O tooltip traz o entregue e o Committed em SP.',
+            'formula' => 'Uma barra por time com Previsibilidade = Entregue do planejado / Escopo Inicial x 100. A linha tracejada marca a meta de 80%. Time sem Escopo Inicial mostra "sem escopo inicial". A dica ao passar o mouse traz o entregue e o Escopo Inicial em SP.',
             'entra' => self::ITENS_VALOR,
             'nao_entra' => self::SO_VALOR,
             'done' => self::DONE_ENTREGUE,
@@ -323,12 +308,12 @@ final class MetodologiaService
             ],
         ],
         'prev_grafico_transbordo' => [
-            'titulo' => 'Destino do committed (transbordo)',
+            'titulo' => 'Destino do escopo inicial (transbordo)',
             'fonte' => 'Baseline e extração do Jira, por item (vw_previsibilidade_item), classificados em PrevisibilidadeRepository::destino.',
-            'unidade' => 'SPE da baseline. A soma das barras de um time é o Committed dele.',
-            'formula' => 'Cada item do Committed cai em um só balde, testados nesta ordem: Fora da extração (ausente da extração); Cancelado; entre os entregues, Entregue após a janela (sprint atual posterior à janela) ou Entregue na janela (demais, inclusive sem sprint); entre os não entregues, Devolvido ao backlog (sem sprint), Transbordo aberto (sprint atual posterior à janela) ou Não concluído na janela (demais). A barra de cada balde soma o SPE da baseline dos itens. O tooltip mostra também a quantidade de itens e, nos entregues, os SP atuais.',
-            'entra' => 'Itens do Committed: valor, na baseline, com sprint na baseline dentro da janela.',
-            'nao_entra' => self::SO_VALOR . ' Itens fora do Committed (Escopo adicionado).',
+            'unidade' => 'SPE da baseline. A soma das barras de um time é o Escopo Inicial dele.',
+            'formula' => 'Cada item do Escopo Inicial cai em um só balde, testados nesta ordem: Fora da extração (ausente da extração); Cancelado; entre os entregues, Entregue após a janela (sprint atual posterior à janela) ou Entregue na janela (demais, inclusive sem sprint); entre os não entregues, Devolvido ao backlog (sem sprint), Transbordo aberto (sprint atual posterior à janela) ou Não concluído na janela (demais). A barra de cada balde soma o SPE da baseline dos itens. A dica ao passar o mouse mostra também a quantidade de itens e, nos entregues, os SP atuais.',
+            'entra' => 'Itens do Escopo Inicial: valor, na baseline, com sprint na baseline dentro da janela.',
+            'nao_entra' => self::SO_VALOR . ' Itens fora do Escopo Inicial (Escopo adicionado).',
             'done' => self::DONE_ENTREGUE . ' Done separa os baldes entregues dos demais.',
             'janela' => self::JANELA_PREV,
             'onde_no_codigo' => self::ONDE_PREV . ' Tela: public/views/vw_previsibilidade.php (graficoTransbordo, BALDES).',
@@ -340,16 +325,16 @@ final class MetodologiaService
         'prev_tabela' => [
             'titulo' => 'Números por time (tabela)',
             'fonte' => 'Baseline e extração do Jira (vw_previsibilidade e vw_previsibilidade_item).',
-            'unidade' => 'Committed, transbordo e cancelado em SPE da baseline; entregue, variação, escopo adicionado e entregue total em SP atuais; previsibilidade em percentual.',
-            'formula' => 'As colunas repetem os cartões, por time: Committed, Entregue do planejado, Previsibilidade, Variação de estimativa, Transbordo (com % do Committed), Cancelado e Escopo adicionado. Entregue total = SP atuais dos itens de valor entregues com sprint atual na janela, estejam ou não no Committed. A linha Total da seleção usa a soma de todos os times.',
+            'unidade' => 'Escopo Inicial e transbordo em SPE da baseline; entregue, variação, escopo adicionado e entregue total em SP atuais; previsibilidade em percentual.',
+            'formula' => 'As colunas repetem os cartões, por time: Escopo Inicial, Entregue do planejado, Previsibilidade, Variação de estimativa, Transbordo (com % do Escopo Inicial) e Escopo adicionado. Entregue total = SP atuais dos itens de valor entregues com sprint atual na janela, estejam ou não no Escopo Inicial. A linha Total da seleção usa a soma de todos os times.',
             'entra' => self::ITENS_VALOR,
             'nao_entra' => self::SO_VALOR,
             'done' => self::DONE_ENTREGUE,
             'janela' => self::JANELA_PREV,
             'onde_no_codigo' => self::ONDE_PREV . ' Tela: public/views/vw_previsibilidade.php (tabela).',
             'limitacoes' => [
-                'Time sem baseline importada tem o nome com uma dica e Committed 0.',
-                'Entregue total não é o numerador da Previsibilidade: ele inclui itens que não estavam no Committed.',
+                'Time sem baseline importada tem o nome com uma dica e Escopo Inicial 0.',
+                'Entregue total não é o numerador da Previsibilidade: ele inclui itens que não estavam no Escopo Inicial.',
                 'Mistura SPE e SP atuais.',
             ],
         ],
@@ -360,16 +345,16 @@ final class MetodologiaService
             'titulo' => 'Velocidade (barra e cartão)',
             'fonte' => 'View vw_velocidade_sprint: composição ativa dos times, calendário das sprints e histórico de sustentação (sustentacao_historico).',
             'unidade' => 'Story Points de capacidade planejada. Não são itens entregues.',
-            'formula' => 'Por time e sprint da janela: Velocity = ROUND(qtde_dev x horas_dev x dias_uteis da sprint / média de produtividade da PI). Sustentação = pontos registrados em sustentacao_historico para o time, a PI e a sprint (0 se não houver). Capacidade = Velocity - Sustentação. A barra soma Sustentação e Capacidade de todos os times e sprints da janela, e o total é essa soma.',
+            'formula' => 'Por time e sprint da janela: Velocidade = ROUND(qtde_dev x horas_dev x dias_uteis da sprint / média de produtividade da PI). Sustentação = pontos registrados em sustentacao_historico para o time, a PI e a sprint (0 se não houver). Capacidade = Velocidade - Sustentação. A barra soma Sustentação e Capacidade de todos os times e sprints da janela, e o total é essa soma.',
             'entra' => 'Times ativos (de jornada ativa) com composição ativa, desde que tenham extração na PI, nas sprints da janela.',
-            'nao_entra' => 'Times sem extração na PI. Time sem média de produtividade positiva não tem Velocity (a Sustentação registrada dele ainda entra).',
+            'nao_entra' => 'Times sem extração na PI. Time sem média de produtividade positiva não tem Velocidade (a Sustentação registrada dele ainda entra).',
             'done' => 'Não usa Done: é capacidade calculada, não item entregue.',
             'janela' => self::JANELA_PR,
             'onde_no_codigo' => self::ONDE_PR . ' Visão: vw_velocidade_sprint.',
             'limitacoes' => [
                 'Não é a Velocidade da tela Velocidade, que mede o Concluído.',
                 'Os valores vêm de cadastros (composição do time, calendário e sustentação histórica), não de itens do Jira.',
-                'O Velocity é arredondado para inteiro em cada sprint antes da soma.',
+                'A Velocidade é arredondada para inteiro em cada sprint antes da soma.',
             ],
         ],
         'pr_pi_planning' => [
@@ -437,7 +422,7 @@ final class MetodologiaService
             'onde_no_codigo' => self::ONDE_PR . ' Tela: public/views/vw_plan_real.php (grafico).',
             'limitacoes' => [
                 'As barras não têm a mesma unidade, então comparar os totais é aproximado.',
-                'O tooltip mostra cada categoria com o percentual do total da barra.',
+                'A dica ao passar o mouse mostra cada categoria com o percentual do total da barra.',
             ],
         ],
         'pr_tabela_pontos' => [
@@ -542,21 +527,6 @@ final class MetodologiaService
                 self::LIM_ETAPAS_LT,
             ],
         ],
-        'lt_p50' => [
-            'titulo' => 'Mediana (P50) e máximo (cartão)',
-            'fonte' => 'Extração do Jira pela view vw_lead_time_item, resumida em LeadTimeRepository::estatisticas.',
-            'unidade' => 'Dias úteis.',
-            'formula' => 'P50 = mediana do lead time dos itens da seleção: com quantidade ímpar de itens, o valor central; com quantidade par, a média dos dois valores centrais. O texto do cartão traz o máximo, que é o maior lead time de um item.',
-            'entra' => self::ENTRA_LT,
-            'nao_entra' => self::FORA_LT,
-            'done' => self::DONE_LT,
-            'janela' => self::JANELA_LT,
-            'onde_no_codigo' => self::ONDE_LT . ' Tela: public/views/vw_cycle_time.php (kpis).',
-            'limitacoes' => [
-                'A mediana é menos sensível a itens muito longos que a média; uma diferença grande entre as duas indica itens fora do padrão.',
-                'O máximo vem de um único item e não é um percentil.',
-            ],
-        ],
         'lt_sem_implantacao' => [
             'titulo' => 'Entregues sem implantação concluída (cartão)',
             'fonte' => 'Extração do Jira pela view vw_lead_time_item (colunas status e fim_implantacao), contada em LeadTimeRepository::implantacaoResumo.',
@@ -590,9 +560,9 @@ final class MetodologiaService
             'janela' => self::JANELA_LT,
             'onde_no_codigo' => self::ONDE_LT . ' Tela: public/views/vw_cycle_time.php (grafico).',
             'limitacoes' => [
-                'O tooltip mostra também a média nos itens que têm a etapa, com o n, o lead time médio, o P50 e o máximo. Na Implantação mostra ainda em quantos itens ela foi concluída.',
+                'A dica ao passar o mouse mostra também a média nos itens que têm a etapa, com o n, o lead time médio, o P50 e o máximo. Na Implantação mostra ainda em quantos itens ela foi concluída.',
                 'O símbolo ⚠ no eixo marca o time ou a média com menos de 50% dos itens com implantação concluída. Nesses casos a Implantação está subestimada.',
-                'Segmentos muito baixos ficam sem número; o valor está no tooltip.',
+                'Segmentos muito baixos ficam sem número; o valor está na dica ao passar o mouse.',
                 self::LIM_ETAPAS_LT,
             ],
         ],
@@ -646,7 +616,7 @@ final class MetodologiaService
 
     private const ONDE_PD = 'app/Repositories/ProdutividadeRepository.php (consultar, aoVivo, somarEntregues, historico, agregarJornada, referenciaPlanejamento); db/views.sql (vw_produtividade_pi, vw_item); bin/consolidar_produtividade.php (tabela produtividade_historico); config/baseline.php (done_statuses).';
     private const ENTRA_PD = 'Itens de entrega de valor ({valor}) já entregues, dos times da seleção. Nas PIs fechadas, os itens da PI inteira; na PI de referência ao vivo, os itens cuja sprint de referência está na janela.';
-    private const FORA_PD = 'Itens de outros tipos (por exemplo Sustentação, Incidente e Bug) e itens de valor ainda não entregues. Os pontos de itens sem Story Points não entram (sem uso do estimate como substituto). Times sem dados na PI.';
+    private const FORA_PD = 'Itens de outros tipos (por exemplo Sustentação, Incidente e Bug) e itens de valor ainda não entregues. Os pontos de itens sem Story Points não entram (sem uso da estimativa como substituto). Times sem dados na PI.';
     private const DONE_PD = 'Só entram itens com status {done} (done_statuses de config/baseline.php; a mesma lista está repetida em db/views.sql, coluna entregue). Vale o status de hoje.';
     private const JANELA_PD = 'PI fechada (data final anterior a hoje): consolidado da PI inteira em produtividade_historico, sem janela de sprints. PI de referência em andamento: ao vivo, só com os itens cuja sprint de referência está nas sprints de valor fechadas da PI. Com sprint no filtro, a PI de referência é recalculada ao vivo só para essa sprint e as demais PIs não mudam. A PI de referência é a do filtro Versão ou, sem filtro, a PI corrente; as colunas são as PIs ativas do catálogo, em ordem cronológica, até ela.';
     private const LIM_HORAS_PD = 'As horas são o tempo gasto total do item no Jira (aggregatetimespent), acumulado durante a vida do item. Não há divisão por sprint: no cálculo ao vivo, todas as horas do item entram na última sprint dele (sprint de referência).';
@@ -664,7 +634,7 @@ final class MetodologiaService
             'onde_no_codigo' => self::ONDE_PD . ' Tela: public/views/vw_produtividade.php (kpis).',
             'limitacoes' => [
                 self::LIM_HORAS_PD,
-                'Item entregue sem Story Points entra nas horas e não entra nos pontos, o que eleva a produtividade (mais horas por ponto). Não há uso do estimate como substituto; a contagem está nos diagnósticos.',
+                'Item entregue sem Story Points entra nas horas e não entra nos pontos, o que eleva a produtividade (mais horas por ponto). Não há uso da estimativa como substituto; a contagem está nos diagnósticos.',
                 'A média ponderada dá mais peso a times com mais pontos; ela difere da média simples dos times.',
                 'Usa o status de hoje.',
             ],
@@ -733,7 +703,7 @@ final class MetodologiaService
             'titulo' => 'Total em horas para entregar 1 ponto (barra da jornada)',
             'fonte' => 'Produtividade ponderada da jornada na PI de referência (ProdutividadeRepository::agregarJornada).',
             'unidade' => 'Horas por Story Point (h/pt).',
-            'formula' => 'Uma barra com a produtividade ponderada da PI de referência: soma das horas dividida pela soma dos pontos dos times. O rótulo da barra é SELEÇÃO quando há mais de uma jornada e JORNADA quando há uma. O selo ao lado do título indica se a PI é ao vivo ou histórico. O tooltip mostra a conta (horas dividido por pontos).',
+            'formula' => 'Uma barra com a produtividade ponderada da PI de referência: soma das horas dividida pela soma dos pontos dos times. O rótulo da barra é SELEÇÃO quando há mais de uma jornada e JORNADA quando há uma. O selo ao lado do título indica se a PI é ao vivo ou histórico. A dica ao passar o mouse mostra a conta (horas dividido por pontos).',
             'entra' => self::ENTRA_PD,
             'nao_entra' => self::FORA_PD,
             'done' => self::DONE_PD,
@@ -748,7 +718,7 @@ final class MetodologiaService
             'titulo' => 'Total em horas para entregar 1 ponto (por time e PI)',
             'fonte' => 'Produtividade por time e PI: histórico consolidado nas PIs fechadas e extração ao vivo na PI de referência em andamento (ProdutividadeRepository).',
             'unidade' => 'Horas por Story Point (h/pt).',
-            'formula' => 'Colunas agrupadas por time, uma série por PI, com PIs em ordem cronológica até a PI de referência e só as que têm dados para a seleção. Cada barra é horas dividido por pontos do time naquela PI, com o rótulo do valor. Time sem dado na PI mostra um traço, e não zero. Menos horas por ponto é melhor. O tooltip mostra a conta e se o valor é ao vivo ou histórico.',
+            'formula' => 'Colunas agrupadas por time, uma série por PI, com PIs em ordem cronológica até a PI de referência e só as que têm dados para a seleção. Cada barra é horas dividido por pontos do time naquela PI, com o rótulo do valor. Time sem dado na PI mostra um traço, e não zero. Menos horas por ponto é melhor. A dica ao passar o mouse mostra a conta e se o valor é ao vivo ou histórico.',
             'entra' => self::ENTRA_PD,
             'nao_entra' => self::FORA_PD . ' Times sem dados em nenhuma PI ficam fora do gráfico e são citados nos avisos.',
             'done' => self::DONE_PD,
@@ -763,7 +733,7 @@ final class MetodologiaService
             'titulo' => 'Produtividade (h/ponto) por time e PI (tabela)',
             'fonte' => 'Mesmos dados do gráfico por time, mais a referência de planejamento em times_composicao.media_produtividade_pi (ProdutividadeRepository::referenciaPlanejamento).',
             'unidade' => 'Horas por Story Point (h/pt); o Δ em h/pt e em percentual.',
-            'formula' => 'Uma coluna por PI com a produtividade do time (horas dividido por pontos) e, na linha final, a da jornada (ou da seleção), ponderada, com a média simples dos times entre parênteses. Referência (planejamento) é a média de produtividade da PI cadastrada na composição ativa do time (Velocity). Δ = produtividade da PI de referência menos a referência, e o percentual é o Δ dividido pela referência, omitido se a referência é 0. Sem referência ou sem produtividade na PI de referência, o Δ aparece como traço. A coluna Sugestão traz a produtividade da PI fechada mais recente do histórico do time e a PI de origem. Na linha da jornada, Referência e Δ ficam em traço.',
+            'formula' => 'Uma coluna por PI com a produtividade do time (horas dividido por pontos) e, na linha final, a da jornada (ou da seleção), ponderada, com a média simples dos times entre parênteses. Referência (planejamento) é a média de produtividade da PI cadastrada na composição ativa do time (Velocidade). Δ = produtividade da PI de referência menos a referência, e o percentual é o Δ dividido pela referência, omitido se a referência é 0. Sem referência ou sem produtividade na PI de referência, o Δ aparece como traço. A coluna Sugestão traz a produtividade da PI fechada mais recente do histórico do time e a PI de origem. Na linha da jornada, Referência e Δ ficam em traço.',
             'entra' => self::ENTRA_PD,
             'nao_entra' => self::FORA_PD,
             'done' => self::DONE_PD,
@@ -834,7 +804,7 @@ final class MetodologiaService
             ],
         ],
         'efficiency' => [
-            'titulo' => 'Efficiency: custo real por SP',
+            'titulo' => 'Eficiência: custo real por SP',
             'fonte' => 'Horas apontadas no Jira (tempo gasto) e baseline h/SP de cada time (média de produtividade do PI).',
             'unidade' => 'Horas por Story Point (h/SP).',
             'formula' => 'h/SP = horas ÷ SP dos itens de valor em Done na janela. Baseline = média dos h/SP dos times, ponderada pelo SP entregue. Variação = horas ÷ (Σ SP × baseline do time) − 1.',
@@ -868,10 +838,10 @@ final class MetodologiaService
             ],
         ],
         'debt_load' => [
-            'titulo' => 'Debt Load',
+            'titulo' => 'Carga de Dívida',
             'fonte' => 'Itens: Jira (vw_item), SP atual. Capacidade: ' . self::FONTE_CAP_VG . ', a mesma do Fator de Carga. Baseline h/SP: times_composicao.media_produtividade_pi. Dias úteis: sprints.dias_uteis.',
             'unidade' => 'Story Points (SP) e percentual (%).',
-            'formula' => 'Capacidade em SP = (devs × h/dia × dias úteis × {dl_disp}%) ÷ baseline h/SP do time. Debt Load = Σ SP de dívida ÷ Σ capacidade em SP × 100. Exemplo (7 devs, 6 h/dia, 8 dias úteis, 80% de disponibilidade e baseline de 7 h/SP): 8 SP ÷ 38,4 SP = 20,8%. No consolidado e na PI somam-se SP, nunca os percentuais.',
+            'formula' => 'Capacidade em SP = (devs × h/dia × dias úteis × {dl_disp}%) ÷ baseline h/SP do time. Carga de Dívida = Σ SP de dívida ÷ Σ capacidade em SP × 100. Exemplo (7 devs, 6 h/dia, 8 dias úteis, 80% de disponibilidade e baseline de 7 h/SP): 8 SP ÷ 38,4 SP = 20,8%. No consolidado e na PI somam-se SP, nunca os percentuais.',
             'entra' => 'Itens não cancelados dos tipos {dl_tipos}, em qualquer status (comprometido), pela sprint atual do item. O SP entregue aparece à parte.',
             'nao_entra' => 'Incidente, SS, Bug e Sustentação. Suporte N1 não é identificável no Jira: entra todo item do tipo Suporte. Sprints de sustentação, sprints sem dias úteis e times sem Painel ou sem baseline ficam fora.',
             'done' => 'Só para o SP entregue: {done}.',
@@ -880,7 +850,7 @@ final class MetodologiaService
             'limitacoes' => [
                 'Estado de hoje, não do fim da sprint.',
                 'Item sem SP conta 0 e é reportado no detalhe, o que subestima o valor.',
-                'Débito Técnico também está no Fator de Carga e no Efficiency: os indicadores não se somam.',
+                'Débito Técnico também está no Fator de Carga e na Eficiência: os indicadores não se somam.',
                 'Sem faixa definida: a cor é neutra até o usuário definir limites.',
                 'Time sem dados fica fora do numerador e do denominador e é listado no detalhe.',
             ],
@@ -925,7 +895,7 @@ final class MetodologiaService
             ],
         ],
         'team_velocity' => [
-            'titulo' => 'Team Velocity',
+            'titulo' => 'Velocidade do time',
             'fonte' => 'Extração do Jira e baseline do PI Planning.',
             'unidade' => 'Story Points (SP).',
             'formula' => 'Concluído = SP atuais dos itens em Done, atribuídos à sprint_ref (a maior sprint do item). Escopo inicial = baseline do PI Planning.',
@@ -1010,12 +980,12 @@ final class MetodologiaService
             'titulo' => 'Cancelados na PI',
             'fonte' => 'Extração do Jira (view vw_item): itens da PI de referência dos times da seleção que têm extração (VisaoGeralRepository::itens).',
             'unidade' => 'Story Points (SP) atuais e quantidade de itens.',
-            'formula' => 'Soma dos SP atuais e contagem dos itens cujo status está na lista de cancelado ({cancelado}; status.cancelado de config/visao_geral.php), em qualquer sprint ou sem sprint. A parte "no foco" do cartão é a mesma soma restrita aos itens cuja sprint de referência (a maior sprint do item) é a sprint em foco ou, no modo PI inteira, uma das sprints de valor já iniciadas da PI.',
+            'formula' => 'Soma dos SP atuais e contagem dos itens cujo status está na lista de cancelado ({cancelado}; status.cancelado de config/visao_geral.php), em qualquer sprint ou sem sprint. A parte "no foco" do cartão é a mesma soma restrita aos itens cuja sprint de referência (a maior sprint do item) é a sprint em foco ou, no modo PI inteira, uma das sprints de valor já iniciadas da PI. Ao clicar no cartão abre a lista dos itens cancelados (a mesma população do número principal, respeitando jornada, time e versão), com os itens no foco primeiro e a coluna No foco.',
             'entra' => 'Itens de entrega de valor ({valor}) e de Sustentação ({sust}) com status cancelado. Item sem SP conta 0 SP e conta como 1 item.',
             'nao_entra' => 'Itens de outros tipos (por exemplo Incidente e Bug), que ficam sem categoria na Visão Geral. Itens de times sem extração na PI. Os itens cancelados ficam fora do Total do escopo e dos baldes Backlog, Em andamento, Bloqueados e Aceitos.',
             'done' => 'Não usa Done: conta pelo status de cancelado. No cálculo dos baldes da sprint o teste de cancelado vem antes do teste de Done.',
             'janela' => 'A PI de referência inteira, mostrada na faixa de contexto, sem recorte por sprint e também no modo Sprint ativa. Só a parte "no foco" segue a sprint em foco (modo Sprint ativa) ou as sprints de valor já iniciadas (modo PI inteira).',
-            'onde_no_codigo' => self::ONDE_VG . ' Métodos itens, gadgetAndamento, VisaoGeralCalculator::canceladosPi e baldes. Tela: public/views/vw_overview.php (cardAndamento).',
+            'onde_no_codigo' => self::ONDE_VG . ' Métodos itens, gadgetAndamento, VisaoGeralCalculator::canceladosPi, listaCancelados (gadget lista_cancelados) e baldes. Tela: public/views/vw_overview.php (cardAndamento).',
             'limitacoes' => [
                 'Usa o status de hoje, sem data de cancelamento.',
                 'O número principal é da PI inteira mesmo no modo Sprint ativa; só a parte "no foco" é recortada.',
@@ -1043,7 +1013,7 @@ final class MetodologiaService
             'titulo' => 'Itens da sprint atual (lista)',
             'fonte' => 'Extração do Jira (view vw_item), pela mesma leitura da Visão Geral; o resumo de cada item vem da tabela baseline (PI Planning), pela chave.',
             'unidade' => 'Story Points (SP) atuais por item e quantidade de itens.',
-            'formula' => 'Cada linha é um item não cancelado que pertence ao escopo em foco. O total é a soma dos SP e a contagem desses itens, feita antes do corte de linhas. O gráfico conta os itens por tipo de issue (o tooltip mostra os SP) e a barra clicada filtra a lista no modal. A fase atual do item é a mesma do cartão Tempo do item em cada status. A ordem é aceitos, em andamento, bloqueados e backlog, e dentro de cada grupo pela chave.',
+            'formula' => 'Cada linha é um item não cancelado que pertence ao escopo em foco. O total é a soma dos SP e a contagem desses itens, feita antes do corte de linhas. O gráfico conta os itens por tipo de item (a dica ao passar o mouse mostra os SP) e a barra clicada filtra a lista no modal. A fase atual do item é a mesma do cartão Tempo do item em cada status. A ordem é aceitos, em andamento, bloqueados e backlog, e dentro de cada grupo pela chave.',
             'entra' => 'Itens de entrega de valor ({valor}) e de Sustentação ({sust}) dos times da seleção com extração na PI que pertencem ao escopo em foco.',
             'nao_entra' => 'Itens com status {cancelado}. Itens de outros tipos (por exemplo Incidente e Bug). As linhas além do limite max_linhas_lista de config/visao_geral.php ficam fora da tabela, mas dentro do total e do gráfico.',
             'done' => 'A lista de Done ({done}; done_statuses de config/baseline.php) define a fase Concluído e a ordem da lista, pelo indicador de entregue da view vw_item (coluna entregue). Vale o status de hoje.',
@@ -1054,22 +1024,6 @@ final class MetodologiaService
                 'No modo PI inteira, a pertinência é pela sprint de referência do item (a maior sprint do campo Sprint).',
                 'Item que não está na baseline fica sem resumo (traço); a nota da lista mostra o percentual de itens com resumo.',
                 'Se a lista passa do limite de linhas, a nota avisa o corte; o gráfico por tipo usa todos os itens.',
-            ],
-        ],
-        'sustentacao_placeholder' => [
-            'titulo' => 'Sustentação (aguardando módulo)',
-            'selo' => 'Aguardando módulo',
-            'fonte' => 'Não há dados. O VisaoGeralRepository devolve gadgets.sustentacao com estado aguardando_modulo e a lista com os nomes dos gadgets previstos.',
-            'unidade' => 'Não se aplica: o cartão não mostra número.',
-            'formula' => 'Não há cálculo. O cartão lista os gadgets previstos (Visão da Sustentação na Sprint atual; Tempo gastos em tarefas de Sustentação; Incidentes/Solicitações da sprint anterior), que dependem do módulo de Sustentação, com regras ainda não definidas.',
-            'entra' => 'Nada: nenhum item do Jira é lido para este cartão.',
-            'nao_entra' => 'Os números de sustentação que existem em outros blocos (Aceitos, que separa valor e sustentação, e Chamados) e a tela Pontos de Sustentação são calculados à parte e não alimentam este cartão.',
-            'done' => 'Não usa Done.',
-            'janela' => 'Não se aplica.',
-            'onde_no_codigo' => 'app/Repositories/VisaoGeralRepository.php (montarGadgets, gadgetsVazios: chave sustentacao); public/views/vw_overview.php (cardSustentacao).',
-            'limitacoes' => [
-                'O texto do cartão afirma que a divisão por 5 do Jira corresponde à Produtividade (horas por ponto). É uma afirmação da tela, e não um cálculo feito pelo código.',
-                'A linha Incidentes/Solicitações do cartão Dados da sprint anterior também só informa que aguarda o módulo.',
             ],
         ],
     ];
@@ -1152,7 +1106,7 @@ final class MetodologiaService
             ],
         ],
         'ep_grafico_sp' => [
-            'titulo' => 'Top Épicos por Story Points',
+            'titulo' => 'Principais épicos por Story Points',
             'fonte' => self::FONTE_EXT,
             'unidade' => 'Story Points (SP).',
             'formula' => 'Os 12 épicos com maior SP total, em barras horizontais: SP Total = soma do story_points dos itens do épico; SP Entregue = a mesma soma só dos itens com status de Done. O rótulo de cada barra é a chave do épico.',

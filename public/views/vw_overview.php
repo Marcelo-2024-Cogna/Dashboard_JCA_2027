@@ -220,10 +220,10 @@
     return container;
   }
 
-  // ── Efficiency: KPI e modal de detalhe ─────────────────────────────────
+  // ── Eficiência: KPI e modal de detalhe ─────────────────────────────────
   function kpiEfficiency(d) {
     const ef = d.gadgets.efficiency_baseline || {};
-    const rotulo = 'Efficiency: custo real por SP';
+    const rotulo = 'Eficiência: custo real por SP';
     if (ef.estado !== 'ok') {
       return kpi(rotulo, '—', ef.motivo || 'Sem itens de valor entregues na janela.', '#22d3ee');
     }
@@ -244,7 +244,7 @@
   function abrirEfficiency(d, origem) {
     const ef = d.gadgets.efficiency_baseline || {};
     window.App.Modal.abrir({
-      titulo: 'Efficiency: custo real por SP',
+      titulo: 'Eficiência: custo real por SP',
       subtitulo: (ef.rotulo_escopo || '') + (ef.parcial ? ' · parcial (sprint em andamento)' : ''),
       origem,
       construir: corpo => {
@@ -258,7 +258,7 @@
         ].forEach(t => ul.appendChild(el('li', null, t)));
         corpo.appendChild(ul);
 
-        tabelaModal(corpo, 'Efficiency por time: horas, SP, h/SP, baseline e razão',
+        tabelaModal(corpo, 'Eficiência por time: horas, SP, h/SP, baseline e razão',
           [['Time', ''], ['Horas', 'num'], ['SP', 'num'], ['h/SP', 'num'], ['Baseline', 'num'], ['Razão', 'num']],
           (ef.por_time || []).map(t => [t.time || t.projeto_key, fmt(t.horas), fmt(t.pontos), fmt(t.h_por_sp),
             t.baseline == null ? 'sem baseline' : fmt(t.baseline), pctF(t.razao_pct)]), '520px');
@@ -385,12 +385,12 @@
     });
   }
 
-  // ── Debt Load: KPI e modal de detalhe ──────────────────────────────────
+  // ── Carga de Dívida: KPI e modal de detalhe ──────────────────────────────────
   const dlPct = v => (v == null ? 'sem dados' : pctF(v));
   const dlSp = v => (v == null ? '—' : fmt(v) + ' SP');
   function kpiDebtLoad(d) {
     const dl = d.gadgets.debt_load || {};
-    const rotulo = 'Debt Load';
+    const rotulo = 'Carga de Dívida';
     if (dl.estado !== 'ok' || dl.dl_pct == null) {
       return kpi(rotulo, '—', 'sem dados: ' + (dl.motivo || 'sem capacidade ou dívida calculável na seleção.'), '#94a3b8');
     }
@@ -416,7 +416,7 @@
     const dl = d.gadgets.debt_load || {};
     const met = (d.metodologia || {}).debt_load || {};
     window.App.Modal.abrir({
-      titulo: 'Debt Load',
+      titulo: 'Carga de Dívida',
       subtitulo: (dl.rotulo_escopo || '') + (dl.parcial ? ' · parcial (sprint em andamento)' : ''),
       origem,
       construir: corpo => {
@@ -436,14 +436,14 @@
         ].forEach(t => ul.appendChild(el('li', null, t)));
         corpo.appendChild(ul);
 
-        tabelaModal(corpo, 'Debt Load por time: capacidade, dívida e percentual',
+        tabelaModal(corpo, 'Carga de Dívida por time: capacidade, dívida e percentual',
           [['Time', ''], ['Devs', 'num'], ['h/dia', 'num'], ['Baseline h/SP', 'num'], ['Capacidade líquida', 'num'],
-            ['Capacidade (SP)', 'num'], ['Débito Técnico', 'num'], ['Suporte', 'num'], ['Dívida (SP)', 'num'], ['Entregue (SP)', 'num'], ['Debt Load', 'num']],
+            ['Capacidade (SP)', 'num'], ['Débito Técnico', 'num'], ['Suporte', 'num'], ['Dívida (SP)', 'num'], ['Entregue (SP)', 'num'], ['Carga de Dívida', 'num']],
           (dl.por_time || []).map(t => [t.time || t.projeto_key, fmt(t.devs), fmt(t.horas_dia), fmt(t.baseline_h_sp), fcHoras(t.liquida_h),
             dlSp(t.capacidade_sp), dlSp(t.sp_debito_tecnico), dlSp(t.sp_suporte), dlSp(t.sp_divida), dlSp(t.sp_entregue), dlPct(t.dl_pct)]), '900px');
 
-        tabelaModal(corpo, 'Debt Load por sprint: dias úteis, capacidade, dívida e percentual',
-          [['Sprint', ''], ['Dias úteis', 'num'], ['Capacidade líquida', 'num'], ['Capacidade (SP)', 'num'], ['Dívida (SP)', 'num'], ['Debt Load', 'num']],
+        tabelaModal(corpo, 'Carga de Dívida por sprint: dias úteis, capacidade, dívida e percentual',
+          [['Sprint', ''], ['Dias úteis', 'num'], ['Capacidade líquida', 'num'], ['Capacidade (SP)', 'num'], ['Dívida (SP)', 'num'], ['Carga de Dívida', 'num']],
           (dl.por_sprint || []).map(s => [s.sprint + (s.status === 'ativa' ? ' (em andamento)' : ''), fmt(s.dias_uteis),
             fcHoras(s.liquida_h), dlSp(s.capacidade_sp), dlSp(s.sp_divida), dlPct(s.dl_pct)]), '620px');
 
@@ -461,7 +461,7 @@
         const ec = dl.efficiency_comparativo || {};
         const efLinha = (nome, x) => [nome, fmt((x || {}).horas), fmt((x || {}).pontos), fmt((x || {}).h_por_sp),
           (x || {}).baseline_h_por_sp == null ? 'sem baseline' : fmt(x.baseline_h_por_sp), pctF((x || {}).razao_pct)];
-        tabelaModal(corpo, 'Efficiency com e sem Débito Técnico (modo ativo: ' + (ec.modo_ativo === 'sem_debito_tecnico' ? 'sem Débito Técnico' : 'com Débito Técnico') + ')',
+        tabelaModal(corpo, 'Eficiência com e sem Débito Técnico (modo ativo: ' + (ec.modo_ativo === 'sem_debito_tecnico' ? 'sem Débito Técnico' : 'com Débito Técnico') + ')',
           [['Cálculo', ''], ['Horas', 'num'], ['SP', 'num'], ['h/SP', 'num'], ['Baseline', 'num'], ['Razão', 'num']],
           [efLinha('Com Débito Técnico', ec.com_debito_tecnico), efLinha('Sem Débito Técnico', ec.sem_debito_tecnico)], '600px');
 
@@ -619,16 +619,19 @@
     grid.appendChild(kpiFatorCarga(d));
     grid.appendChild(kpiDebtLoad(d));
     const cf = g.cancelados_foco;
-    grid.appendChild(kpi('Cancelados na PI', fmt(g.cancelados_pi.sp) + ' SP',
-      int(g.cancelados_pi.itens) + ' itens' + (cf ? ' · no foco: ' + fmt(cf.sp) + ' SP em ' + int(cf.itens) + ' itens' : ''), '#f97316'));
+    const kCanc = kpi('Cancelados na PI', fmt(g.cancelados_pi.sp) + ' SP',
+      int(g.cancelados_pi.itens) + ' itens' + (cf ? ' · no foco: ' + fmt(cf.sp) + ' SP em ' + int(cf.itens) + ' itens' : ''), '#f97316');
+    const gc = d.gadgets.lista_cancelados;
+    if (gc && gc.estado === 'ok') kpiAcao(kCanc, 'Ver itens', origem => abrirCancelados(d, gc, origem));
+    grid.appendChild(kCanc);
     sec.appendChild(grid);
 
     anexarLegenda(sec, window.App.Legenda.botao('andamento', d.metodologia));
     const abLeg = sec.children[1];
     abLeg.appendChild(window.App.Legenda.botao('aceitos', d.metodologia, { rotulo: 'ⓘ Como é calculado: Aceitos' }));
-    abLeg.appendChild(window.App.Legenda.botao('efficiency', d.metodologia, { rotulo: 'ⓘ Como é calculado: Efficiency' }));
+    abLeg.appendChild(window.App.Legenda.botao('efficiency', d.metodologia, { rotulo: 'ⓘ Como é calculado: Eficiência' }));
     abLeg.appendChild(window.App.Legenda.botao('fator_carga', d.metodologia, { rotulo: 'ⓘ Como é calculado: Fator de Carga' }));
-    abLeg.appendChild(window.App.Legenda.botao('debt_load', d.metodologia, { rotulo: 'ⓘ Como é calculado: Debt Load' }));
+    abLeg.appendChild(window.App.Legenda.botao('debt_load', d.metodologia, { rotulo: 'ⓘ Como é calculado: Carga de Dívida' }));
     abLeg.appendChild(window.App.Legenda.botao('cancelados', d.metodologia, { rotulo: 'ⓘ Como é calculado: Cancelados na PI' }));
     sec.appendChild(el('div', 'pr-sub', 'Total do escopo: ' + fmt(g.total_sp) + ' SP (backlog + em andamento + bloqueado + aceitos; cancelados ficam fora).'));
 
@@ -642,6 +645,76 @@
       if (foraBits.length) sec.appendChild(el('div', 'pr-sub', 'Fora da janela: ' + foraBits.join(' · ') + '.'));
     }
     return sec;
+  }
+
+  // Modal de listagem dos itens cancelados da PI (mesma população do card), conforme os filtros ativos.
+  function abrirCancelados(d, g, origem) {
+    const fa = d.filtros || {};
+    const filtros = [];
+    if (fa.jornada) filtros.push('jornada ' + fa.jornada);
+    if (fa.time) filtros.push('time ' + fa.time);
+    if (fa.versao) filtros.push('versão ' + fa.versao);
+    const linhas = (g.itens || []).map(it => Object.assign({}, it, { foco_txt: it.no_foco ? 'Sim' : 'Não' }));
+    const noFoco = linhas.filter(it => it.no_foco);
+    const spFoco = noFoco.reduce((s, it) => s + (Number(it.sp) || 0), 0);
+    const notas = ['Σ lista completa: ' + fmt(g.total_sp) + ' SP em ' + int(g.total_itens) + ' itens (PI inteira, igual ao número do card).',
+      'No foco da seleção de sprint: ' + int(noFoco.length) + ' itens · ' + fmt(spFoco) + ' SP (listados primeiro).',
+      'Filtros ativos: ' + (filtros.length ? filtros.join(' · ') : 'todas as jornadas') + (fa.sprint ? ' · sprint ' + fa.sprint : '') + '.'];
+    if (g.resumo_disponivel_pct != null) notas.push('Resumo disponível em ' + pctF(g.resumo_disponivel_pct) + ' dos itens.');
+    if (g.truncado) notas.push('Lista truncada ao limite de linhas.');
+    window.App.ListaItens.abrir({
+      titulo: 'Itens cancelados na PI',
+      subtitulo: int(g.total_itens) + ' itens · ' + fmt(g.total_sp) + ' SP',
+      origem,
+      colunas: [
+        { k: 'chave', rotulo: 'Chave', tipo: 'chave' },
+        { k: 'tipo', rotulo: 'Tipo', tipo: 'texto' },
+        { k: 'resumo', rotulo: 'Título', tipo: 'texto' },
+        { k: 'status', rotulo: 'Status', tipo: 'status' },
+        { k: 'sp', rotulo: 'SP', tipo: 'num' },
+        { k: 'pai', rotulo: 'Épico pai', tipo: 'texto' },
+        { k: 'sprint_maior', rotulo: 'Sprint', tipo: 'texto' },
+        { k: 'foco_txt', rotulo: 'No foco', tipo: 'texto' },
+      ],
+      linhas,
+      notas,
+      vazio: 'Nenhum item cancelado.',
+    });
+  }
+
+  // Modal de listagem dos itens cancelados da PI (mesma população do card), conforme os filtros ativos.
+  function abrirCancelados(d, g, origem) {
+    const fa = d.filtros || {};
+    const filtros = [];
+    if (fa.jornada) filtros.push('jornada ' + fa.jornada);
+    if (fa.time) filtros.push('time ' + fa.time);
+    if (fa.versao) filtros.push('versão ' + fa.versao);
+    const linhas = (g.itens || []).map(it => Object.assign({}, it, { foco_txt: it.no_foco ? 'Sim' : 'Não' }));
+    const noFoco = linhas.filter(it => it.no_foco);
+    const spFoco = noFoco.reduce((s, it) => s + (Number(it.sp) || 0), 0);
+    const notas = ['Σ lista completa: ' + fmt(g.total_sp) + ' SP em ' + int(g.total_itens) + ' itens (PI inteira, igual ao número do card).',
+      'No foco da seleção de sprint: ' + int(noFoco.length) + ' itens · ' + fmt(spFoco) + ' SP (listados primeiro).',
+      'Filtros ativos: ' + (filtros.length ? filtros.join(' · ') : 'todas as jornadas') + (fa.sprint ? ' · sprint ' + fa.sprint : '') + '.'];
+    if (g.resumo_disponivel_pct != null) notas.push('Resumo disponível em ' + pctF(g.resumo_disponivel_pct) + ' dos itens.');
+    if (g.truncado) notas.push('Lista truncada ao limite de linhas.');
+    window.App.ListaItens.abrir({
+      titulo: 'Itens cancelados na PI',
+      subtitulo: int(g.total_itens) + ' itens · ' + fmt(g.total_sp) + ' SP',
+      origem,
+      colunas: [
+        { k: 'chave', rotulo: 'Chave', tipo: 'chave' },
+        { k: 'tipo', rotulo: 'Tipo', tipo: 'texto' },
+        { k: 'resumo', rotulo: 'Título', tipo: 'texto' },
+        { k: 'status', rotulo: 'Status', tipo: 'status' },
+        { k: 'sp', rotulo: 'SP', tipo: 'num' },
+        { k: 'pai', rotulo: 'Épico pai', tipo: 'texto' },
+        { k: 'sprint_maior', rotulo: 'Sprint', tipo: 'texto' },
+        { k: 'foco_txt', rotulo: 'No foco', tipo: 'texto' },
+      ],
+      linhas,
+      notas,
+      vazio: 'Nenhum item cancelado.',
+    });
   }
 
   // ── Modal padrão (App.ListaItens) das listas de itens da sprint ──────────
@@ -696,7 +769,7 @@
     });
   }
 
-  // Gráfico "itens por tipo de issue" (barras horizontais); a barra clicada abre o modal filtrado.
+  // Gráfico "itens por tipo de item" (barras horizontais); a barra clicada abre o modal filtrado.
   function graficoPorTipo(card, canvasId, g, rotuloAria, abrirTipo) {
     const wrap = el('div', 'cwrap');
     const cv = document.createElement('canvas');
@@ -905,8 +978,8 @@
   // ── 6e. Team Velocity (mini) ──────────────────────────────────────────
   function cardTeamVelocity(d) {
     const g = d.gadgets.team_velocity;
-    if (!g || g.estado !== 'ok' || !(g.serie || []).length) return cardVazio('Team Velocity', g);
-    const card = anexarLegenda(cardBase('Team Velocity', 'SP concluídos por sprint'), window.App.Legenda.botao('team_velocity', d.metodologia));
+    if (!g || g.estado !== 'ok' || !(g.serie || []).length) return cardVazio('Velocidade do time', g);
+    const card = anexarLegenda(cardBase('Velocidade do time', 'SP concluídos por sprint'), window.App.Legenda.botao('team_velocity', d.metodologia));
     const r = g.resumo || {};
     const dest = el('div');
     dest.style.cssText = 'display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:6px';
@@ -936,10 +1009,10 @@
     const linhaVel = s => [s.sprint, s.status === 'em_andamento' ? 'Ativa' : 'Fechada', fmt(s.escopo_inicial), fmt(s.adicionado), fmt(s.removido),
       fmt(s.escopo_final), fmt(s.mudanca_escopo), fmt(s.concluido), fmt(s.velocidade_media)];
     const abrirVel = (series, origem) => window.App.Modal.abrir({
-      titulo: 'Team Velocity — dados por sprint',
+      titulo: 'Velocidade do time — dados por sprint',
       subtitulo: 'Story Points; estado atual dos itens (não o fim da sprint)',
       origem,
-      construir: corpo => tabelaModal(corpo, 'Team Velocity: escopo, mudanças e concluído por sprint', colsVel, series.map(linhaVel), '860px'),
+      construir: corpo => tabelaModal(corpo, 'Velocidade do time: escopo, mudanças e concluído por sprint', colsVel, series.map(linhaVel), '860px'),
     });
     const ab = el('div', 'pr-sub');
     ab.appendChild(botaoModal('Ver dados', origem => abrirVel(g.serie, origem)));
@@ -1111,7 +1184,7 @@
   }
 
   // ── 8. Listas de itens: sprint atual (ou PI) e sprint anterior ───────────
-  // Mesmo desenho nos dois cards: gráfico por tipo de issue + botão "Ver itens".
+  // Mesmo desenho nos dois cards: gráfico por tipo de item + botão "Ver itens".
   function cardListaItens(d, chave, o) {
     const g = d.gadgets[chave];
     if (!g || g.estado !== 'ok') return cardVazio(o.titulo, g, true);
@@ -1124,8 +1197,8 @@
     card.appendChild(ab);
 
     if ((g.por_tipo || []).length) {
-      card.appendChild(el('div', 'stitle', 'Itens por tipo de issue'));
-      graficoPorTipo(card, o.canvasId, g, 'Barras horizontais com a quantidade de itens por tipo de issue.',
+      card.appendChild(el('div', 'stitle', 'Itens por tipo de item'));
+      graficoPorTipo(card, o.canvasId, g, 'Barras horizontais com a quantidade de itens por tipo de item.',
         tipo => abrirItensSprint(d, 'todos', btn, g, tipo));
     }
 
@@ -1149,37 +1222,20 @@
       legenda: () => window.App.Legenda.botao('lista_sprint_anterior', d.metodologia, { rotulo: 'ⓘ Como é calculado: Itens da sprint anterior' }),
     });
   }
-  // ── 9. Placeholder de Sustentação ────────────────────────────────────
-  function cardSustentacao(d) {
-    const g = d.gadgets.sustentacao || {};
-    const card = el('div', 'ccard vg-wide vg-placeholder');
-    card.appendChild(el('h3', null, 'Sustentação — aguardando módulo independente'));
-    card.appendChild(el('div', 'pr-sub', 'Os gadgets abaixo dependem do módulo de Sustentação (regras ainda não definidas). A divisão por 5 do Jira corresponde à Produtividade (horas por ponto) da jornada/time.'));
-    const abLeg = el('div', 'pr-sub');
-    abLeg.appendChild(window.App.Legenda.botao('sustentacao_placeholder', d.metodologia, { rotulo: 'ⓘ Como é calculado: Sustentação' }));
-    card.appendChild(abLeg);
-    const ul = el('ul');
-    ul.style.cssText = 'margin:8px 0 0;padding-left:18px;font-size:.78rem;color:var(--muted)';
-    (g.gadgets || []).forEach(t => ul.appendChild(el('li', null, t)));
-    card.appendChild(ul);
-    return card;
-  }
-
   // ── 10. Rodapé "Como ler esta tela" ──────────────────────────────────
   function rodape() {
-    const box = el('div', 'alert alert-info');
+    const box = el('details', 'pr-diag');
     box.style.marginTop = '18px';
-    box.setAttribute('role', 'note');
-    box.appendChild(el('strong', null, 'Como ler esta tela'));
-    const ul = el('ul'); ul.style.cssText = 'margin:6px 0 0;padding-left:18px;font-size:.78rem';
+    box.appendChild(el('summary', null, 'Como ler esta tela'));
+    const ul = el('ul');
     [
       'Visão por jornada, consolidando os projetos dos times da seleção. Os filtros do cabeçalho (jornada, time, versão, sprint) controlam a tela; ADSE e SGSE são o mesmo time.',
       'Seletor "Sprint ativa | PI inteira": mostra a sprint em foco ou a PI inteira (sprints de valor já iniciadas). Um filtro de sprint no cabeçalho vence o seletor.',
       'Unidade: Story Points, universo de valor + sustentação (como no Planejado x Realizado). Aceitos = Entregues do Planejado x Realizado = Concluído da Velocidade.',
-      'Cycle time bate com a tela Lead Time (bloco "sprints fechadas"). Efficiency mostra as horas por SP dos itens de valor em Done contra o baseline h/SP de cada time, com o estado de hoje; o histórico por sprint fica na tela Produtividade. Fator de Carga mostra a demanda (SPE × baseline h/SP) contra a capacidade líquida do Painel.',
+      'Cycle time bate com a tela Lead Time (bloco "sprints fechadas"). Eficiência mostra as horas por SP dos itens de valor em Done contra o baseline h/SP de cada time, com o estado de hoje; o histórico por sprint fica na tela Produtividade. Fator de Carga mostra a demanda (SPE × baseline h/SP) contra a capacidade líquida do Painel.',
       'O botão "ⓘ Como é calculado" de cada bloco abre fonte, unidade, fórmula, o que entra e não entra e a regra de Done.',
-      'Burndown, Fluxo acumulado (CFD), Tempo por status e Chamados são aproximados por datas de fluxo (não há burndown nativo de sprint); a badge "aproximado" sinaliza isso.',
-      'Os gadgets de Sustentação aguardam o módulo independente; o divisor ÷5 do Jira equivale à Produtividade (horas por ponto).',
+      'Burndown, Fluxo acumulado (CFD), Tempo por status e Chamados são aproximados por datas de fluxo (não há burndown nativo de sprint); a etiqueta "aproximado" sinaliza isso.',
+      'Cancelados na PI: total de itens cancelados da PI inteira (valor + sustentação), fora do total do escopo. Clique no card para ver a lista, conforme os filtros de jornada, time e versão.',
     ].forEach(t => ul.appendChild(el('li', null, t)));
     box.appendChild(ul);
     return box;
@@ -1230,11 +1286,6 @@
       root.appendChild(c);
       if (c._draw) aDesenhar.push(c);
     });
-
-    // 9: placeholder de sustentação
-    const sust = cardSustentacao(d);
-    sust.style.marginTop = '18px';
-    root.appendChild(sust);
 
     // 10: rodapé
     root.appendChild(rodape());

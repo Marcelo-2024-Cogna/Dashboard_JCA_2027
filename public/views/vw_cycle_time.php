@@ -145,8 +145,6 @@
         sub: 'valor entregue na janela' + (t.itens_sem_etapa ? ' · ' + t.itens_sem_etapa + ' sem etapa (fora da média)' : ''), ac: '#8f9bff' },
       { ajuda: () => window.App.Legenda.botao('lt_etapa', MET, { rotulo: 'Etapa que mais pesa', mini: true }), label: 'Etapa que mais pesa', val: top ? top.nome : '—',
         sub: top && t.lead_time_medio ? f1(top.c) + ' d de ' + f1(t.lead_time_medio) + ' d (' + nf0.format(top.c / t.lead_time_medio * 100) + '%)' : 'sem dados', ac: '#a9b8e8' },
-      { ajuda: () => window.App.Legenda.botao('lt_p50', MET, { rotulo: 'Mediana (P50)', mini: true }), label: 'Mediana (P50)', val: t.p50 == null ? '—' : f1(t.p50) + ' d',
-        sub: t.max == null ? 'sem dados' : 'máximo ' + nf0.format(t.max) + ' d', ac: '#10b981' },
     ];
     // Entregues sem implantação concluída (sinalização; não altera o lead time)
     const rs = resumoDe(t);
@@ -457,6 +455,27 @@
     return box;
   }
 
+  // Bloco informativo recolhível (mesmo padrão details/summary dos demais blocos da tela)
+  function comoLer() {
+    const det = el('details', 'pr-diag');
+    det.style.marginTop = '18px';
+    det.appendChild(el('summary', null, 'Como ler esta tela'));
+    const ul = el('ul');
+    [
+      'Lead time médio: média, em dias úteis, de Desenvolvimento + Homologação + Implantação por item de valor entregue nas sprints da janela. A Ideação fica fora da conta. Itens sem nenhuma etapa não entram na média e aparecem como "sem etapa".',
+      'Itens considerados: quantos itens de valor entregues (Aceito, Pendente de Produção, Em produção) entraram na janela de sprints mostrada no topo.',
+      'Etapa que mais pesa: a etapa com maior contribuição ao lead time médio da seleção, com os dias dela sobre o total.',
+      '⚠ Entregues sem implantação concluída: itens entregues que ainda não têm fim de implantação, entre eles os "Pendente de Produção". Eles contam como entregues e não alteram o lead time; "Ver itens" abre a lista, com os de maior espera primeiro.',
+      'Gráfico "Cycle time médio por etapas": cada coluna é um time, empilhada por etapa. O número dentro do segmento é a contribuição da etapa (Σ dias da etapa ÷ itens do time), e o número acima da coluna é o lead time médio, a soma das três etapas. A coluna destacada "Média da jornada" é a média de todos os itens da jornada, e não a média dos times.',
+      '⚠ impl. pendente no eixo: menos de 50% dos itens do time têm implantação concluída. Nesse caso a Implantação aparece subestimada e o time não é diretamente comparável aos demais.',
+      'Ao passar o mouse sobre um segmento: a média nos itens que têm a etapa (com o n), o lead time médio, o P50 e o máximo.',
+      'Tabela "Cycle time médio por etapas (dias úteis)": os mesmos valores do gráfico em números, com o total de itens e "Implantação concluída" (X de Y itens, com o ⚠ dos pendentes).',
+      'Detalhes: média apenas nos itens que têm a etapa, mediana (P50: metade dos itens fica abaixo desse valor) e máximo. Serve para avaliar itens fora da curva (outliers).',
+    ].forEach(t => ul.appendChild(el('li', null, t)));
+    det.appendChild(ul);
+    return det;
+  }
+
   function render(d) {
     MET = d.metodologia || null;
     root.textContent = '';
@@ -488,6 +507,7 @@
     root.appendChild(tabelaPrincipal(d));
     root.appendChild(tabelaSecundaria(d));
     root.appendChild(diagnosticos(d));
+    root.appendChild(comoLer());
   }
 
   async function load() {
