@@ -8,6 +8,25 @@
 (function () {
   const BASE = window.APP_BASE || '';
 
+  // ── Jornada persistente entre telas (v1.6) ───────────────────────────────
+  // A jornada escolhida fica em sessionStorage['jca.jornada']. Fora do painel,
+  // se a URL não traz 'jornada' e há valor guardado, recarrega a mesma tela com
+  // ele (location.replace: sem nova entrada de histórico, antes de qualquer fetch).
+  // Só a jornada persiste; time, versão e sprint resetam ao trocar de tela.
+  const JORNADA_KEY = 'jca.jornada';
+  function jornadaGuardada() {
+    try { return sessionStorage.getItem(JORNADA_KEY) || ''; } catch (e) { return ''; }
+  }
+  if ((window.APP_SECTION || '') !== 'painel') {
+    const guardada = jornadaGuardada();
+    const q = new URLSearchParams(location.search);
+    if (guardada && !q.has('jornada')) {
+      q.set('jornada', guardada);
+      location.replace(location.pathname + '?' + q.toString());
+      return;
+    }
+  }
+
   // ── API helper (com cache em memória p/ GETs pesados como /extract) ──────
   const _cache = {};
   const Api = {
@@ -57,6 +76,12 @@
       Object.entries(partial).forEach(([k, v]) => {
         if (v) u.set(k, v); else u.delete(k);
       });
+      if (Object.prototype.hasOwnProperty.call(partial, 'jornada')) {
+        try {
+          if (partial.jornada) sessionStorage.setItem(JORNADA_KEY, partial.jornada);
+          else sessionStorage.removeItem(JORNADA_KEY);
+        } catch (e) { /* sessionStorage indisponível: segue sem persistir */ }
+      }
       // Recarrega a MESMA página com os novos filtros (páginas PHP tradicionais)
       location.search = u.toString();
     },
@@ -171,6 +196,12 @@
       eff.versao = cur.versao || cat.pi_corrente || '';
 
       const jornadas = (cat.jornadas || []).map(j => j.nome);
+      // Jornada vinda só do valor guardado e que não existe mais no catálogo:
+      // limpa e recarrega sem ela (evita "filtro inexistente" no backend).
+      if (cur.jornada && cur.jornada === jornadaGuardada() && jornadas.indexOf(cur.jornada) < 0) {
+        Filters.apply({ jornada: '' });
+        return;
+      }
       // Times: filtrados pela jornada escolhida (nome do catálogo).
       const times = [...new Set((cat.times || [])
         .filter(t => !cur.jornada || t.jornada === cur.jornada)
@@ -245,6 +276,17 @@
 
   // ── Bootstrap da página ──────────────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', () => {
+    // Menu: leva a jornada guardada nos links (exceto /painel).
+    const guardada = jornadaGuardada();
+    if (guardada) {
+      document.querySelectorAll('.sidebar .nav a').forEach(a => {
+        const href = a.getAttribute('href') || '';
+        if (/\/painel\/?(\?|$)/.test(href)) return;
+        const u = new URL(href, location.href);
+        u.searchParams.set('jornada', guardada);
+        a.setAttribute('href', u.pathname + u.search);
+      });
+    }
     initFilters();
   });
 

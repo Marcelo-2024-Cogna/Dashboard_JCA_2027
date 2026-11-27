@@ -75,6 +75,8 @@ class ViewController
         // Dados extras (ex: valueTypes) disponíveis no layout.
         $valueTypes    = $this->viewData['value_types'] ?? [];
         $appVersion    = $this->viewData['version'] ?? '';
+        $jiraBase      = $this->viewData['jira_base'] ?? '';
+        $sinais        = $this->viewData['sinais'] ?? [];
 
         // O layout inclui $contentView na área de conteúdo.
         if (is_file($this->layout)) {

@@ -43,10 +43,16 @@ $menuMain = ['overview','velocidade','cycle-time','previsibilidade','plan-real',
     // Tipos de "entrega de valor" (config/baseline.php). Usado pelas views
     // para filtrar métricas de valor (Lead Time, Produtividade).
     window.VALUE_TYPES = <?= json_encode($valueTypes ?? []) ?>;
+    // Base do Jira (config/jira.php) para links /browse/CHAVE e critérios de
+    // cor (config/sinalizadores.php).
+    window.JIRA_BASE = <?= json_encode($jiraBase ?? '', JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE) ?>;
+    window.SINAIS = <?= json_encode($sinais ?? new stdClass, JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE) ?>;
   </script>
   <script src="<?= $base ?>/assets/vendor/chart.umd.min.js"></script>
   <script src="<?= $base ?>/assets/js/charts.js?v=<?= (int) @filemtime(__DIR__ . '/../assets/js/charts.js') ?>"></script>
   <script src="<?= $base ?>/assets/js/app.js?v=<?= (int) @filemtime(__DIR__ . '/../assets/js/app.js') ?>"></script>
+  <script src="<?= $base ?>/assets/js/lista-itens.js?v=<?= (int) @filemtime(__DIR__ . '/../assets/js/lista-itens.js') ?>"></script>
+  <script src="<?= $base ?>/assets/js/sinal.js?v=<?= (int) @filemtime(__DIR__ . '/../assets/js/sinal.js') ?>"></script>
   <script src="<?= $base ?>/assets/js/extracao.js?v=<?= (int) @filemtime(__DIR__ . '/../assets/js/extracao.js') ?>"></script>
 </head>
 <body>

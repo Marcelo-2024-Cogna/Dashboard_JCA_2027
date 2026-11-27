@@ -389,3 +389,25 @@ canvas.vg-clicavel { cursor: pointer; }
   .sidebar { display: none; }
   .cgrid.c2 { grid-template-columns: 1fr; }
 }
+
+/* ── v1.6: modal de listagem de itens (App.ListaItens) ── */
+.modal.modal-wide { width: min(1100px, 96vw); }
+.li-tbl thead th { position: sticky; top: 0; z-index: 1; }
+.li-tbl { min-width: 0; }
+.li-col-chave, .li-chave { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; white-space: nowrap; }
+.li-link { color: #818cf8; text-decoration: none; }
+.li-link:hover, .li-link:focus-visible { text-decoration: underline; }
+.li-sinal-verde td:first-child { box-shadow: inset 4px 0 0 #34d399; }
+.li-sinal-amarelo td:first-child { box-shadow: inset 4px 0 0 #fbbf24; }
+.li-sinal-vermelho td:first-child { box-shadow: inset 4px 0 0 #f43f5e; }
+.li-rodape { margin-top: 10px; font-size: .78rem; font-weight: 600; color: var(--muted); }
+.li-nota { margin-top: 8px; font-size: .74rem; color: var(--muted); }
+.li-vazio { color: var(--muted); padding: 12px 0; }
+.vg-clicavel { cursor: pointer; }
+
+/* ── v1.6: sinalizadores de cor (App.Sinal) ── */
+.sinal-verde { color: #34d399; }
+.sinal-amarelo { color: #fbbf24; }
+.sinal-vermelho { color: #f43f5e; }
+.sinal-lateral { border-left: 4px solid currentColor; padding-left: 8px; }
+.sinal-neutro { color: inherit; }

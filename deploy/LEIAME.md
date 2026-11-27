@@ -1,4 +1,4 @@
-# Deploy de producao: Metricas Jeito Cogna Agil v1.5
+# Deploy de producao: Metricas Jeito Cogna Agil v1.6
 
 Destino: Linux, Apache 2.4, aplicacao em `/apps/metricas_jca`, URL `https://metricas.cogna.com.br/` (raiz do dominio).
 Opcao A: o DocumentRoot e `/apps/metricas_jca/public`. `app/`, `config/`, `bin/`, `db/` e `data/` ficam fora da web.

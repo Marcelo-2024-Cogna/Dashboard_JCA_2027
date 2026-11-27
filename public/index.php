@@ -92,10 +92,12 @@ foreach ($stripPrefixes as $prefix) {
 $uri = '/' . trim($uri, '/');
 
 // Factory do controller de views (páginas PHP tradicionais)
-$makeViewController = function () use ($basePath, $baselineConfig, $phpVersion) {
+$makeViewController = function () use ($basePath, $baselineConfig, $phpVersion, $config) {
     return new \App\Controllers\ViewController(__DIR__ . '/views', $basePath, [
         'value_types' => $baselineConfig['value_delivery_types'] ?? [],
         'version'     => $phpVersion['label'] ?? '',
+        'jira_base'   => rtrim((string)($config['host'] ?? ''), '/'),
+        'sinais'      => require BASE_DIR . '/config/sinalizadores.php',
     ]);
 };
 

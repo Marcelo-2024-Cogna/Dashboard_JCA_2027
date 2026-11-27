@@ -9,8 +9,10 @@
  *         em c:\xampp\htdocs\dashboard-v1.0).
  *   1.5 → migração para banco relacional + serviço batch de catálogo e
  *         extração sob demanda com modal de seleção (em andamento).
+ *   1.6 → modais de listagem com link Jira, sinalizadores de cor, Como é
+ *         calculado redesenhado, jornada persistente.
  */
 return [
-    'number' => '1.5',
-    'label'  => 'v1.5',
+    'number' => '1.6',
+    'label'  => 'v1.6',
 ];
