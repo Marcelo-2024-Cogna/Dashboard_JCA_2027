@@ -101,6 +101,38 @@
     return box;
   }
 
+  // Modal de listagem: entregues sem implantação concluída (C1)
+  function abrirPendentes(p, rs, origem) {
+    const media = p.media_implantacao_dias;
+    const S = window.App.Sinal;
+    const notas = [
+      rs.pendentes_producao + ' pendentes de produção e ' + rs.sem_fim_outros + ' em outros status.',
+      'Dias aguardando = dias úteis desde o início da implantação (ou, sem ele, desde o fim do desenvolvimento) até hoje.',
+    ];
+    if (S && media != null) notas.push('Cor da linha: ' + S.legenda('lead_time_pendente') + ' Referência: média de Implantação (' + f1(media) + ' d).');
+    const comTitulo = p.itens.length - (p.sem_titulo || 0);
+    notas.push('Título vem da baseline da PI: ' + comTitulo + ' de ' + p.itens.length + ' itens com título.');
+    if (p.truncado) notas.push('Lista limitada a ' + p.itens.length + ' de ' + p.total + ' itens (os de maior espera primeiro).');
+    window.App.ListaItens.abrir({
+      titulo: 'Entregues sem implantação concluída',
+      subtitulo: p.total + ' itens · contados como entregues, sem fim de implantação',
+      origem,
+      colunas: [
+        { k: 'chave', rotulo: 'Chave', tipo: 'chave' },
+        { k: 'titulo', rotulo: 'Título', tipo: 'texto' },
+        { k: 'tipo', rotulo: 'Tipo', tipo: 'texto' },
+        { k: 'status', rotulo: 'Status', tipo: 'status' },
+        { k: 'sp', rotulo: 'SP', tipo: 'num', casas: 1 },
+        { k: 'data_entrega', rotulo: 'Data de entrega', tipo: 'data' },
+        { k: 'dias_aguardando', rotulo: 'Dias aguardando (úteis)', tipo: 'dias', casas: 0 },
+      ],
+      linhas: p.itens,
+      notas,
+      vazio: 'Nenhum item pendente.',
+      sinal: l => (S && l.dias_aguardando != null ? S.classificar('lead_time_pendente', l.dias_aguardando, media).nivel : null),
+    });
+  }
+
   function kpis(d) {
     const t = d.total;
     // etapa que mais pesa = maior contribuição ao lead time médio da seleção
@@ -125,6 +157,8 @@
       val: nf0.format(semImpl) + ' de ' + nf0.format(rs.entregues) + (rs.pct_concluidas == null ? '' : ' (' + nf0.format(100 - rs.pct_concluidas) + '%)'),
       sub: rs.pendentes_producao + ' pendentes de produção · ' + rs.sem_fim_outros + ' em outros status · contados como entregues',
       ac: semImpl > 0 ? COR_ALERTA : '#10b981', title: textoPendentes(rs),
+      lista: d.pendentes_implantacao && d.pendentes_implantacao.total > 0 ? d.pendentes_implantacao : null,
+      resumo: rs,
     });
     const grid = el('div', 'kpi-grid');
     cards.forEach(c => {
@@ -136,6 +170,16 @@
       lb.appendChild(document.createTextNode(' '));
       lb.appendChild(c.ajuda());
       k.append(lb, v, el('div', 'kpi-sub', c.sub));
+      if (c.lista) {
+        // Clique no cartão = atalho; o botão "Ver itens" é o caminho por teclado.
+        k.classList.add('vg-clicavel');
+        k.style.cursor = 'pointer';
+        const abre = origem => abrirPendentes(c.lista, c.resumo, origem);
+        const bt = window.App.ListaItens.botao('Ver itens', abre);
+        bt.addEventListener('click', ev => ev.stopPropagation());
+        k.appendChild(bt);
+        k.addEventListener('click', ev => { if (!ev.target.closest('button, a')) abre(bt); });
+      }
       grid.appendChild(k);
     });
     return grid;

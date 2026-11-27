@@ -28,16 +28,7 @@
   </div>
 
   <div class="stitle" style="margin-top:22px">Detalhamento por Épico</div>
-  <div class="ccard">
-    <div class="twrap" style="max-height:480px;overflow-y:auto">
-      <table id="ep-table">
-        <thead><tr>
-          <th>Épico</th><th>Itens</th><th>SP Total</th><th>SP Entregue</th><th>Completude</th>
-        </tr></thead>
-        <tbody id="ep-tbody"></tbody>
-      </table>
-    </div>
-  </div>
+  <div class="ccard" id="ep-lista-card"></div>
 </template>
 
 <script>
@@ -72,8 +63,7 @@
     const hSp = tit('ep-sp'), hProg = tit('ep-prog');
     if (hSp) { hSp.appendChild(document.createTextNode(' ')); hSp.appendChild(window.App.Legenda.botao('ep_grafico_sp', MET, op('Top Épicos por Story Points', false))); }
     if (hProg) { hProg.appendChild(document.createTextNode(' ')); hProg.appendChild(window.App.Legenda.botao('ep_grafico_progresso', MET, op('Progresso dos Épicos', false))); }
-    const tb = document.getElementById('ep-table');
-    const card = tb ? tb.closest('.ccard') : null;
+    const card = document.getElementById('ep-lista-card');
     if (card) {
       const ab = document.createElement('div');
       ab.className = 'pr-sub';
@@ -108,8 +98,9 @@
     const epics = {};
     items.forEach(i => {
       const k = i.pai;
-      if (!epics[k]) epics[k] = { key:k, items:0, sp:0, spDone:0 };
+      if (!epics[k]) epics[k] = { key:k, items:0, sp:0, spDone:0, lista:[] };
       epics[k].items++;
+      epics[k].lista.push(i);
       const sp = Number(i.story_points)||0;
       epics[k].sp += sp;
       if (DONE.includes(i.status)) epics[k].spDone += sp;
@@ -121,7 +112,7 @@
     renderKpis(list);
     renderSp(list);
     renderProg(list);
-    renderTable(list);
+    renderLista(list);
     anexarLegendas(ext);
   }
 
@@ -142,7 +133,7 @@
 
   function renderSp(list) {
     const top = [...list].sort((a,b)=>b.sp-a.sp).slice(0,12);
-    Charts.make('ep-sp', {
+    const chartSp = Charts.make('ep-sp', {
       type:'bar',
       data:{ labels:top.map(e=>e.key), datasets:[
         { label:'SP Total', data:top.map(e=>e.sp), backgroundColor:Charts.fill(0,.5), borderColor:Charts.color(0), borderWidth:1.5, borderRadius:4 },
@@ -150,6 +141,8 @@
       ]},
       options:{ responsive:true, maintainAspectRatio:false, indexAxis:'y', plugins:{legend:{position:'bottom'}}, scales:{x:{beginAtZero:true, title:{display:true,text:'Story Points'}}} }
     });
+    // Atalho: clique na barra abre os itens do épico (o botão "Ver épicos" é o caminho por teclado).
+    window.App.ListaItens.clicavel(chartSp, document.getElementById('ep-sp'), i => { if (top[i]) abrirItens(top[i], null); });
   }
 
   function renderProg(list) {
@@ -169,27 +162,61 @@
     });
   }
 
-  function barColor(p){ return p>=100?'var(--green)':p>=50?'var(--cyan)':p>0?'var(--orange)':'var(--muted)'; }
-
-  function renderTable(list) {
-    const sorted = [...list].sort((a,b)=>b.sp-a.sp);
-    document.getElementById('ep-tbody').innerHTML = sorted.map(e=>`
-      <tr>
-        <td><span class="mono">${e.key}</span></td>
-        <td style="text-align:center">${e.items}</td>
-        <td style="text-align:center">${e.sp}</td>
-        <td style="text-align:center">${e.spDone}</td>
-        <td>
-          <div style="display:flex;align-items:center;gap:8px">
-            <div style="flex:1;background:var(--surface2);border-radius:4px;height:6px;overflow:hidden;min-width:70px">
-              <div style="height:100%;width:${Math.min(e.completude,100)}%;background:${barColor(e.completude)}"></div>
-            </div>
-            <span style="font-size:.72rem;color:var(--muted);min-width:36px">${e.completude}%</span>
-          </div>
-        </td>
-      </tr>`).join('');
+  // Modal 2: itens do épico (dados de /extract já carregados)
+  function abrirItens(e, origem) {
+    window.App.ListaItens.abrir({
+      titulo: 'Itens do épico ' + e.key,
+      subtitulo: e.items + ' itens · ' + e.spDone + ' de ' + e.sp + ' SP entregues (' + e.completude + '%)',
+      origem,
+      colunas: [
+        { k:'chave', rotulo:'Chave', tipo:'chave' },
+        { k:'tipo', rotulo:'Tipo', tipo:'texto' },
+        { k:'status', rotulo:'Status', tipo:'status' },
+        { k:'sp', rotulo:'SP', tipo:'num', casas:1 },
+        { k:'sprint', rotulo:'Sprint', tipo:'texto' },
+      ],
+      linhas: e.lista.map(i => ({ chave:i.chave, tipo:i.tipo_item, status:i.status, sp:Number(i.story_points)||0, sprint:Util.shortSprint(i.sprint) })),
+      vazio: 'Nenhum item neste épico.',
+    });
   }
 
+  // Modal 1: lista de épicos; clicar numa linha (ou Enter) abre o Modal 2
+  function abrirEpicos(sorted, origem) {
+    window.App.ListaItens.abrir({
+      titulo: 'Épicos',
+      subtitulo: sorted.length + ' épicos na seleção · clique numa linha para ver os itens',
+      origem,
+      colunas: [
+        { k:'key', rotulo:'Épico', tipo:'chave' },
+        { k:'items', rotulo:'Itens', tipo:'num', casas:0 },
+        { k:'sp', rotulo:'SP total', tipo:'num', casas:1 },
+        { k:'spDone', rotulo:'SP entregue', tipo:'num', casas:1 },
+        { k:'completude', rotulo:'Completude (%)', tipo:'num', casas:0 },
+      ],
+      linhas: sorted,
+      vazio: 'Nenhum épico na seleção.',
+    });
+    const dlg = document.getElementById('dlg-detalhe');
+    if (!dlg) return;
+    dlg.querySelectorAll('tbody tr').forEach((tr, idx) => {
+      const e = sorted[idx];
+      if (!e) return;
+      tr.style.cursor = 'pointer';
+      tr.tabIndex = 0;
+      tr.title = 'Ver os itens do épico ' + e.key;
+      tr.addEventListener('click', ev => { if (!ev.target.closest('a')) abrirItens(e, origem); });
+      tr.addEventListener('keydown', ev => { if (ev.key === 'Enter' && !ev.target.closest('a')) abrirItens(e, origem); });
+    });
+  }
+
+  function renderLista(list) {
+    const sorted = [...list].sort((a,b)=>b.sp-a.sp);
+    const card = document.getElementById('ep-lista-card');
+    const p = document.createElement('p');
+    p.className = 'pr-sub';
+    p.textContent = sorted.length + ' épicos com itens na seleção. Os itens de cada épico abrem a partir da lista.';
+    card.append(p, window.App.ListaItens.botao('Ver épicos', b => abrirEpicos(sorted, b)));
+  }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load);
   else load();
 })();

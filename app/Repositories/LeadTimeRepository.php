@@ -3,6 +3,7 @@
 namespace App\Repositories;
 
 use App\Database;
+use App\Services\DiasUteis;
 use InvalidArgumentException;
 use PDO;
 
@@ -99,6 +100,15 @@ class LeadTimeRepository
             $diag = $this->diagnosticos($pi['desc_pi'], $ctx['sprints'], $keys, $times, $itens);
         }
 
+        // v1.6 (C1): itens entregues sem implantação concluída (lista do modal; não altera médias).
+        $pendentes = ['itens' => [], 'total' => 0, 'truncado' => false, 'media_implantacao_dias' => null, 'sem_titulo' => 0];
+        if ($calcula) {
+            $pendentes = $this->pendentesImplantacao(
+                $pi['desc_pi'], $ctx['sprints'], $keys, $hoje ?? date('Y-m-d'), 500, (int)($pi['id'] ?? 0)
+            );
+            $pendentes['media_implantacao_dias'] = $total['implantacao']['media_nos_itens'];
+        }
+
         return [
             'janela' => [
                 'origem'  => $ctx['origem'],
@@ -112,6 +122,78 @@ class LeadTimeRepository
             'avisos'      => $avisos,
             'times_sem_extracao' => $ctx['times_sem_extracao'],
             'diagnosticos' => $diag,
+            'pendentes_implantacao' => $pendentes,
+        ];
+    }
+
+    /**
+     * Itens de valor entregues SEM fim de implantação (mesma população de itens(), só os
+     * que ficam fora de "concluídas"). Título vem da baseline (cobertura parcial).
+     * dias_aguardando = dias úteis de inicio_implantacao (ou fim_fluxo) até $hoje.
+     * @return array{itens:list<array>,total:int,truncado:bool,media_implantacao_dias:?float,sem_titulo:int}
+     */
+    private function pendentesImplantacao(string $descPi, array $sprints, array $keys, string $hoje, int $max, int $piId = 0): array
+    {
+        $par = [':pi' => $descPi];
+        $s = $this->in('ps', $sprints, $par); $k = $this->in('pk', $keys, $par);
+        $st = $this->pdo->prepare(
+            "SELECT chave, tipo_item, status, story_points, fim_fluxo, inicio_implantacao
+               FROM vw_item
+              WHERE is_entrega_valor = 1 AND entregue = 1 AND fim_implantacao IS NULL
+                AND pi = :pi AND sprint_ref IN ($s) AND projeto_key IN ($k)"
+        );
+        $st->execute($par);
+
+        $itens = [];
+        foreach ($st->fetchAll() as $r) {
+            $ref = $r['inicio_implantacao'] ?? $r['fim_fluxo'];
+            $itens[] = [
+                'chave'           => $r['chave'],
+                'titulo'          => null,
+                'tipo'            => $r['tipo_item'],
+                'status'          => $r['status'],
+                'sp'              => $r['story_points'] === null ? null : (float)$r['story_points'],
+                'data_entrega'    => $r['fim_fluxo'] === null ? null : substr((string)$r['fim_fluxo'], 0, 10),
+                'dias_aguardando' => $ref === null ? null : DiasUteis::espera((string)$ref, $hoje),
+            ];
+        }
+        usort($itens, static function (array $a, array $b): int {
+            return (($b['dias_aguardando'] ?? -1) <=> ($a['dias_aguardando'] ?? -1)) ?: strcmp($a['chave'], $b['chave']);
+        });
+
+        $total    = count($itens);
+        $truncado = $total > $max;
+        $itens    = array_slice($itens, 0, $max);
+
+        // Títulos (baseline), só das linhas devolvidas, em blocos de 500; 1ª ocorrência vence.
+        $titulos = [];
+        $chaves = array_column($itens, 'chave');
+        if ($piId > 0 && $chaves !== []) {
+            foreach (array_chunk($chaves, 500) as $bloco) {
+                $p = [':bpi' => $piId];
+                $in = $this->in('bc', $bloco, $p);
+                $q = $this->pdo->prepare(
+                    "SELECT chave, resumo FROM baseline
+                      WHERE configuracao_pi_id = :bpi AND ativo = 'S' AND chave IN ($in)
+                      ORDER BY id_baseline"
+                );
+                $q->execute($p);
+                foreach ($q->fetchAll() as $r) {
+                    if (!isset($titulos[$r['chave']])) { $titulos[$r['chave']] = $r['resumo']; }
+                }
+            }
+        }
+        $semTitulo = 0;
+        foreach ($itens as &$i) {
+            $t = $titulos[$i['chave']] ?? null;
+            $i['titulo'] = ($t === null || $t === '') ? null : $t;
+            if ($i['titulo'] === null) { $semTitulo++; }
+        }
+        unset($i);
+
+        return [
+            'itens' => $itens, 'total' => $total, 'truncado' => $truncado,
+            'media_implantacao_dias' => null, 'sem_titulo' => $semTitulo,
         ];
     }
 
