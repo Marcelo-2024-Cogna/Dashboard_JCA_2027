@@ -28,7 +28,7 @@ final class MetodologiaService
         'overview' => [
             'andamento', 'aceitos', 'efficiency', 'fator_carga', 'debt_load', 'cancelados',
             'sprint_anterior', 'burndown', 'cfd', 'cycle_time', 'team_velocity', 'chamados',
-            'tempo_status', 'lista_sprint_anterior', 'sustentacao_placeholder',
+            'tempo_status', 'lista_sprint_atual', 'lista_sprint_anterior', 'sustentacao_placeholder',
         ],
         'velocidade' => [
             'velocidade_grafico', 'velocidade_media', 'velocidade_tabela_sprints',
@@ -1037,6 +1037,23 @@ final class MetodologiaService
                 'Sem sprint seguinte na PI, nenhum item é marcado como transbordo.',
                 'Item que não está na baseline fica sem resumo (traço); a nota da lista mostra o percentual de itens com resumo.',
                 'Se a lista passa do limite de linhas, o filtro do modal vale só para as linhas recebidas, e a nota avisa o corte.',
+            ],
+        ],
+        'lista_sprint_atual' => [
+            'titulo' => 'Itens da sprint atual (lista)',
+            'fonte' => 'Extração do Jira (view vw_item), pela mesma leitura da Visão Geral; o resumo de cada item vem da tabela baseline (PI Planning), pela chave.',
+            'unidade' => 'Story Points (SP) atuais por item e quantidade de itens.',
+            'formula' => 'Cada linha é um item não cancelado que pertence ao escopo em foco. O total é a soma dos SP e a contagem desses itens, feita antes do corte de linhas. O gráfico conta os itens por tipo de issue (o tooltip mostra os SP) e a barra clicada filtra a lista no modal. A fase atual do item é a mesma do cartão Tempo do item em cada status. A ordem é aceitos, em andamento, bloqueados e backlog, e dentro de cada grupo pela chave.',
+            'entra' => 'Itens de entrega de valor ({valor}) e de Sustentação ({sust}) dos times da seleção com extração na PI que pertencem ao escopo em foco.',
+            'nao_entra' => 'Itens com status {cancelado}. Itens de outros tipos (por exemplo Incidente e Bug). As linhas além do limite max_linhas_lista de config/visao_geral.php ficam fora da tabela, mas dentro do total e do gráfico.',
+            'done' => 'A lista de Done ({done}; done_statuses de config/baseline.php) define a fase Concluído e a ordem da lista, pelo indicador de entregue da view vw_item (coluna entregue). Vale o status de hoje.',
+            'janela' => self::JANELA_FOCO_VG,
+            'onde_no_codigo' => self::ONDE_VG . ' Métodos gadgetListaSprintAtual, resumosBaseline e VisaoGeralCalculator::listaItensEscopo, faseAtualItem. Tela: public/views/vw_overview.php (cardListaAtual).',
+            'limitacoes' => [
+                'Usa o status de hoje, e não o do fim da sprint.',
+                'No modo PI inteira, a pertinência é pela sprint de referência do item (a maior sprint do campo Sprint).',
+                'Item que não está na baseline fica sem resumo (traço); a nota da lista mostra o percentual de itens com resumo.',
+                'Se a lista passa do limite de linhas, a nota avisa o corte; o gráfico por tipo usa todos os itens.',
             ],
         ],
         'sustentacao_placeholder' => [

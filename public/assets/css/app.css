@@ -411,6 +411,8 @@ canvas.vg-clicavel { cursor: pointer; }
 .sinal-vermelho { color: #f43f5e; }
 .sinal-lateral { border-left: 4px solid currentColor; padding-left: 8px; }
 .sinal-neutro { color: inherit; }
+.kpi.kpi-sinal-amarelo { box-shadow: inset 4px 0 0 #fbbf24; }
+.kpi.kpi-sinal-vermelho { box-shadow: inset 4px 0 0 #f43f5e; }
 
 /* ── Modal "Como é calculado" (App.Legenda) ── */
 .lg-kv, .lg-linha { display: flex; gap: 14px; align-items: baseline; }

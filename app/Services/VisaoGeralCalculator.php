@@ -1932,7 +1932,7 @@ class VisaoGeralCalculator
      * @param array{cancelado:list<string>,bloqueado:list<string>,backlog:list<string>,em_andamento:list<string>} $statusCfg
      * @return array lista_sprint_anterior (estrutura D.2).
      */
-    public static function listaSprintAnterior(array $rows, string $nomeN, ?string $nomeN1, array $resumos, int $maxLinhas, array $statusCfg): array
+    public static function listaSprintAnterior(array $rows, string $nomeN, ?string $nomeN1, array $resumos, int $maxLinhas, array $statusCfg, ?string $hoje = null): array
     {
         $ordemBalde = ['aceitos' => 0, 'em_andamento' => 1, 'bloqueado' => 2, 'backlog' => 3];
 
@@ -1978,6 +1978,7 @@ class VisaoGeralCalculator
                 'sprints'     => $tokens,
                 'sp'          => ($r['story_points'] ?? null) === null ? null : (float) $r['story_points'],
                 'transbordo'  => $nomeN1 !== null && isset($flip[$nomeN1]),
+                'fase_atual'  => $hoje === null ? null : self::faseAtualItem($r, $hoje),
             ];
         }
 
@@ -1985,6 +1986,7 @@ class VisaoGeralCalculator
             return [$a['_ord'], $a['_chave']] <=> [$b['_ord'], $b['_chave']];
         });
 
+        $porTipo = self::porTipo($linhas);
         $truncado = count($linhas) > $maxLinhas;
         $linhas = array_slice($linhas, 0, $maxLinhas);
         $linhas = array_map(static function (array $x): array {
@@ -2000,7 +2002,157 @@ class VisaoGeralCalculator
             'total_sp'            => round($totalSp, 2),
             'truncado'            => $truncado,
             'resumo_disponivel_pct' => $totalItens > 0 ? round($comResumo / $totalItens * 100, 2) : null,
+            'por_tipo'            => $porTipo,
         ];
+    }
+
+    /** Fase atual do item (Concluído, Backlog (não iniciado) ou uma das FASES_TEMPO). */
+    public static function faseAtualItem(array $r, string $hoje): string
+    {
+        $entregue = (int) ($r['entregue'] ?? 0) === 1;
+        return self::fasesItem($r, $hoje, $entregue)[1];
+    }
+
+    /**
+     * Itens por tipo de issue (itens e SP), ordenados por itens desc, tipo asc.
+     *
+     * @param list<array> $linhas linhas com 'tipo' e 'sp'.
+     * @return list<array{tipo:string,itens:int,sp:float}>
+     */
+    private static function porTipo(array $linhas): array
+    {
+        $acc = [];
+        foreach ($linhas as $l) {
+            $t = ($l['tipo'] ?? null) === null || $l['tipo'] === '' ? 'Sem tipo' : (string) $l['tipo'];
+            if (!isset($acc[$t])) {
+                $acc[$t] = ['tipo' => $t, 'itens' => 0, 'sp' => 0.0];
+            }
+            $acc[$t]['itens']++;
+            $acc[$t]['sp'] += (float) ($l['sp'] ?? 0);
+        }
+        $out = array_values($acc);
+        foreach ($out as &$o) { $o['sp'] = round($o['sp'], 2); }
+        unset($o);
+        // Tipos são únicos, então o desempate por tipo já torna a ordem estável no PHP 7.4.
+        usort($out, static function (array $a, array $b): int {
+            return [-$a['itens'], $a['tipo']] <=> [-$b['itens'], $b['tipo']];
+        });
+        return $out;
+    }
+
+    /**
+     * Lista de itens do escopo da sprint atual (modo sprint: pertinência por token;
+     * modo PI: por sprint_ref). Universo: valor + sustentação, sem cancelados.
+     * Ordem: aceitos → em andamento → bloqueado → backlog → chave.
+     *
+     * @param list<array> $rows
+     * @param list<string> $refs foco (tokens) ou sprints_modo_pi (refs).
+     * @param array<string,string> $resumos chave => resumo.
+     * @return array lista_sprint_atual (sem rótulo; o repositório acrescenta sprint/rotulo/escopo).
+     */
+    public static function listaItensEscopo(array $rows, array $refs, bool $porToken, array $resumos, int $maxLinhas, array $statusCfg, string $hoje): array
+    {
+        $ordemBalde = ['aceitos' => 0, 'em_andamento' => 1, 'bloqueado' => 2, 'backlog' => 3];
+        $flipRefs = array_flip($refs);
+        $linhas = [];
+        $totalSp = 0.0; $totalItens = 0; $comResumo = 0;
+
+        foreach ($rows as $r) {
+            $status = (string) ($r['status'] ?? '');
+            if (in_array($status, $statusCfg['cancelado'], true)) {
+                continue;
+            }
+            $tokens = SprintRef::todas($r['sprint'] ?? null);
+            $pertence = $porToken
+                ? (bool) array_intersect_key($flipRefs, array_flip($tokens))
+                : isset($flipRefs[$r['sprint_ref'] ?? '']);
+            if (!$pertence) {
+                continue;
+            }
+            $totalItens++;
+            $totalSp += (float) ($r['story_points'] ?? 0);
+
+            $chave  = (string) ($r['chave'] ?? '');
+            $resumo = $resumos[$chave] ?? null;
+            if ($resumo !== null) { $comResumo++; }
+
+            if ((int) ($r['entregue'] ?? 0) === 1) {
+                $balde = 'aceitos';
+            } elseif (in_array($status, $statusCfg['bloqueado'], true)) {
+                $balde = 'bloqueado';
+            } elseif (in_array($status, $statusCfg['backlog'], true)) {
+                $balde = 'backlog';
+            } else {
+                $balde = 'em_andamento';
+            }
+
+            $linhas[] = [
+                '_ord'         => $ordemBalde[$balde],
+                '_chave'       => $chave,
+                'tipo'         => $r['tipo_item'] ?? null,
+                'chave'        => $chave,
+                'pai'          => ($r['pai'] ?? null) === '' ? null : ($r['pai'] ?? null),
+                'resumo'       => $resumo,
+                'status'       => $status,
+                'sprint_maior' => $r['sprint_ref'] ?? null,
+                'sprints'      => $tokens,
+                'sp'           => ($r['story_points'] ?? null) === null ? null : (float) $r['story_points'],
+                'fase_atual'   => self::faseAtualItem($r, $hoje),
+            ];
+        }
+
+        usort($linhas, static function (array $a, array $b): int {
+            return [$a['_ord'], $a['_chave']] <=> [$b['_ord'], $b['_chave']];
+        });
+
+        $porTipo  = self::porTipo($linhas);
+        $truncado = count($linhas) > $maxLinhas;
+        $linhas = array_map(static function (array $x): array {
+            unset($x['_ord'], $x['_chave']);
+            return $x;
+        }, array_slice($linhas, 0, $maxLinhas));
+
+        return [
+            'estado'                => 'ok',
+            'itens'                 => $linhas,
+            'total_itens'           => $totalItens,
+            'total_sp'              => round($totalSp, 2),
+            'truncado'              => $truncado,
+            'resumo_disponivel_pct' => $totalItens > 0 ? round($comResumo / $totalItens * 100, 2) : null,
+            'por_tipo'              => $porTipo,
+        ];
+    }
+
+    /**
+     * Média de dias por fase dos itens de valor entregues nas sprints fechadas (referência do A3).
+     *
+     * @param list<array> $rows
+     * @param list<string> $refsFechadas sprint_ref das sprints fechadas da PI.
+     * @param list<string> $cancelado
+     * @return list<array{fase:string,dias:?float,n:int}>
+     */
+    public static function referenciaFases(array $rows, array $refsFechadas, string $hoje, array $cancelado): array
+    {
+        [$valor] = self::populacaoFluxo($rows, $refsFechadas, false, $cancelado);
+        $soma = array_fill_keys(self::FASES_TEMPO, 0.0);
+        $n    = array_fill_keys(self::FASES_TEMPO, 0);
+        foreach ($valor as $r) {
+            if ((int) ($r['entregue'] ?? 0) !== 1) {
+                continue;
+            }
+            $dias = self::fasesItem($r, $hoje, true)[0];
+            foreach (self::FASES_TEMPO as $f) {
+                if ($dias[$f] !== null) {
+                    $soma[$f] += $dias[$f];
+                    $n[$f]++;
+                }
+            }
+        }
+        $out = [];
+        foreach (self::FASES_TEMPO as $f) {
+            $out[] = ['fase' => $f, 'dias' => $n[$f] > 0 ? round($soma[$f] / $n[$f], 2) : null, 'n' => $n[$f]];
+        }
+        return $out;
     }
 
     // ════════════════════════════════════════════════════════════════════

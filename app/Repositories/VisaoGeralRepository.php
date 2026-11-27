@@ -397,6 +397,8 @@ class VisaoGeralRepository
         $tempoStatus = $this->gadgetTempoStatus(
             VisaoGeralCalculator::tempoStatus($rows, $refsFoco, $hoje, !$isPi, $isPi, $maxTempo, $cancelado)
         );
+        // Referência do A3: média por fase dos itens entregues nas sprints fechadas da PI.
+        $tempoStatus['referencia'] = VisaoGeralCalculator::referenciaFases($rows, array_values($sprintsFechadas), $hoje, $cancelado);
 
         // ── G10 Chamados (Q1 completa: Incidente/Bug têm categoria null) ──
         $chamados = $this->gadgetChamados(
@@ -404,7 +406,10 @@ class VisaoGeralRepository
         );
 
         // ── G6 Lista da sprint anterior ─────────────────────────────────
-        $listaSprintAnterior = $this->gadgetListaSprintAnterior($rows, $foco, $piId, $keys);
+        $listaSprintAnterior = $this->gadgetListaSprintAnterior($rows, $foco, $piId, $keys, $hoje);
+
+        // ── G6b Lista da sprint atual (ou da PI) ────────────────────────
+        $listaSprintAtual = $this->gadgetListaSprintAtual($rows, $refsFoco, !$isPi, $piId, $hoje, $escopoLabel, $focoNome);
 
         // ── Efficiency Baseline Ratio ───────────────────────────────────
         $nomesTimes = [];
@@ -517,6 +522,7 @@ class VisaoGeralRepository
             'tempo_status'          => $tempoStatus,
             'chamados'              => $chamados,
             'lista_sprint_anterior' => $listaSprintAnterior,
+            'lista_sprint_atual'    => $listaSprintAtual,
             'efficiency_baseline'   => $efficiency,
             'fator_carga'           => $fatorCarga,
             'debt_load'             => $debtLoad,
@@ -724,7 +730,35 @@ class VisaoGeralRepository
     }
 
     // ── G6 ──────────────────────────────────────────────────────────────
-    private function gadgetListaSprintAnterior(array $rows, array $foco, int $piId, array $keys): array
+    private function gadgetListaSprintAtual(array $rows, array $refsFoco, bool $porToken, int $piId, string $hoje, string $escopoLabel, ?string $focoNome): array
+    {
+        if ($refsFoco === []) {
+            return ['estado' => 'vazio', 'classe' => 'exato', 'motivo' => 'Nenhuma sprint em foco.'];
+        }
+        $cancelado = $this->statusCfg['cancelado'] ?? ['Cancelado'];
+        $flip = array_flip($refsFoco);
+        $chaves = [];
+        foreach ($rows as $r) {
+            if (in_array((string) ($r['status'] ?? ''), $cancelado, true)) {
+                continue;
+            }
+            $pertence = $porToken
+                ? (bool) array_intersect_key($flip, array_flip(\App\Services\SprintRef::todas($r['sprint'] ?? null)))
+                : isset($flip[$r['sprint_ref'] ?? '']);
+            if ($pertence) {
+                $chaves[(string) ($r['chave'] ?? '')] = true;
+            }
+        }
+        $resumos = $this->resumosBaseline($piId, array_keys($chaves));
+
+        $calc = VisaoGeralCalculator::listaItensEscopo(
+            $rows, $refsFoco, $porToken, $resumos, (int) ($this->config['max_linhas_lista'] ?? 500), $this->statusCfg, $hoje
+        );
+        $rotulo = $escopoLabel === 'pi' ? 'PI (sprints iniciadas)' : (string) $focoNome;
+        return ['classe' => 'exato', 'escopo' => $escopoLabel, 'sprint' => $rotulo, 'rotulo' => $rotulo] + $calc;
+    }
+
+    private function gadgetListaSprintAnterior(array $rows, array $foco, int $piId, array $keys, ?string $hoje = null): array
     {
         $ant = $foco['sprint_anterior'];
         if ($ant === null) {
@@ -747,7 +781,7 @@ class VisaoGeralRepository
         }
         $resumos = $this->resumosBaseline($piId, array_keys($chaves));
 
-        return VisaoGeralCalculator::listaSprintAnterior($rows, $nomeN, $nomeN1, $resumos, (int) ($this->config['max_linhas_lista'] ?? 500), $this->statusCfg);
+        return VisaoGeralCalculator::listaSprintAnterior($rows, $nomeN, $nomeN1, $resumos, (int) ($this->config['max_linhas_lista'] ?? 500), $this->statusCfg, $hoje);
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -953,6 +987,7 @@ class VisaoGeralRepository
             'tempo_status'          => $vazioAprox,
             'chamados'              => $vazioAprox,
             'lista_sprint_anterior' => $vazioExato,
+            'lista_sprint_atual'    => $vazioExato,
             'efficiency_baseline'   => $vazioExato,
             'fator_carga'           => $vazioExato,
             'debt_load'             => $vazioExato,

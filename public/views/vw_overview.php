@@ -118,6 +118,20 @@
     return card;
   }
 
+  // Chaves de alvo_dias (config/sinalizadores.php) por fase do tempo por status.
+  const CHAVE_FASE = {
+    'Desenvolvimento': 'desenvolvimento', 'Aguardando homologação': 'aguardando_homologacao',
+    'Homologação': 'homologacao', 'Aguardando implantação': 'aguardando_implantacao', 'Implantação': 'implantacao',
+  };
+  const COR_NIVEL = { verde: '#10b981', amarelo: '#f59e0b', vermelho: '#f43f5e', neutro: '#6366f1' };
+  // Aplica o sinal de cor ao número do KPI e uma barra lateral no cartão (amarelo/vermelho).
+  function sinalKpi(k, r) {
+    const val = k.querySelector('.kpi-val');
+    window.App.Sinal.aplicar(val, r.nivel, r.motivo);
+    val.classList.remove('sinal-lateral'); // a barra fica no cartão, não no número
+    if (r.nivel === 'amarelo' || r.nivel === 'vermelho') k.classList.add('kpi-sinal-' + r.nivel);
+  }
+
   function kpi(label, valor, sub, ac, tooltip) {
     const k = el('div', 'kpi');
     if (ac) k.style.setProperty('--ac', ac);
@@ -630,13 +644,16 @@
     return sec;
   }
 
-  // ── Modal dos itens da sprint anterior (filtro no cliente) ───────────────
-  function abrirItensSprint(d, filtro, origem) {
-    const g = d.gadgets.lista_sprint_anterior;
+  // ── Modal padrão (App.ListaItens) das listas de itens da sprint ──────────
+  // g = gadget lista_sprint_anterior ou lista_sprint_atual. filtro (KPIs da sprint
+  // anterior) e tipo (barra do gráfico) agem no navegador sobre as linhas recebidas.
+  function abrirItensSprint(d, filtro, origem, g, tipo) {
+    g = g || d.gadgets.lista_sprint_anterior;
     if (!g || g.estado !== 'ok') return;
+    const anterior = g === d.gadgets.lista_sprint_anterior;
     const done = statusDone(d);
     const rotulos = {
-      todos: 'Alocados (todos os itens)',
+      todos: anterior ? 'Alocados (todos os itens)' : 'Todos os itens',
       aceitos: 'Aceitos (status em ' + done.join(', ') + ')',
       nao_aceitos: 'Não aceitos sem continuidade (fora de Done e sem transbordo)',
       transbordo: 'Transbordo (itens que seguiram para a próxima sprint)',
@@ -647,28 +664,70 @@
       nao_aceitos: it => done.indexOf(it.status) === -1 && !it.transbordo,
       transbordo: it => !!it.transbordo,
     };
-    const itens = (g.itens || []).filter(regras[filtro] || regras.todos);
+    const itens = (g.itens || []).filter(regras[filtro] || regras.todos)
+      .filter(it => !tipo || (it.tipo || 'Sem tipo') === tipo);
     const sp = itens.reduce((s, it) => s + (Number(it.sp) || 0), 0);
-    window.App.Modal.abrir({
-      titulo: 'Itens da sprint anterior' + (g.sprint ? ' — ' + g.sprint : ''),
+    const colunas = [
+      { k: 'chave', rotulo: 'Chave', tipo: 'chave' },
+      { k: 'tipo', rotulo: 'Tipo', tipo: 'texto' },
+      { k: 'resumo', rotulo: 'Título', tipo: 'texto' },
+      { k: 'status', rotulo: 'Status', tipo: 'status' },
+      { k: 'sp', rotulo: 'SP', tipo: 'num' },
+      { k: 'fase_atual', rotulo: 'Fase atual', tipo: 'fase' },
+    ];
+    if (anterior) {
+      colunas.push({ k: 'pai', rotulo: 'Épico pai', tipo: 'texto' },
+        { k: 'sprint_maior', rotulo: 'Sprint', tipo: 'texto' },
+        { k: 'transbordo_txt', rotulo: 'Transbordo', tipo: 'texto' });
+    }
+    const linhas = itens.map(it => Object.assign({}, it, { transbordo_txt: it.transbordo ? 'Sim' : 'Não' }));
+    const notas = ['Σ lista completa: ' + fmt(g.total_sp) + ' SP em ' + int(g.total_itens) + ' itens.'];
+    if (g.resumo_disponivel_pct != null) notas.push('Resumo disponível em ' + pctF(g.resumo_disponivel_pct) + ' dos itens.');
+    if (g.truncado) notas.push('Lista truncada ao limite de linhas: o filtro vale só para as linhas recebidas.');
+    window.App.ListaItens.abrir({
+      titulo: (anterior ? 'Itens da sprint anterior' : 'Itens da sprint atual') + (g.sprint ? ' — ' + g.sprint : '')
+        + (tipo ? ' · ' + tipo : ''),
       subtitulo: (rotulos[filtro] || rotulos.todos) + ' · ' + int(itens.length) + ' itens · ' + fmt(sp) + ' SP',
       origem,
-      construir: corpo => {
-        tabelaModal(corpo, 'Itens da sprint anterior: tipo, chave, épico, resumo, status, sprint, SP e transbordo',
-          [['Tipo', ''], ['Chave', ''], ['Épico (pai)', ''], ['Resumo', ''], ['Status', ''], ['Sprint (maior)', ''], ['SP', 'num'], ['Transbordo', '']],
-          itens.map(it => [
-            it.tipo, it.chave, it.pai || '—', it.resumo || '—', it.status,
-            { t: it.sprint_maior || '—', title: Array.isArray(it.sprints) && it.sprints.length ? it.sprints.join(', ') : '' },
-            fmt(it.sp), it.transbordo ? 'Sim' : 'Não',
-          ]), '920px');
-        const notas = ['Σ lista completa: ' + fmt(g.total_sp) + ' SP em ' + int(g.total_itens) + ' itens.'];
-        if (g.resumo_disponivel_pct != null) notas.push('Resumo disponível em ' + pctF(g.resumo_disponivel_pct) + ' dos itens.');
-        if (g.truncado) notas.push('Lista truncada ao limite de linhas: o filtro vale só para as linhas recebidas.');
-        corpo.appendChild(el('div', 'pr-sub', notas.join(' ')));
-      },
+      colunas,
+      linhas,
+      notas,
+      vazio: 'Nenhum item para este filtro.',
     });
   }
 
+  // Gráfico "itens por tipo de issue" (barras horizontais); a barra clicada abre o modal filtrado.
+  function graficoPorTipo(card, canvasId, g, rotuloAria, abrirTipo) {
+    const wrap = el('div', 'cwrap');
+    const cv = document.createElement('canvas');
+    cv.id = canvasId;
+    cv.setAttribute('role', 'img');
+    cv.setAttribute('aria-label', rotuloAria + ' Valores no botão Ver itens.');
+    wrap.appendChild(cv);
+    card.appendChild(wrap);
+    const tipos = g.por_tipo || [];
+    card._draw = () => {
+      const chart = window.Charts.make(canvasId, {
+        type: 'bar',
+        data: {
+          labels: tipos.map(t => t.tipo),
+          datasets: [{ label: 'Itens', data: tipos.map(t => t.itens), backgroundColor: '#6366f1', borderRadius: 4 }],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: c => ' ' + int(c.raw) + ' itens · ' + fmt((tipos[c.dataIndex] || {}).sp) + ' SP' } },
+          },
+          scales: {
+            x: { beginAtZero: true, ticks: { precision: 0 }, title: { display: true, text: 'Itens' }, grid: { color: '#2e3349', borderDash: [4, 4] } },
+            y: { grid: { display: false } },
+          },
+        },
+      });
+      window.App.ListaItens.clicavel(chart, cv, (i, rotulo) => abrirTipo(rotulo));
+    };
+  }
   // ── 5. Sprint anterior ──────────────────────────────────────────────
   function cardSprintAnterior(d) {
     const g = d.gadgets.sprint_anterior;
@@ -808,11 +867,27 @@
     card.appendChild(el('div', 'pr-sub', 'Janela: ' + (g.sprints || []).join(', ') + ' · ' + int(g.itens) + ' itens de valor entregues.'));
 
     const grid = el('div', 'kpi-grid vg-kpi-grid');
-    const et = (label, e) => kpi(label, e.dias == null ? '—' : fmt(e.dias) + ' d', int(e.n) + ' itens', '#6366f1');
-    grid.appendChild(et('Desenvolvimento', g.desenvolvimento));
-    grid.appendChild(et('Homologação', g.homologacao));
-    grid.appendChild(et('Implantação', g.implantacao));
-    grid.appendChild(kpi('Lead time médio', g.lead_time_medio == null ? '—' : fmt(g.lead_time_medio) + ' d', int(g.itens) + ' itens', '#22d3ee'));
+    // A3: cor pelo desvio contra a média da mesma etapa nas sprints fechadas da PI
+    // (janela_padrao); alvo_dias de config/sinalizadores.php vence a referência automática.
+    const sc = (window.SINAIS || {}).cycle_time || {};
+    const alvos = sc.alvo_dias || {};
+    const jpRef = g.janela_padrao || null;
+    const poucos = !jpRef || (Number(jpRef.itens) || 0) < (Number(sc.min_itens_referencia) || 0);
+    const comSinal = (k, valor, ref, alvoKey) => {
+      const r = window.App.Sinal.classificar('cycle_time', valor, poucos ? null : ref,
+        { alvo: alvos[alvoKey], motivoSemRef: poucos ? 'poucos itens para comparar' : undefined });
+      sinalKpi(k, r);
+      return k;
+    };
+    const et = (label, e, refEtapa, alvoKey) => comSinal(
+      kpi(label, e.dias == null ? '—' : fmt(e.dias) + ' d', int(e.n) + ' itens', '#6366f1'),
+      e.dias, refEtapa && refEtapa.dias, alvoKey);
+    grid.appendChild(et('Desenvolvimento', g.desenvolvimento, jpRef && jpRef.desenvolvimento, 'desenvolvimento'));
+    grid.appendChild(et('Homologação', g.homologacao, jpRef && jpRef.homologacao, 'homologacao'));
+    grid.appendChild(et('Implantação', g.implantacao, jpRef && jpRef.implantacao, 'implantacao'));
+    grid.appendChild(comSinal(
+      kpi('Lead time médio', g.lead_time_medio == null ? '—' : fmt(g.lead_time_medio) + ' d', int(g.itens) + ' itens', '#22d3ee'),
+      g.lead_time_medio, jpRef && jpRef.lead_time_medio, 'lead_time'));
     card.appendChild(grid);
 
     const jp = g.janela_padrao;
@@ -823,6 +898,7 @@
         + (jp.homologacao.dias == null ? '—' : fmt(jp.homologacao.dias)) + ' · impl '
         + (jp.implantacao.dias == null ? '—' : fmt(jp.implantacao.dias)) + ').'));
     }
+    card.appendChild(el('div', 'pr-sub', 'Cor: ' + window.App.Sinal.legenda('cycle_time') + ' Referência = média da etapa nas sprints fechadas da PI.'));
     return card;
   }
 
@@ -949,30 +1025,54 @@
     const { wrap: tmw, tb: tmb } = tabelaBase('Médias por fase', 'Média de dias úteis por fase', '420px');
     cabecalho(tmb, [['Fase', ''], ['Média (dias)', 'num'], ['Itens', 'num']]);
     const tmbody = el('tbody');
+    // A3: referência = média da fase nas sprints fechadas da PI (g.referencia);
+    // alvo_dias de config/sinalizadores.php vence a referência automática.
+    const refFase = {};
+    (g.referencia || []).forEach(r => { refFase[r.fase] = r; });
+    const alvosFase = ((window.SINAIS || {}).cycle_time || {}).alvo_dias || {};
+    const nivelFase = {};
+    (g.medias || []).forEach(m => {
+      nivelFase[m.fase] = window.App.Sinal.classificar('cycle_time', m.dias, (refFase[m.fase] || {}).dias,
+        { alvo: alvosFase[CHAVE_FASE[m.fase]], motivoSemRef: 'sem referência nas sprints fechadas' });
+    });
     (g.medias || []).forEach(m => {
       const tr = el('tr');
       tr.appendChild(el('td', null, m.fase));
-      tr.appendChild(el('td', 'num', fmt(m.dias)));
+      const tdMedia = el('td', 'num', fmt(m.dias));
+      window.App.Sinal.aplicar(tdMedia, nivelFase[m.fase].nivel, nivelFase[m.fase].motivo);
+      tr.appendChild(tdMedia);
       tr.appendChild(el('td', 'num', int(m.n)));
       tmbody.appendChild(tr);
     });
     tmb.appendChild(tmbody);
     card.appendChild(tmw);
+    card.appendChild(el('div', 'pr-sub', 'Cor: ' + window.App.Sinal.legenda('cycle_time') + ' Referência = média da fase nas sprints fechadas da PI.'));
 
     // Itens: modal (botão "Ver itens" ou clique na barra de uma fase)
     const abrirItensTempo = (fase, origem) => {
       const todos = g.itens || [];
       const itens = fase ? todos.filter(it => it.dias && it.dias[fase] != null) : todos;
-      const cols = [['Chave', ''], ['Tipo', ''], ['Status', ''], ['SP', 'num'], ['Fase atual', '']];
-      fases.forEach(f => cols.push([f, 'num']));
-      cols.push(['Total (dias)', 'num']);
-      window.App.Modal.abrir({
+      const colunas = [
+        { k: 'chave', rotulo: 'Chave', tipo: 'chave' },
+        { k: 'tipo', rotulo: 'Tipo', tipo: 'texto' },
+        { k: 'status', rotulo: 'Status', tipo: 'status' },
+        { k: 'sp', rotulo: 'SP', tipo: 'num' },
+        { k: 'fase_atual', rotulo: 'Fase atual', tipo: 'fase' },
+      ];
+      fases.forEach((f, i) => colunas.push({ k: 'f' + i, rotulo: f, tipo: 'dias', casas: 0 }));
+      colunas.push({ k: 'total_dias', rotulo: 'Total (dias)', tipo: 'dias', casas: 0 });
+      const linhas = itens.map(it => {
+        const l = Object.assign({}, it);
+        fases.forEach((f, i) => { l['f' + i] = it.dias ? it.dias[f] : null; });
+        return l;
+      });
+      window.App.ListaItens.abrir({
         titulo: 'Tempo por status — itens' + (fase ? ' que passaram por ' + fase : ''),
         subtitulo: int(itens.length) + ' itens · dias úteis por fase' + (g.truncado ? ' · lista truncada: o filtro vale só para as linhas recebidas' : ''),
         origem,
-        construir: corpo => tabelaModal(corpo, 'Dias por fase de cada item', cols,
-          itens.map(it => [it.chave, it.tipo, it.status, fmt(it.sp), it.fase_atual]
-            .concat(fases.map(f => (it.dias && it.dias[f] != null ? fmt(it.dias[f]) : '—')), [fmt(it.total_dias)])), '760px'),
+        colunas,
+        linhas,
+        vazio: 'Nenhum item passou por esta fase.',
       });
     };
     const btnItens = botaoModal('Ver itens', o => abrirItensTempo(null, o));
@@ -991,7 +1091,7 @@
         labels: fases,
         datasets: [{
           label: 'Média de dias úteis', data: (g.medias || []).map(m => m.dias),
-          backgroundColor: '#6366f1', borderRadius: 4,
+          backgroundColor: (g.medias || []).map(m => COR_NIVEL[nivelFase[m.fase].nivel] || COR_NIVEL.neutro), borderRadius: 4,
         }],
       },
       options: {
@@ -1010,16 +1110,24 @@
     return card;
   }
 
-  // ── 8. Lista de itens da sprint anterior ─────────────────────────────
-  function cardLista(d) {
-    const g = d.gadgets.lista_sprint_anterior;
-    if (!g || g.estado !== 'ok') return cardVazio('Itens da sprint anterior', g, true);
-    const card = cardBase('Itens da sprint anterior' + (g.sprint ? ' — ' + g.sprint : ''), null, true);
+  // ── 8. Listas de itens: sprint atual (ou PI) e sprint anterior ───────────
+  // Mesmo desenho nos dois cards: gráfico por tipo de issue + botão "Ver itens".
+  function cardListaItens(d, chave, o) {
+    const g = d.gadgets[chave];
+    if (!g || g.estado !== 'ok') return cardVazio(o.titulo, g, true);
+    const card = cardBase(o.titulo + (g.sprint ? ' — ' + g.sprint : ''), null, true);
 
     const ab = el('div', 'pr-sub');
-    ab.appendChild(botaoModal('Ver itens', o => abrirItensSprint(d, 'todos', o)));
-    ab.appendChild(window.App.Legenda.botao('lista_sprint_anterior', d.metodologia, { rotulo: 'ⓘ Como é calculado: Itens da sprint anterior' }));
+    const btn = window.App.ListaItens.botao('Ver itens', origem => abrirItensSprint(d, 'todos', origem, g));
+    ab.appendChild(btn);
+    ab.appendChild(o.legenda());
     card.appendChild(ab);
+
+    if ((g.por_tipo || []).length) {
+      card.appendChild(el('div', 'stitle', 'Itens por tipo de issue'));
+      graficoPorTipo(card, o.canvasId, g, 'Barras horizontais com a quantidade de itens por tipo de issue.',
+        tipo => abrirItensSprint(d, 'todos', btn, g, tipo));
+    }
 
     const notas = ['Σ ' + fmt(g.total_sp) + ' SP em ' + int(g.total_itens) + ' itens.'];
     if (g.resumo_disponivel_pct != null) notas.push('Resumo disponível em ' + pctF(g.resumo_disponivel_pct) + ' dos itens.');
@@ -1027,7 +1135,20 @@
     card.appendChild(el('div', 'pr-sub', notas.join(' ')));
     return card;
   }
-
+  function cardListaAtual(d) {
+    const g = d.gadgets.lista_sprint_atual;
+    const titulo = g && g.escopo === 'pi' ? 'Itens da PI' : 'Itens da sprint atual';
+    return cardListaItens(d, 'lista_sprint_atual', {
+      titulo, canvasId: 'vg-itens-atual',
+      legenda: () => window.App.Legenda.botao('lista_sprint_atual', d.metodologia, { rotulo: 'ⓘ Como é calculado: ' + titulo }),
+    });
+  }
+  function cardLista(d) {
+    return cardListaItens(d, 'lista_sprint_anterior', {
+      titulo: 'Itens da sprint anterior', canvasId: 'vg-itens-ant',
+      legenda: () => window.App.Legenda.botao('lista_sprint_anterior', d.metodologia, { rotulo: 'ⓘ Como é calculado: Itens da sprint anterior' }),
+    });
+  }
   // ── 9. Placeholder de Sustentação ────────────────────────────────────
   function cardSustentacao(d) {
     const g = d.gadgets.sustentacao || {};
@@ -1103,10 +1224,12 @@
     root.appendChild(tempo);
     if (tempo._draw) aDesenhar.push(tempo);
 
-    // 8: lista (largo)
-    const lista = cardLista(d);
-    lista.style.marginTop = '18px';
-    root.appendChild(lista);
+    // 8: listas (largas): sprint atual e sprint anterior
+    [cardListaAtual(d), cardLista(d)].forEach(c => {
+      c.style.marginTop = '18px';
+      root.appendChild(c);
+      if (c._draw) aDesenhar.push(c);
+    });
 
     // 9: placeholder de sustentação
     const sust = cardSustentacao(d);
