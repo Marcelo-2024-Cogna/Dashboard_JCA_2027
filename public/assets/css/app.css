@@ -411,3 +411,30 @@ canvas.vg-clicavel { cursor: pointer; }
 .sinal-vermelho { color: #f43f5e; }
 .sinal-lateral { border-left: 4px solid currentColor; padding-left: 8px; }
 .sinal-neutro { color: inherit; }
+
+/* ── Modal "Como é calculado" (App.Legenda) ── */
+.lg-kv, .lg-linha { display: flex; gap: 14px; align-items: baseline; }
+.lg-kv { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; font-size: .82rem; }
+.lg-kv strong { flex: 0 0 110px; padding-right: 12px; border-right: 1px solid var(--border); }
+.lg-formula {
+  background: #3f3fc4; color: #fff; text-align: center; font-weight: 600; font-size: .9rem;
+  border-radius: 8px; padding: 12px 16px; margin: 12px 0; overflow-wrap: anywhere;
+}
+.lg-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+.lg-grid.lg-solo { grid-template-columns: 1fr; }
+.lg-card { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); min-width: 0; }
+.lg-card h4 { margin: 0; padding: 10px 14px; font-size: .92rem; border-bottom: 1px solid var(--border); }
+.lg-linha { padding: 8px 14px; font-size: .8rem; border-bottom: 1px solid var(--border); }
+.lg-linha:last-child { border-bottom: 0; }
+.lg-linha strong { flex: 0 0 105px; }
+.lg-linha span { min-width: 0; overflow-wrap: anywhere; }
+.lg-selo {
+  display: inline-block; margin-left: 10px; padding: 2px 10px; border: 1px solid #fbbf24; color: #fbbf24;
+  border-radius: 999px; font-size: .72rem; font-weight: 600; vertical-align: middle;
+}
+.lg-det { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; background: var(--surface2); }
+.lg-det summary { cursor: pointer; padding: 10px 14px; font-size: .85rem; font-weight: 600; }
+.lg-det h4 { margin: 8px 14px 4px; font-size: .8rem; color: var(--muted); }
+.lg-det p, .lg-det ul { margin: 0 14px 12px; font-size: .8rem; }
+.lg-det ul { padding-left: 18px; }
+@media (max-width: 760px) { .lg-grid { grid-template-columns: 1fr; } }

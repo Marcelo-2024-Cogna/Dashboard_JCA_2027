@@ -380,40 +380,73 @@
     function abrir(chave, metodologia, origem, extras) {
       const b = bloco(chave, metodologia);
       Modal.abrir({
-        titulo: 'Como é calculado' + (b ? ': ' + b.titulo : ''),
-        subtitulo: b ? 'Fonte, unidade, fórmula e regra de Done' : '',
+        titulo: 'Como é calculado' + (b ? ' · ' + b.titulo : ''),
+        subtitulo: '',
         origem,
         construir: corpo => {
           if (!b) { corpo.appendChild(mk('p', null, PADRAO)); return; }
-          const dl = mk('dl');
-          [['Fonte', b.fonte], ['Unidade', b.unidade], ['Fórmula', b.formula], ['O que entra', b.entra],
-            ['O que não entra', b.nao_entra], ['Regra de Done', b.done], ['Janela/período', b.janela]].forEach(([t, v]) => {
-            if (v == null || v === '') return;
-            dl.appendChild(mk('dt', null, t));
-            dl.appendChild(mk('dd', null, v));
-          });
-          if (extras && extras.carga) {
-            dl.appendChild(mk('dt', null, 'Carga dos dados'));
-            dl.appendChild(mk('dd', null, extras.carga));
+          const tem = v => v != null && v !== '';
+          if (tem(b.selo)) {
+            const h3 = corpo.parentNode && corpo.parentNode.querySelector('.modal-head h3');
+            if (h3) h3.appendChild(mk('span', 'lg-selo', b.selo));
           }
-          corpo.appendChild(dl);
-          const lista = (tit, itens) => {
-            if (!Array.isArray(itens) || !itens.length) return;
-            corpo.appendChild(mk('h4', null, tit));
-            const ul = mk('ul');
-            itens.forEach(o => ul.appendChild(mk('li', null, o)));
-            corpo.appendChild(ul);
+          const kv = (tit, val) => {
+            const r = mk('div', 'lg-kv');
+            r.append(mk('strong', null, tit), mk('span', null, val));
+            return r;
           };
-          lista('Limitações', b.limitacoes);
-          lista('Diferenças em relação ao Jira', b.diferencas_jira);
-          if (b.onde_no_codigo) {
-            corpo.appendChild(mk('h4', null, 'Fonte no código'));
-            corpo.appendChild(mk('p', null, b.onde_no_codigo));
+          [['Fonte', b.fonte], ['Unidade', b.unidade]].forEach(([t, v]) => { if (tem(v)) corpo.appendChild(kv(t, v)); });
+          if (tem(b.formula)) corpo.appendChild(mk('div', 'lg-formula', b.formula));
+
+          const card = (tit, linhas) => {
+            const c = mk('section', 'lg-card');
+            c.appendChild(mk('h4', null, tit));
+            linhas.forEach(([t, v]) => {
+              const r = mk('div', 'lg-linha');
+              r.append(mk('strong', null, t), mk('span', null, v));
+              c.appendChild(r);
+            });
+            return c;
+          };
+          const comp = Array.isArray(b.componentes)
+            ? b.componentes.filter(c => Array.isArray(c) && c.length >= 2 && tem(c[0]) && tem(c[1])) : [];
+          const crit = [['Inclusão', b.entra], ['Exclusão', b.nao_entra], ['Regra de Done', b.done], ['Período', b.janela]]
+            .filter(([, v]) => tem(v));
+          if (comp.length || crit.length) {
+            const grade = mk('div', 'lg-grid' + (comp.length ? '' : ' lg-solo'));
+            if (comp.length) grade.appendChild(card(b.componentes_titulo || 'Como é calculado', comp));
+            if (crit.length) grade.appendChild(card('Critérios de apuração', crit));
+            corpo.appendChild(grade);
           }
+          if (extras && extras.carga) corpo.appendChild(kv('Carga dos dados', extras.carga));
+
+          const colapso = (tit, blocos) => {
+            const d = mk('details', 'lg-det');
+            d.appendChild(mk('summary', null, tit));
+            blocos.forEach(([sub, itens]) => {
+              if (sub) d.appendChild(mk('h4', null, sub));
+              if (Array.isArray(itens)) {
+                const ul = mk('ul');
+                itens.forEach(o => ul.appendChild(mk('li', null, o)));
+                d.appendChild(ul);
+              } else {
+                d.appendChild(mk('p', null, itens));
+              }
+            });
+            corpo.appendChild(d);
+          };
+          const lim = Array.isArray(b.limitacoes) && b.limitacoes.length ? b.limitacoes : null;
+          const dif = Array.isArray(b.diferencas_jira) && b.diferencas_jira.length ? b.diferencas_jira : null;
+          if (lim || dif) {
+            const partes = [];
+            if (lim) partes.push([dif ? 'Limitações' : '', lim]);
+            if (dif) partes.push(['Diferenças em relação ao Jira', dif]);
+            colapso('Limitações e diferenças em relação ao Jira', partes);
+          }
+          if (tem(b.onde_no_codigo)) colapso('Referência técnica', [['', b.onde_no_codigo]]);
         },
       });
     }
-
     function botao(chave, metodologia, opts) {
       opts = opts || {};
       const b = bloco(chave, metodologia);

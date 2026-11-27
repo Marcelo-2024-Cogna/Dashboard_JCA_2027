@@ -95,6 +95,15 @@ final class MetodologiaService
             'fonte' => 'Baseline (snapshot do PI Planning) e extração do Jira, pela view vw_planejado_realizado_item, para a PI e os times do filtro.',
             'unidade' => 'Story Points. O escopo usa Story Point Estimate (SPE); o Concluído usa Story Points (SP) atuais.',
             'formula' => 'Escopo Inicial = SPE da baseline dos itens cuja sprint na baseline é a sprint. Escopo Final = SPE da extração dos itens cuja sprint atual é a sprint, sem os de status Cancelado. Concluído = SP atuais dos itens entregues cuja sprint atual é a sprint. Adicionado = SPE da extração dos itens do Escopo Final que não estão no Inicial. Removido = SPE da baseline dos itens do Inicial que não estão no Final. Mudança de Escopo = SPE da extração menos SPE da baseline nos itens que estão nos dois. O mesmo item é reconhecido pela chave, na mesma sprint. Vale: Final = Inicial + Adicionado - Removido + Mudança.',
+            'componentes_titulo' => 'Como cada barra é calculada',
+            'componentes' => [
+                ['Escopo Inicial', 'SPE da baseline dos itens cuja sprint na baseline é a sprint.'],
+                ['Escopo Final', 'SPE atual dos itens cuja sprint atual é a sprint, exceto cancelados.'],
+                ['Concluído', 'SP atuais dos itens entregues cuja sprint atual é a sprint.'],
+                ['Adicionado', 'SPE atual dos itens do Escopo Final que não estão no Inicial.'],
+                ['Removido', 'SPE da baseline dos itens do Inicial que não estão no Final.'],
+                ['Mudança', 'SPE atual menos SPE da baseline nos itens presentes no escopo inicial e no final.'],
+            ],
             'entra' => self::ITENS_VELOCIDADE,
             'nao_entra' => self::SEM_CATEGORIA . ' Itens Cancelados no Escopo Final. Sprints futuras e sprints de outro tipo que não valor.',
             'done' => self::DONE_ENTREGUE . ' Só o Concluído usa Done.',
@@ -414,6 +423,13 @@ final class MetodologiaService
             'fonte' => 'Quatro barras: Velocidade (vw_velocidade_sprint), PI Planning (baseline), Sprint Planning (extração) e Entregues (extração).',
             'unidade' => 'Story Points. Velocidade e Capacidade são pontos de capacidade, PI Planning e Sprint Planning usam SPE, e Entregues usa SP atuais.',
             'formula' => 'Cada barra é empilhada por categoria: Sustentação, Entrega de Valor (sem épico), Entrega de Valor (com épico) e, só na Velocidade, Capacidade. O rótulo à direita é o total da barra. Ao lado do total de Sprint Planning e de Entregues aparece o Δ (diferente de zero): Sprint Planning menos PI Planning, e Entregues menos Sprint Planning. As barras Velocidade, PI Planning e Sprint Planning formam o grupo Planejado; Entregues forma o grupo Entregue.',
+            'componentes_titulo' => 'Como cada barra é calculada',
+            'componentes' => [
+                ['Velocidade', 'Capacidade planejada dos times (vw_velocidade_sprint), separada em Sustentação e Capacidade.'],
+                ['PI Planning', 'SPE da baseline (snapshot do PI Planning) dos itens da janela.'],
+                ['Sprint Planning', 'SPE atual da extração dos itens da janela, exceto Cancelado.'],
+                ['Entregues', 'SP atuais dos itens da janela com status de Done.'],
+            ],
             'entra' => 'Ver as legendas de cada barra: Velocidade, PI Planning, Sprint Planning e Entregues.',
             'nao_entra' => 'Itens de outros tipos (por exemplo Incidente e Bug) e times sem extração na PI.',
             'done' => self::DONE_PR,
@@ -561,6 +577,13 @@ final class MetodologiaService
             'fonte' => 'Extração do Jira pela view vw_lead_time_item, resumida por time e por jornada em LeadTimeRepository.',
             'unidade' => 'Dias úteis.',
             'formula' => 'Cada coluna é um time, mais a coluna destacada Média da jornada. A coluna é empilhada em Desenvolvimento, Homologação e Implantação, e cada segmento é a contribuição da etapa: soma dos dias da etapa dividida pelo número de itens do time (item sem a etapa conta 0). A soma dos segmentos é o lead time médio, escrito acima da coluna. A média da jornada é calculada sobre todos os itens da jornada, e não é a média das médias dos times. Com mais de uma jornada, há uma coluna de média por jornada. Time sem item mostra "sem itens". ' . self::DIAS_UTEIS_LT,
+            'componentes_titulo' => 'Como cada etapa é calculada',
+            'componentes' => [
+                ['Desenvolvimento', 'Dias úteis entre o início e o fim da etapa de desenvolvimento, na extração.'],
+                ['Homologação', 'Dias úteis entre o início e o fim da etapa de homologação, na extração.'],
+                ['Implantação', 'Dias úteis entre o início e o fim da etapa de implantação, na extração.'],
+                ['Lead time', 'Soma das etapas que o item tem.'],
+            ],
             'entra' => self::ENTRA_LT,
             'nao_entra' => self::FORA_LT,
             'done' => self::DONE_LT,
@@ -883,6 +906,13 @@ final class MetodologiaService
             'fonte' => 'Datas de fluxo do Jira (início e fim de fluxo, homologação e implantação), pelas colunas de dias úteis da view vw_item, resumidas por LeadTimeRepository::estatisticas (a mesma conta da tela Lead Time).',
             'unidade' => 'Dias úteis.',
             'formula' => 'Média, por etapa (Desenvolvimento, Homologação e Implantação), do tempo entre as datas de início e fim da etapa, nos itens entregues que têm a etapa. Lead time = soma das etapas que o item tem; o cartão mostra a média desse total nos itens com pelo menos uma etapa. ' . self::DIAS_UTEIS_LT,
+            'componentes_titulo' => 'Como cada etapa é calculada',
+            'componentes' => [
+                ['Desenvolvimento', 'Dias úteis entre o início e o fim da etapa de desenvolvimento, na extração.'],
+                ['Homologação', 'Dias úteis entre o início e o fim da etapa de homologação, na extração.'],
+                ['Implantação', 'Dias úteis entre o início e o fim da etapa de implantação, na extração.'],
+                ['Lead time', 'Soma das etapas que o item tem.'],
+            ],
             'entra' => 'Itens de valor entregues na janela ({valor}), pela sprint de referência.',
             'nao_entra' => 'Ideação não é contada. Sustentação fica fora. Itens entregues sem nenhuma das três etapas ficam fora das médias.',
             'done' => '{done}',
@@ -899,6 +929,11 @@ final class MetodologiaService
             'fonte' => 'Extração do Jira e baseline do PI Planning.',
             'unidade' => 'Story Points (SP).',
             'formula' => 'Concluído = SP atuais dos itens em Done, atribuídos à sprint_ref (a maior sprint do item). Escopo inicial = baseline do PI Planning.',
+            'componentes_titulo' => 'Como cada barra é calculada',
+            'componentes' => [
+                ['Concluído', 'SP atuais dos itens em Done, atribuídos à sprint_ref (a maior sprint do item).'],
+                ['Escopo inicial', 'Baseline do PI Planning.'],
+            ],
             'entra' => 'Itens de valor ({valor}) e de sustentação ({sust}) com sprint na PI, como na tela Velocidade.',
             'nao_entra' => 'Itens de outros tipos, sem categoria (por exemplo Incidente e Bug). O status "Concluído" não é Done.',
             'done' => '{done}',
@@ -1006,6 +1041,7 @@ final class MetodologiaService
         ],
         'sustentacao_placeholder' => [
             'titulo' => 'Sustentação (aguardando módulo)',
+            'selo' => 'Aguardando módulo',
             'fonte' => 'Não há dados. O VisaoGeralRepository devolve gadgets.sustentacao com estado aguardando_modulo e a lista com os nomes dos gadgets previstos.',
             'unidade' => 'Não se aplica: o cartão não mostra número.',
             'formula' => 'Não há cálculo. O cartão lista os gadgets previstos (Visão da Sustentação na Sprint atual; Tempo gastos em tarefas de Sustentação; Incidentes/Solicitações da sprint anterior), que dependem do módulo de Sustentação, com regras ainda não definidas.',
@@ -1404,6 +1440,23 @@ final class MetodologiaService
             : [];
         if (!empty($b['diferencas_jira']) && is_array($b['diferencas_jira'])) {
             $out['diferencas_jira'] = array_map(static function ($t) use ($subs) { return strtr((string) $t, $subs); }, array_values($b['diferencas_jira']));
+        }
+        if (isset($b['selo']) && is_string($b['selo']) && $b['selo'] !== '') {
+            $out['selo'] = $b['selo'];
+        }
+        if (!empty($b['componentes']) && is_array($b['componentes'])) {
+            $comp = [];
+            foreach ($b['componentes'] as $par) {
+                if (is_array($par) && count($par) >= 2) {
+                    $comp[] = [strtr((string) $par[0], $subs), strtr((string) $par[1], $subs)];
+                }
+            }
+            if ($comp !== []) {
+                $out['componentes'] = $comp;
+                if (!empty($b['componentes_titulo'])) {
+                    $out['componentes_titulo'] = (string) $b['componentes_titulo'];
+                }
+            }
         }
         return $out;
     }
